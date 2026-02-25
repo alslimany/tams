@@ -1,13 +1,12 @@
 <?php
 
+use App\Http\Controllers\AgencyRegistrationController;
 use Illuminate\Support\Facades\Route;
+use Inertia\Inertia;
 
 Route::get('/', function () {
-    return view('welcome');
-})->name('home');
+    return Inertia::render('Welcome');
+});
 
-Route::view('dashboard', 'dashboard')
-    ->middleware(['auth', 'verified'])
-    ->name('dashboard');
-
-require __DIR__.'/settings.php';
+Route::get('/register-agency', [AgencyRegistrationController::class, 'show'])->name('agency.register');
+Route::post('/register-agency', [AgencyRegistrationController::class, 'store']);
