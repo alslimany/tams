@@ -231,6 +231,16 @@ class ProviderFactory {
 #### **The Challenge**
 Each airline on Videcom has **different command formats** despite using the same system.
 
+#### **Videcom Web Resources & Scraping Strategy**
+In addition to the terminal-based command execution, Videcom provides web-based panels that can be used to enhance the system experience and keep our local database synchronized without overloading the main API.
+
+- **Availability & Booking Panel:** `https://customer3.videcom.com/Medsky/VARS/Public/CustomerPanels/requirementsBS.aspx`
+  - **Usage:** Can be used for real-time availability checks, pricing, and direct booking on the airline's own interface.
+  - **Strategy:** Potential web scraping to update our local availability/pricing database.
+- **Agent Expert Logon:** `https://customer3.videcom.com/Medsky/VARS/Agent/login.aspx`
+  - **Usage:** Primary entry point for agent authentication and command execution.
+  - **Reference:** A command execution link and authentication code snippets will be provided to implement the automated command flow.
+
 #### **Solution: Airline-Specific Handler Classes**
 
 ```
