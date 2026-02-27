@@ -1,0 +1,28 @@
+{
+    "agents": [
+        "amp",
+        "claude_code",
+        "codex",
+        "cursor",
+        "gemini",
+        "copilot",
+        "junie",
+        "opencode"
+    ],
+    "guidelines": true,
+    "herd_mcp": true,
+    "mcp": true,
+    "nightwatch_mcp": false,
+    "packages": [
+        "laravel/fortify"
+    ],
+    "sail": false,
+    "skills": [
+        "fluxui-development",
+        "livewire-development",
+        "pest-testing",
+        "inertia-react-development",
+        "tailwindcss-development",
+        "developing-with-fortify"
+    ]
+}

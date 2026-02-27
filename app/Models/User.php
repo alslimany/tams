@@ -24,6 +24,10 @@ class User extends Authenticatable
         'name',
         'email',
         'password',
+        'role',
+        'is_active',
+        'last_login_at',
+        'last_activity_at',
     ];
 
     /**
@@ -48,7 +52,28 @@ class User extends Authenticatable
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            'is_active' => 'boolean',
+            'last_login_at' => 'datetime',
+            'last_activity_at' => 'datetime',
         ];
+    }
+
+    /**
+     * Role helpers
+     */
+    public function isAdmin(): bool
+    {
+        return $this->role === 'admin';
+    }
+
+    public function isManager(): bool
+    {
+        return $this->role === 'manager' || $this->isAdmin();
+    }
+
+    public function isAgent(): bool
+    {
+        return $this->role === 'agent' || $this->isManager();
     }
 
     /**

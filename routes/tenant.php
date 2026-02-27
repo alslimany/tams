@@ -3,6 +3,8 @@
 declare(strict_types=1);
 
 use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\Tenant\UserController;
+use App\Http\Controllers\Tenant\AirlineConfigController;
 use Laravel\Sanctum\Http\Controllers\CsrfCookieController;
 use Stancl\Tenancy\Middleware\InitializeTenancyByDomain;
 use Stancl\Tenancy\Middleware\PreventAccessFromCentralDomains;
@@ -33,13 +35,27 @@ Route::middleware([
     PreventAccessFromCentralDomains::class,
 ])->group(function () {
     Route::get('/', function () {
-        return view('welcome');
+        return inertia('Welcome');
     })->name('home');
 
-    Route::view('dashboard', 'dashboard')
-        ->middleware(['auth', 'verified'])
-        ->name('dashboard');
+    Route::middleware(['auth'])->group(function () {
+        Route::get('dashboard', function () {
+            return inertia('Tenant/Dashboard');
+        })->name('dashboard');
+        
+        // User Management (Admin Only)
+        Route::middleware('role:admin')->group(function () {
+            Route::resource('users', UserController::class);
+            Route::patch('users/{user}/toggle-status', [UserController::class, 'toggleStatus'])->name('users.toggle-status');
+            
+            // Airline Configuration
+            Route::get('settings/airlines', [AirlineConfigController::class, 'index'])->name('settings.airlines.index');
+            Route::post('settings/airlines', [AirlineConfigController::class, 'store'])->name('settings.airlines.store');
+            Route::post('settings/airlines/test', [AirlineConfigController::class, 'testConnection'])->name('settings.airlines.test');
+            Route::patch('settings/airlines/{provider}/toggle', [AirlineConfigController::class, 'toggle'])->name('settings.airlines.toggle');
+        });
+    });
 
     require __DIR__.'/settings.php';
-    require base_path('vendor/laravel/fortify/routes/routes.php');
+    require __DIR__.'/auth.php';
 });

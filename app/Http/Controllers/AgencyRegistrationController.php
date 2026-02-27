@@ -38,6 +38,8 @@ class AgencyRegistrationController extends Controller
                 'name' => $request->company_name,
                 'email' => $request->email,
                 'password' => Hash::make($request->password),
+                'role' => 'admin',
+                'is_active' => true,
             ]);
         });
 

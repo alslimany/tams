@@ -9,12 +9,12 @@ export default function TenantLayout({ children }) {
         <div className="min-h-screen bg-background text-foreground flex">
             {/* Sidebar */}
             <aside className="w-64 border-r bg-card flex flex-col">
-                <div className="p-6 border-b">
-                    <Link href="/dashboard" className="text-xl font-bold tracking-tight">TAMS Agency</Link>
+                <div className="p-6 border-b flex items-center justify-between">
+                    <Link href={route('dashboard')} className="text-xl font-bold tracking-tight">TAMS Agency</Link>
                 </div>
                 
                 <nav className="flex-1 p-4 space-y-2">
-                    <Link href="/dashboard" className="block px-4 py-2 text-sm font-medium rounded-md hover:bg-accent hover:text-accent-foreground transition-colors">
+                    <Link href={route('dashboard')} className="block px-4 py-2 text-sm font-medium rounded-md hover:bg-accent hover:text-accent-foreground transition-colors">
                         Dashboard
                     </Link>
                     <Link href="/bookings" className="block px-4 py-2 text-sm font-medium rounded-md hover:bg-accent hover:text-accent-foreground transition-colors">
@@ -23,9 +23,16 @@ export default function TenantLayout({ children }) {
                     <Link href="/providers" className="block px-4 py-2 text-sm font-medium rounded-md hover:bg-accent hover:text-accent-foreground transition-colors">
                         Providers
                     </Link>
-                    <Link href="/users" className="block px-4 py-2 text-sm font-medium rounded-md hover:bg-accent hover:text-accent-foreground transition-colors">
-                        Users
-                    </Link>
+                    {auth.user?.role === 'admin' && (
+                        <>
+                            <Link href={route('users.index')} className="block px-4 py-2 text-sm font-medium rounded-md hover:bg-accent hover:text-accent-foreground transition-colors">
+                                Users
+                            </Link>
+                            <Link href={route('settings.airlines.index')} className="block px-4 py-2 text-sm font-medium rounded-md hover:bg-accent hover:text-accent-foreground transition-colors">
+                                Air Config
+                            </Link>
+                        </>
+                    )}
                 </nav>
                 
                 <div className="p-4 border-t">
