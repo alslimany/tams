@@ -82,7 +82,13 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
         $command = "A{$date}{$origin}{$destination}[SalesCity={$origin},VARS=True,ClassBands=True,StartCity={$origin},SingleSeg=" . ($isReturn ? 'r' : 's') . ",FGNoAv=True,qtyseats={$qty}]";
         
         $response = $this->client->runCommand($command);
-        return $this->parseXml($response);
+        $xml = $this->parseXml($response);
+
+        if ($xml instanceof SimpleXMLElement) {
+            return VidecomResponseParser::parseAvailability($xml, $this->getIataCode(), $this->getName());
+        }
+
+        return [];
     }
 
     /**
