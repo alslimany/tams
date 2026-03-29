@@ -35,17 +35,17 @@ export default function Index({ airlines }) {
         setSelectedAirline(airline);
         setSelectedAccount(account);
         setTestResult(null);
-        
-        // Populate form with account defaults
+
+        // Populate form with account defaults and existing credentials
         setData({
             provider_type: airline.provider_type,
             airline_code: airline.id,
             airline_name: airline.name,
             account_name: account.name,
-            mode: 'session',
-            username: '',
-            password: '',
-            token: '',
+            mode: account.credentials?.mode || 'session',
+            username: account.credentials?.username || '',
+            password: account.credentials?.password || '',
+            token: account.credentials?.token || '',
             base_url: airline.base_url,
             currency: account.currency,
             airports: account.airports || [],
@@ -55,7 +55,7 @@ export default function Index({ airlines }) {
     const handleTest = () => {
         setTesting(true);
         setTestResult(null);
-        
+
         axios.post(route('settings.airlines.test'), data, {
             headers: {
                 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content')
@@ -95,7 +95,7 @@ export default function Index({ airlines }) {
     return (
         <TenantLayout>
             <Head title="Airline Configuration" />
-            
+
             <div className="flex justify-between items-center mb-6">
                 <div>
                     <h2 className="text-3xl font-bold tracking-tight">Airline Configuration</h2>
@@ -109,8 +109,11 @@ export default function Index({ airlines }) {
                         <CardHeader className="pb-3">
                             <div className="flex items-center justify-between">
                                 <div className="flex items-center gap-3">
-                                    <div className="bg-primary/10 p-2 rounded-lg">
-                                        <Plane className="h-6 w-6 text-primary" />
+                                    <div className="bg-primary/5 p-1 rounded-sm shrink-0 flex items-center justify-center min-w-[48px] min-h-[48px]">
+                                        {airline.icao || airline.iata || airline.id ? (
+                                            <img src={route('api.airlines.logo', { code: airline.icao || airline.iata || airline.id, variant: 'icon-transparent', radius: 8 })} alt={airline.name} className="h-10 w-10 object-contain mix-blend-multiply dark:mix-blend-normal" onError={(e) => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'block'; }} />
+                                        ) : null}
+                                        <Plane className="h-6 w-6 text-primary" style={{ display: (airline.icao || airline.iata || airline.id) ? 'none' : 'block' }} />
                                     </div>
                                     <div>
                                         <CardTitle>{airline.name}</CardTitle>
@@ -142,7 +145,7 @@ export default function Index({ airlines }) {
                                                 <span className="text-xs text-muted-foreground">
                                                     {account.is_enabled ? 'Enabled' : 'Disabled'}
                                                 </span>
-                                                <Switch 
+                                                <Switch
                                                     checked={account.is_enabled}
                                                     onCheckedChange={() => {
                                                         if (account.is_enabled) {
@@ -153,8 +156,8 @@ export default function Index({ airlines }) {
                                                     }}
                                                 />
                                             </div>
-                                            <Button 
-                                                variant="ghost" 
+                                            <Button
+                                                variant="ghost"
                                                 size="icon"
                                                 onClick={() => openConfig(airline, account)}
                                             >
@@ -193,9 +196,9 @@ export default function Index({ airlines }) {
                                     <TabsContent value="session" className="space-y-4 pt-4">
                                         <div className="grid gap-2">
                                             <Label htmlFor="username">VRS Sine Code / Username</Label>
-                                            <Input 
-                                                id="username" 
-                                                value={data.username} 
+                                            <Input
+                                                id="username"
+                                                value={data.username}
                                                 onChange={e => setData('username', e.target.value)}
                                                 placeholder="e.g. AGENT123"
                                             />
@@ -203,10 +206,10 @@ export default function Index({ airlines }) {
                                         </div>
                                         <div className="grid gap-2">
                                             <Label htmlFor="password">VRS Password</Label>
-                                            <Input 
-                                                id="password" 
+                                            <Input
+                                                id="password"
                                                 type="password"
-                                                value={data.password} 
+                                                value={data.password}
                                                 onChange={e => setData('password', e.target.value)}
                                                 placeholder="••••••••"
                                             />
@@ -216,9 +219,9 @@ export default function Index({ airlines }) {
                                     <TabsContent value="soap" className="space-y-4 pt-4">
                                         <div className="grid gap-2">
                                             <Label htmlFor="token">API Token</Label>
-                                            <Input 
-                                                id="token" 
-                                                value={data.token} 
+                                            <Input
+                                                id="token"
+                                                value={data.token}
                                                 onChange={e => setData('token', e.target.value)}
                                                 placeholder="Paste your XML API token here"
                                             />
@@ -246,9 +249,9 @@ export default function Index({ airlines }) {
                                 )}
                             </CardContent>
                             <CardFooter className="flex justify-between border-t pt-6">
-                                <Button 
-                                    type="button" 
-                                    variant="outline" 
+                                <Button
+                                    type="button"
+                                    variant="outline"
                                     onClick={handleTest}
                                     disabled={testing || processing}
                                 >

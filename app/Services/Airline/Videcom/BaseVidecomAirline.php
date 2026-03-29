@@ -9,12 +9,13 @@ use SimpleXMLElement;
 abstract class BaseVidecomAirline implements AirlineProviderInterface
 {
     protected VidecomClient $client;
+
     protected array $config;
 
     /**
      * BaseVidecomAirline constructor.
      *
-     * @param array $config Airline credentials and configuration
+     * @param  array  $config  Airline credentials and configuration
      */
     public function __construct(array $config)
     {
@@ -29,6 +30,7 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
     {
         // Run a simple display command to verify session/token
         $this->client->runCommand('*R');
+
         return true;
     }
 
@@ -68,27 +70,183 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
      */
     public function searchAvailability(array $params)
     {
-        $date = $params['date'] ?? now()->format('dMY');
+        $rawDate = $params['date'] ?? now()->toDateTimeString();
+        $date = strtoupper(\Carbon\Carbon::parse($rawDate)->format('dM'));
         $origin = strtoupper($params['origin'] ?? '');
         $destination = strtoupper($params['destination'] ?? '');
         $qty = $params['qty'] ?? 1;
         $isReturn = $params['is_return'] ?? false;
 
+        $adults = (int) ($params['adults'] ?? 1);
+        $children = (int) ($params['children'] ?? 0);
+        $infants = (int) ($params['infants'] ?? 0);
+
         // Check if origin/dest are allowed for this account
-        if (!$this->isRouteAllowed($origin, $destination)) {
+        if (! $this->isRouteAllowed($origin, $destination)) {
             throw new Exception("Route {$origin}-{$destination} is not allowed for this airline account.");
         }
 
-        $command = "A{$date}{$origin}{$destination}[SalesCity={$origin},VARS=True,ClassBands=True,StartCity={$origin},SingleSeg=" . ($isReturn ? 'r' : 's') . ",FGNoAv=True,qtyseats={$qty}]";
-        
+        $command = "A{$date}{$origin}{$destination}[SalesCity={$origin},VARS=True,ClassBands=True,StartCity={$origin},SingleSeg=".($isReturn ? 'r' : 's').",FGNoAv=True,qtyseats={$qty}]";
+
         $response = $this->client->runCommand($command);
         $xml = $this->parseXml($response);
 
-        if ($xml instanceof SimpleXMLElement) {
-            return VidecomResponseParser::parseAvailability($xml, $this->getIataCode(), $this->getName());
+        if (! $xml instanceof SimpleXMLElement) {
+            return [];
         }
 
-        return [];
+        $options = VidecomResponseParser::parseAvailability($xml, $this->getIataCode(), $this->getName());
+
+        // Update pricing based on passenger types and cache
+        foreach ($options as $option) {
+            $this->applyAccuratePricing($option, $adults, $children, $infants);
+        }
+
+        return $options;
+    }
+
+    /**
+     * Apply accurate pricing for multiple passenger types to a flight option.
+     */
+    protected function applyAccuratePricing($option, int $adults, int $children, int $infants): void
+    {
+        $class = $option->segments[0]['class'] ?? null;
+        if (! $class) {
+            return;
+        }
+
+        // Prefetch and cache all pax prices for this route/class if not already cached
+        $this->prefetchPrices($option, $class);
+
+        $total = 0;
+        $breakdown = [];
+
+        foreach (['AD' => $adults, 'CH' => $children, 'IN' => $infants] as $type => $qty) {
+            if ($qty <= 0) {
+                continue;
+            }
+
+            $pricing = $this->getCachedOrFallbackPrice($option, $class, $type);
+            $base = (float) ($pricing['fare'] ?? 0);
+            $tax = (float) ($pricing['tax'] ?? 0);
+            $paxTotal = ($base + $tax) * $qty;
+            $total += $paxTotal;
+
+            $label = match ($type) {
+                'AD' => 'Adult',
+                'CH' => 'Child',
+                'IN' => 'Infant',
+            };
+
+            $breakdown[] = [
+                'label' => "{$label} (x{$qty})",
+                'qty' => $qty,
+                'fare' => $base,
+                'tax' => $tax,
+                'amount' => $paxTotal,
+            ];
+        }
+
+        if ($total > 0) {
+            $option->pricing['total'] = $total;
+            $option->pricing['breakdown'] = $breakdown;
+        }
+    }
+
+    /**
+     * Ensure we have all pax prices (AD, CH, IN) in cache for this route/class.
+     */
+    protected function prefetchPrices($option, string $class): void
+    {
+        $origin = $option->departure_airport;
+        $dest = $option->arrival_airport;
+        $airline = $this->getIataCode();
+
+        $missing = false;
+        foreach (['AD', 'CH', 'IN'] as $type) {
+            if (PricingCacheService::get($airline, $origin, $dest, $class, $type) === null) {
+                $missing = true;
+                break;
+            }
+        }
+
+        if (! $missing) {
+            return;
+        }
+
+        try {
+            $prices = $this->fetchAllPaxPricesFromVrs($option, $class);
+            foreach ($prices as $type => $data) {
+                PricingCacheService::put($airline, $origin, $dest, $class, $type, $data);
+            }
+        } catch (Exception $e) {
+            \Illuminate\Support\Facades\Log::warning("Failed to fetch consolidated prices for $airline $origin-$dest ($class): ".$e->getMessage());
+        }
+    }
+
+    /**
+     * Get a cached price or return a sensible fallback.
+     */
+    protected function getCachedOrFallbackPrice($option, string $class, string $paxType): array
+    {
+        $cached = PricingCacheService::get($this->getIataCode(), $option->departure_airport, $option->arrival_airport, $class, $paxType);
+
+        if ($cached && is_array($cached)) {
+            return $cached;
+        }
+
+        // Fallback: If Adult, use initial total. If others, assume 0.
+        return [
+            'fare' => $paxType === 'AD' ? ($option->pricing['total'] ?? 0) : 0,
+            'tax' => 0,
+        ];
+    }
+
+    /**
+     * Run a pricing command to get prices for all types (AD, CH, IN) in ONE session.
+     */
+    protected function fetchAllPaxPricesFromVrs($option, string $class): array
+    {
+        // Consolidated Name Entry syntax: -[Qty][Surname]/[First1][Type]/[First2][Type]...
+        // AD = Index 1, CH = Index 2, IN = Index 3
+        $paxEntry = '-3PAX/A#/B#.CH10/C#.IN06';
+
+        $date = strtoupper(\Carbon\Carbon::parse($option->departure_time)->format('dM'));
+
+        // QQ count is 2 (AD + CH) - infants are Lap children and don't take a seat
+        $flightEntry = "0{$this->getIataCode()}{$option->flight_number}{$class}{$date}{$option->departure_airport}{$option->arrival_airport}QQ2";
+
+        $command = "i^{$paxEntry}^{$flightEntry}^FG^FS1^*r~x";
+        $response = $this->client->runCommand($command);
+        $xml = $this->parseXml($response);
+
+        if (! ($xml instanceof SimpleXMLElement) || ! isset($xml->FareQuote->FareStore)) {
+            throw new Exception('Invalid consolidated pricing response');
+        }
+
+        $results = [];
+        $fsArray = $xml->FareQuote->FareStore;
+
+        // Map Pax index to type
+        // Pax 1 = AD, Pax 2 = CH, Pax 3 = IN
+        foreach ($fsArray as $fs) {
+            $paxIndex = (int) ($fs['Pax'] ?? 0);
+            $type = match ($paxIndex) {
+                1 => 'AD',
+                2 => 'CH',
+                3 => 'IN',
+                default => null,
+            };
+
+            if ($type && isset($fs->SegmentFS)) {
+                $results[$type] = [
+                    'fare' => (float) ($fs->SegmentFS['Fare'] ?? 0),
+                    'tax' => (float) ($fs->SegmentFS['Tax1'] ?? 0) + (float) ($fs->SegmentFS['Tax2'] ?? 0) + (float) ($fs->SegmentFS['Tax3'] ?? 0),
+                ];
+            }
+        }
+
+        return $results;
     }
 
     /**
@@ -98,7 +256,7 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
     {
         $paxCount = count($passengers);
         $paxEntry = $this->buildPaxPricingEntry($passengers);
-        
+
         $flightEntries = [];
         foreach ($itinerary as $segment) {
             $fltNo = $segment['flt_no'];
@@ -110,9 +268,10 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
             $flightEntries[] = "0{$this->getIataCode()}{$fltNo}{$class}{$date}{$origin}{$dest}{$status}{$paxCount}";
         }
 
-        $command = "i^{$paxEntry}^" . implode('^', $flightEntries) . "^FG^FS1^*r~x";
-        
+        $command = "i^{$paxEntry}^".implode('^', $flightEntries).'^FG^*r~x';
+
         $response = $this->client->runCommand($command);
+
         return $this->parseXml($response);
     }
 
@@ -123,11 +282,12 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
     {
         $paxInfo = $this->buildPaxInfo($params['passengers']);
         $flightSegments = $this->buildFlightSegments($params['itinerary']);
-        
-        // Default booking pattern
-        $command = "{$paxInfo}^{$flightSegments}^FG^FS1^MM^*R~x";
-        
+
+        // Default booking pattern (without explicit Cash FOP, so we just hold or default)
+        $command = "{$paxInfo}^{$flightSegments}^FG^MM^*R~x";
+
         $response = $this->client->runCommand($command);
+
         return $this->parseXml($response);
     }
 
@@ -138,6 +298,7 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
     {
         $command = "*{$rloc}^MM^EZT*R^EZRE^*R~x";
         $response = $this->client->runCommand($command);
+
         return $this->parseXml($response);
     }
 
@@ -148,6 +309,7 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
     {
         $command = "SM{$fltNo}{$date}{$origin}{$destination}~x";
         $response = $this->client->runCommand($command);
+
         return $this->parseXml($response);
     }
 
@@ -158,16 +320,18 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
     {
         $command = "*{$rloc}^ST{$paxNo}/{$seatNo}^E*R~x";
         $response = $this->client->runCommand($command);
+
         return $this->parseXml($response);
     }
 
     /**
      * Void a ticket/PNR.
      */
-    public function void(string $rloc, string $ticketNo = null)
+    public function void(string $rloc, ?string $ticketNo = null)
     {
         $command = $ticketNo ? "TV{$ticketNo}" : "*{$rloc}^X1^E*R~x";
         $response = $this->client->runCommand($command);
+
         return $response;
     }
 
@@ -178,6 +342,7 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
     {
         $command = "TR{$ticketNo}";
         $response = $this->client->runCommand($command);
+
         return $response;
     }
 
@@ -186,8 +351,9 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
      */
     public function change(string $rloc, array $changes)
     {
-        $command = "*{$rloc}^X1^E*R~x"; 
+        $command = "*{$rloc}^X1^E*R~x";
         $response = $this->client->runCommand($command);
+
         return $response;
     }
 
@@ -197,7 +363,9 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
     protected function isRouteAllowed(string $origin, string $destination): bool
     {
         $allowed = $this->getAvailableAirports();
-        if (empty($allowed)) return true;
+        if (empty($allowed)) {
+            return true;
+        }
 
         return in_array($origin, $allowed) || in_array($destination, $allowed);
     }
@@ -207,8 +375,15 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
      */
     protected function buildPaxPricingEntry(array $passengers): string
     {
-        $count = count($passengers);
-        return "-{$count}Pax/A#/B#"; // Default simple entry
+        $entries = [];
+        foreach ($passengers as $i => $pax) {
+            $surname = strtoupper($pax['surname'] ?? 'TEST');
+            $firstname = strtoupper($pax['firstname'] ?? 'PAX');
+            $title = strtoupper($pax['title'] ?? 'MR');
+            $entries[] = "-1{$surname}/{$firstname}{$title}";
+        }
+
+        return implode('^', $entries);
     }
 
     /**
@@ -223,7 +398,7 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
             $surname = strtoupper($pax['surname'] ?? '');
             $firstname = strtoupper($pax['firstname'] ?? '');
             $entries[] = "-{$paxNo}@{$surname}/{$firstname}{$title}";
-            
+
             if (isset($pax['email'])) {
                 $entries[] = "9-{$paxNo}E*{$pax['email']}";
             }
@@ -231,6 +406,7 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
                 $entries[] = "9-{$paxNo}M*{$pax['phone']}";
             }
         }
+
         return implode('^', $entries);
     }
 
@@ -249,6 +425,7 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
             $qty = $segment['qty'] ?? 1;
             $entries[] = "0{$this->getIataCode()}{$fltNo}{$class}{$date}{$origin}{$dest}NN{$qty}";
         }
+
         return implode('^', $entries);
     }
 

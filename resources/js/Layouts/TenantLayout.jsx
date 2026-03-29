@@ -1,6 +1,7 @@
 import React from 'react';
 import { Link, usePage } from '@inertiajs/react';
 import { Button } from '@/Components/ui/Button';
+import { Toaster } from "sonner";
 
 export default function TenantLayout({ children }) {
     const { auth } = usePage().props;
@@ -12,12 +13,12 @@ export default function TenantLayout({ children }) {
                 <div className="p-6 border-b flex items-center justify-between">
                     <Link href={route('dashboard')} className="text-xl font-bold tracking-tight">TAMS Agency</Link>
                 </div>
-                
+
                 <nav className="flex-1 p-4 space-y-2">
                     <Link href={route('dashboard')} className="block px-4 py-2 text-sm font-medium rounded-md hover:bg-accent hover:text-accent-foreground transition-colors">
                         Dashboard
                     </Link>
-                    <Link href="/bookings" className="block px-4 py-2 text-sm font-medium rounded-md hover:bg-accent hover:text-accent-foreground transition-colors">
+                    <Link href={route('bookings.index')} className="block px-4 py-2 text-sm font-medium rounded-md hover:bg-accent hover:text-accent-foreground transition-colors">
                         Bookings
                     </Link>
                     <Link href="/providers" className="block px-4 py-2 text-sm font-medium rounded-md hover:bg-accent hover:text-accent-foreground transition-colors">
@@ -31,10 +32,13 @@ export default function TenantLayout({ children }) {
                             <Link href={route('settings.airlines.index')} className="block px-4 py-2 text-sm font-medium rounded-md hover:bg-accent hover:text-accent-foreground transition-colors">
                                 Air Config
                             </Link>
+                            <Link href={route('settings.general.index')} className="block px-4 py-2 text-sm font-medium rounded-md hover:bg-accent hover:text-accent-foreground transition-colors">
+                                General Settings
+                            </Link>
                         </>
                     )}
                 </nav>
-                
+
                 <div className="p-4 border-t">
                     <div className="flex items-center gap-3 px-4 py-2">
                         <div className="size-8 rounded-full bg-primary flex items-center justify-center text-primary-foreground font-bold">
@@ -47,7 +51,7 @@ export default function TenantLayout({ children }) {
                     </div>
                 </div>
             </aside>
-            
+
             {/* Main Content */}
             <div className="flex-1 flex flex-col">
                 <header className="h-16 border-b bg-card px-8 flex items-center justify-between">
@@ -59,11 +63,12 @@ export default function TenantLayout({ children }) {
                         </Link>
                     </div>
                 </header>
-                
+
                 <main className="flex-1 p-8 overflow-y-auto">
                     {children}
                 </main>
             </div>
+            <Toaster richColors position="top-right" />
         </div>
     );
 }

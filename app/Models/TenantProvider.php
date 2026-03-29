@@ -3,7 +3,6 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Support\Facades\Crypt;
 
 class TenantProvider extends Model
 {
@@ -18,29 +17,6 @@ class TenantProvider extends Model
 
     protected $casts = [
         'is_active' => 'boolean',
+        'credentials' => 'encrypted:json',
     ];
-
-    /**
-     * Get decrypted credentials.
-     *
-     * @return array
-     */
-    public function getCredentialsAttribute($value)
-    {
-        try {
-            return json_decode(Crypt::decrypt($value), true) ?? [];
-        } catch (\Exception $e) {
-            return [];
-        }
-    }
-
-    /**
-     * Set encrypted credentials.
-     *
-     * @param array $value
-     */
-    public function setCredentialsAttribute($value)
-    {
-        $this->attributes['credentials'] = Crypt::encrypt(json_encode($value));
-    }
 }

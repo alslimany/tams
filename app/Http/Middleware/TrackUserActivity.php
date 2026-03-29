@@ -15,8 +15,14 @@ class TrackUserActivity
      */
     public function handle(Request $request, Closure $next): Response
     {
-        if (auth()->check()) {
-            auth()->user()->update([
+        // Skip activity tracking for background/Inertia requests to prevent session race conditions
+        // We only track on full page loads or standard navigation (not partial reloads)
+        if ($request->header('X-Inertia-Partial-Data') || $request->is('api/*')) {
+            return $next($request);
+        }
+
+        if ($request->user()) {
+            $request->user()->update([
                 'last_activity_at' => now(),
             ]);
         }

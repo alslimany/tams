@@ -5,9 +5,9 @@ namespace App\Http\Controllers\Tenant;
 use App\Http\Controllers\Controller;
 use App\Models\TenantProvider;
 use App\Services\Airline\ProviderFactory;
+use Exception;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
-use Exception;
 
 class AirlineConfigController extends Controller
 {
@@ -19,16 +19,20 @@ class AirlineConfigController extends Controller
         return [
             [
                 'id' => 'YI',
+                'iata' => 'YI',
+                'icao' => 'OYA',
                 'name' => 'Oya Airline',
                 'provider_type' => 'videcom',
-                'videcom_code' => 'OYa',
-                'base_url' => 'https://customer3.videcom.com/OYa',
+                'videcom_code' => 'OYA',
+                'base_url' => 'https://customer3.videcom.com/OYA',
                 'accounts' => [
-                    ['name' => 'Default Account', 'currency' => 'LYD']
-                ]
+                    ['name' => 'Default Account', 'currency' => 'LYD'],
+                ],
             ],
             [
                 'id' => 'BM',
+                'iata' => 'BM',
+                'icao' => 'MNS',
                 'name' => 'Medsky Airline',
                 'provider_type' => 'videcom',
                 'videcom_code' => 'Medsky',
@@ -36,7 +40,67 @@ class AirlineConfigController extends Controller
                 'accounts' => [
                     ['name' => 'LYD Account', 'currency' => 'LYD', 'airports' => ['IST', 'MJI', 'BEN']],
                     ['name' => 'EUR Account', 'currency' => 'EUR', 'airports' => ['MLA', 'FCO']],
-                ]
+                ],
+            ],
+            [
+                'id' => 'UZ',
+                'iata' => 'UZ',
+                'icao' => 'BRQ',
+                'name' => 'Buraq Air',
+                'provider_type' => 'videcom',
+                'videcom_code' => 'Buraq',
+                'base_url' => 'https://booking.buraq.aero',
+                'accounts' => [
+                    ['name' => 'Default Account', 'currency' => 'LYD'],
+                ],
+            ],
+            [
+                'id' => 'YL',
+                'iata' => 'YL',
+                'icao' => 'LWA',
+                'name' => 'Libyan Wings',
+                'provider_type' => 'videcom',
+                'videcom_code' => 'LibyanWings',
+                'base_url' => 'https://booking.libyanwings.ly',
+                'accounts' => [
+                    ['name' => 'Default Account', 'currency' => 'LYD'],
+                ],
+            ],
+            [
+                'id' => 'NB',
+                'iata' => 'NB',
+                'icao' => 'BNL',
+                'name' => 'Berniq Air',
+                'provider_type' => 'videcom',
+                'videcom_code' => 'Berniq',
+                'base_url' => 'https://customer3.videcom.com/BerniqAirways',
+                'accounts' => [
+                    ['name' => 'Default Account', 'currency' => 'LYD'],
+                ],
+            ],
+            [
+                'id' => '5S',
+                'iata' => '5S',
+                'icao' => 'GAK',
+                'name' => 'Global Air',
+                'provider_type' => 'videcom',
+                'videcom_code' => 'GlobalAir',
+                'base_url' => 'https://customer2.videcom.com/GlobalAirTransport',
+                'accounts' => [
+                    ['name' => 'Default Account', 'currency' => 'LYD'],
+                ],
+            ],
+            [
+                'id' => 'FQ',
+                'iata' => 'FQ',
+                'icao' => 'CWN',
+                'name' => 'Crown Air',
+                'provider_type' => 'videcom',
+                'videcom_code' => 'FlyCrown',
+                'base_url' => 'https://customer2.videcom.com/FlyCrown',
+                'accounts' => [
+                    ['name' => 'Default Account', 'currency' => 'LYD'],
+                ],
             ],
         ];
     }
@@ -48,19 +112,22 @@ class AirlineConfigController extends Controller
 
         $airlines = collect($supportedAirlines)->map(function ($airline) use ($configuredAirlines) {
             $configs = $configuredAirlines->get($airline['id'], collect());
-            
+
             $airline['accounts'] = collect($airline['accounts'])->map(function ($account) use ($configs, $airline) {
-                $existing = $configs->firstWhere('account_name', $account['name']);
-                return array_merge($account, [
+                    $existing = $configs->firstWhere('account_name', $account['name']);
+
+                    return array_merge($account, [
                     'is_enabled' => $existing ? $existing->is_active : false,
                     'config_id' => $existing ? $existing->id : null,
+                    'credentials' => $existing ? $existing->credentials : null,
                     'airline_code' => $airline['id'],
                     'provider_type' => $airline['provider_type'],
-                ]);
-            });
+                    ]);
+                }
+                );
 
-            return $airline;
-        });
+                return $airline;
+            });
 
         return Inertia::render('Tenant/Settings/AirConfig/Index', [
             'airlines' => $airlines,
@@ -94,21 +161,22 @@ class AirlineConfigController extends Controller
         if ($validated['mode'] === 'session') {
             $credentials['username'] = $validated['username'];
             $credentials['password'] = $validated['password'];
-        } else {
+        }
+        else {
             $credentials['token'] = $validated['token'];
         }
 
         $provider = TenantProvider::updateOrCreate(
-            [
-                'provider_type' => $validated['provider_type'],
-                'airline_code' => $validated['airline_code'],
-                'account_name' => $validated['account_name'],
-            ],
-            [
-                'airline_name' => $validated['airline_name'],
-                'credentials' => $credentials,
-                'is_active' => true,
-            ]
+        [
+            'provider_type' => $validated['provider_type'],
+            'airline_code' => $validated['airline_code'],
+            'account_name' => $validated['account_name'],
+        ],
+        [
+            'airline_name' => $validated['airline_name'],
+            'credentials' => $credentials,
+            'is_active' => true,
+        ]
         );
 
         return back()->with('success', "{$validated['airline_name']} ({$validated['account_name']}) configured successfully.");
@@ -139,7 +207,8 @@ class AirlineConfigController extends Controller
         if ($validated['mode'] === 'session') {
             $credentials['username'] = $validated['username'];
             $credentials['password'] = $validated['password'];
-        } else {
+        }
+        else {
             $credentials['token'] = $validated['token'];
         }
 
@@ -155,7 +224,8 @@ class AirlineConfigController extends Controller
             $provider->testConnection();
 
             return response()->json(['success' => true, 'message' => 'Connection successful!']);
-        } catch (Exception $e) {
+        }
+        catch (Exception $e) {
             return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
         }
     }
@@ -163,6 +233,7 @@ class AirlineConfigController extends Controller
     public function toggle(TenantProvider $provider)
     {
         $provider->update(['is_active' => !$provider->is_active]);
+
         return back()->with('success', $provider->airline_name . ' ' . ($provider->is_active ? 'enabled' : 'disabled'));
     }
 }
