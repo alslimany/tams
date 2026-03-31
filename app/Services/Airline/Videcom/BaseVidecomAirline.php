@@ -280,13 +280,24 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
      */
     public function createBooking(array $params)
     {
-        $paxInfo = $this->buildPaxInfo($params['passengers']);
-        $flightSegments = $this->buildFlightSegments($params['itinerary']);
+        $passengers = $params['passengers'] ?? [];
+        $paxInfo = $this->buildPaxInfo($passengers);
+        $contactInfo = $this->buildContactInfo($params['contact'] ?? [], count($passengers));
+        $flightSegments = $this->buildFlightSegments($params['itinerary'] ?? [], count($passengers));
+        $apfaxInfo = $this->buildApfaxInfo($passengers, $params['extras'] ?? []);
+        $timeLimit = '8/1800/' . now()->addDays(2)->format('dM'); // Default fallback TTL if none provided
 
-        // Default booking pattern (without explicit Cash FOP, so we just hold or default)
-        $command = "{$paxInfo}^{$flightSegments}^FG^MM^*R~x";
+        $commands = array_filter([
+            $paxInfo,
+            $contactInfo,
+            $flightSegments,
+            $apfaxInfo,
+            $timeLimit,
+            'E' // End PNR
+        ]);
 
-        $response = $this->client->runCommand($command);
+        $commandString = implode('^', $commands) . '^*R~x';
+        $response = $this->client->runCommand($commandString);
 
         return $this->parseXml($response);
     }
@@ -305,12 +316,73 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
     /**
      * Get the seat map for a flight.
      */
-    public function getSeatMap(string $fltNo, string $date, string $origin, string $destination)
+    public function getSeatMap(string $fltNo, string $date)
     {
-        $command = "SM{$fltNo}{$date}{$origin}{$destination}~x";
+        $fltNo = str_pad(preg_replace('/[^0-9]/', '', $fltNo), 4, '0', STR_PAD_LEFT);
+        $formattedDate = strtoupper(\Carbon\Carbon::parse($date)->format('dM'));
+        
+        // Use LS command for XML details (e.g. LSYL0102/03APR~X)
+        $command = "LS{$this->getIataCode()}{$fltNo}/{$formattedDate}~X";
         $response = $this->client->runCommand($command);
 
-        return $this->parseXml($response);
+        $xml = $this->parseXml($response);
+
+        if (! ($xml instanceof SimpleXMLElement) || ! isset($xml->Seat)) {
+            return ['seats' => [], 'cabins' => []];
+        }
+
+        $seatMap = [];
+        $cabins = [];
+
+        if (isset($xml->CabinCount->Cabin)) {
+            foreach ($xml->CabinCount->Cabin as $cabin) {
+                $cabins[] = [
+                    'class' => (string) $cabin['CabinClass'],
+                    'seats' => (int) $cabin['Seats']
+                ];
+            }
+        }
+
+        // We want to calculate the maximum rows and columns to help the frontend build a grid
+        $maxRow = 0;
+        $maxCol = 0;
+
+        foreach ($xml->Seat as $seat) {
+            $row = (int) $seat['Row'];
+            $col = (int) $seat['Col'];
+
+            $maxRow = max($maxRow, $row);
+            $maxCol = max($maxCol, $col);
+
+            // Is the seat currently occupied or blocked?
+            $seatId = (int) ($seat['SeatID'] ?? 0);
+            $isOccupied = $seatId > 0 || !empty((string) $seat['Status']) || !empty((string) $seat['RLOC']);
+            $isBlocked = ((string) $seat['CellDescription']) === 'Block Seat';
+            $isAisle = ((string) $seat['CellDescription']) === 'Aisle' || str_contains((string) $seat['CellDescription'], 'WidthMarker');
+
+            $seatMap[] = [
+                'row' => $row,
+                'col' => $col,
+                'seat_id' => $seatId,
+                'code' => (string) $seat['Code'],
+                'cabinType' => (string) $seat['CabinClass'],
+                'description' => (string) $seat['CellDescription'],
+                'no_infant' => ((string) $seat['NoInfantSeat']) === 'True',
+                'prm' => ((string) $seat['PRMSeat']) === 'True',
+                'is_occupied' => $isOccupied || $isBlocked,
+                'is_aisle' => $isAisle,
+                'price' => (float) ($seat['scprice'] ?? 0)
+            ];
+        }
+
+        return [
+            'grid' => [
+                'max_row' => $maxRow,
+                'max_col' => $maxCol
+            ],
+            'cabins' => $cabins,
+            'seats' => $seatMap,
+        ];
     }
 
     /**
@@ -393,17 +465,101 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
     {
         $entries = [];
         foreach ($passengers as $i => $pax) {
-            $paxNo = $i + 1;
-            $title = $pax['title'] ?? 'MR';
-            $surname = strtoupper($pax['surname'] ?? '');
-            $firstname = strtoupper($pax['firstname'] ?? '');
-            $entries[] = "-{$paxNo}@{$surname}/{$firstname}{$title}";
-
-            if (isset($pax['email'])) {
-                $entries[] = "9-{$paxNo}E*{$pax['email']}";
+            $paxNo = $i + 1; // Used for pax index mapping
+            $type = strtoupper($pax['type'] ?? 'ADULT');
+            $title = strtoupper($pax['title'] ?? 'MR');
+            $surname = strtoupper(preg_replace('/[^A-Z]/', '', $pax['surname'] ?? ''));
+            $firstname = strtoupper(preg_replace('/[^A-Z]/', '', $pax['firstname'] ?? ''));
+            
+            // Format: -1LASTNAME/FIRSTNAME TITLE
+            $entry = "-1{$surname}/{$firstname}{$title}";
+            
+            // Append PTC and Age if child or infant
+            if ($type === 'CHILD') {
+                $age = str_pad((string)($pax['age'] ?? 9), 2, '0', STR_PAD_LEFT);
+                $entry .= ".CH{$age}";
+            } elseif ($type === 'INFANT') {
+                $ageMonths = str_pad((string)($pax['age_months'] ?? 6), 2, '0', STR_PAD_LEFT);
+                $entry .= ".IN{$ageMonths}";
             }
-            if (isset($pax['phone'])) {
-                $entries[] = "9-{$paxNo}M*{$pax['phone']}";
+            
+            $entries[] = $entry;
+        }
+
+        return implode('^', $entries);
+    }
+
+    /**
+     * Build general contact info string.
+     */
+    protected function buildContactInfo(array $contact, int $paxCount): string
+    {
+        $entries = [];
+        $email = $contact['email'] ?? null;
+        $phone = $contact['phone'] ?? null;
+
+        if ($email) {
+            $entries[] = "9E*{$email}";
+        }
+        if ($phone) {
+            $entries[] = "9H*{$phone}";
+            // Fallback mobile to Business if preferred
+            $entries[] = "9B*{$phone}";
+        }
+        
+        // Ensure at least one contact exists, else dummy
+        if (empty($entries) && $paxCount > 0) {
+            $entries[] = "9T*TRAVEL AGENCY";
+        }
+
+        return implode('^', $entries);
+    }
+
+    /**
+     * Build APFAX string (Passport, Visa, Meal, Seats).
+     */
+    protected function buildApfaxInfo(array $passengers, array $extras): string
+    {
+        $entries = [];
+        
+        foreach ($passengers as $i => $pax) {
+            $paxNo = $i + 1;
+
+            // 1. DOCS (Passport)
+            // FORMAT: 4-[PAX]FDOCS/P/[ISSUE_COUNTRY]/[PASSPORT]/[NATIONALITY]/[DOB]/[GENDER]/[EXPIRY]/[SURNAME]/[FIRSTNAME]
+            if (!empty($pax['passport_number'])) {
+                $issueCountry = strtoupper($pax['passport_issue_country'] ?? 'LY');
+                $nationality = strtoupper($pax['nationality'] ?? 'LY');
+                $passNo = strtoupper($pax['passport_number']);
+                $dob = \Carbon\Carbon::parse($pax['dob'] ?? '1990-01-01')->format('dMy'); // e.g., 14MAR78
+                $gender = strtoupper(substr($pax['gender'] ?? 'M', 0, 1)); // M or F
+                $expiry = \Carbon\Carbon::parse($pax['passport_expiry'] ?? '2030-01-01')->format('dMy');
+                $surname = strtoupper(preg_replace('/[^A-Z]/', '', $pax['surname'] ?? ''));
+                $firstname = strtoupper(preg_replace('/[^A-Z]/', '', $pax['firstname'] ?? ''));
+
+                $entries[] = "4-{$paxNo}FDOCS/P/{$issueCountry}/{$passNo}/{$nationality}/{$dob}/{$gender}/{$expiry}/{$surname}/{$firstname}";
+            }
+
+            // 2. DOCO (Visa)
+            // FORMAT: 4-[PAX]FDOCO//V/[VISA_NO]/[PLACE]/[DATE]/[COUNTRY] OR NA
+            if (!empty($pax['visa_number'])) {
+                $visaNo = strtoupper($pax['visa_number']);
+                $visaPlace = strtoupper($pax['visa_issue_country'] ?? 'LY');
+                $visaDate = \Carbon\Carbon::parse($pax['visa_issue_date'] ?? now())->format('dMy');
+                $visaApplies = strtoupper($pax['visa_destination_country'] ?? 'LY');
+                
+                $entries[] = "4-{$paxNo}FDOCO//V/{$visaNo}/{$visaPlace}/{$visaDate}/{$visaApplies}";
+            } else {
+                // If it's a domestic flight, you might not even need NA, but as per plan we send NA
+                $entries[] = "4-{$paxNo}FDOCO//V/NA";
+            }
+
+            // 3. Seats (RQST)
+            // FORMAT: 4-[PAX]S[SEG]FRQST[SEAT]
+            if (!empty($extras['seats'][$i])) {
+                $seatCode = strtoupper($extras['seats'][$i]);
+                // Hardcoding segment 1 for MVP single-leg trips
+                $entries[] = "4-{$paxNo}S1FRQST{$seatCode}";
             }
         }
 
@@ -413,17 +569,18 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
     /**
      * Build flight segments string.
      */
-    protected function buildFlightSegments(array $itinerary): string
+    protected function buildFlightSegments(array $itinerary, int $qty): string
     {
         $entries = [];
         foreach ($itinerary as $segment) {
-            $fltNo = $segment['flt_no'];
-            $class = $segment['class'];
-            $date = $segment['date'];
-            $origin = $segment['origin'];
-            $dest = $segment['dest'];
-            $qty = $segment['qty'] ?? 1;
-            $entries[] = "0{$this->getIataCode()}{$fltNo}{$class}{$date}{$origin}{$dest}NN{$qty}";
+            $fltNo = str_pad(preg_replace('/[^0-9]/', '', $segment['flt_no'] ?? '100'), 4, '0', STR_PAD_LEFT);
+            $class = substr($segment['class'] ?? 'Y', 0, 1);
+            $date = strtoupper(\Carbon\Carbon::parse($segment['date'] ?? now())->format('dM'));
+            $origin = strtoupper($segment['origin'] ?? 'TIP');
+            $dest = strtoupper($segment['dest'] ?? 'BEN');
+            $status = 'NN'; // Needs Need (Sell)
+            
+            $entries[] = "0{$this->getIataCode()}{$fltNo}{$class}{$date}{$origin}{$dest}{$status}{$qty}";
         }
 
         return implode('^', $entries);

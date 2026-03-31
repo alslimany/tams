@@ -28,6 +28,8 @@ export default function SearchResults({ providers, query, uuid, searchDisplayMod
     };
 
     useEffect(() => {
+        setResults([]);
+        setLoading(true);
         let completed = 0;
 
         if (!providers || providers.length === 0) {
@@ -60,7 +62,7 @@ export default function SearchResults({ providers, query, uuid, searchDisplayMod
                 }
             });
         });
-    }, []);
+    }, [uuid, providers]);
 
     // Grouping logic for "Per Flight" mode
     const groupedFlights = useMemo(() => {
@@ -104,7 +106,7 @@ export default function SearchResults({ providers, query, uuid, searchDisplayMod
                                 </div>
                                 <div>
                                     <p className="font-bold text-lg">{flight.airline_name}</p>
-                                    <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">{flight.flight_number}</p>
+                                    <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">{flight.airline_code}{flight.flight_number}</p>
                                 </div>
                             </div>
 
@@ -131,7 +133,7 @@ export default function SearchResults({ providers, query, uuid, searchDisplayMod
                                         <DialogHeader>
                                             <DialogTitle className="text-2xl font-black">Flight Information</DialogTitle>
                                             <DialogDescription className="font-medium">
-                                                Detailed itinerary for {flight.airline_name} {flight.flight_number}
+                                                Detailed itinerary for {flight.airline_name} {flight.airline_code}{flight.flight_number}
                                             </DialogDescription>
                                         </DialogHeader>
                                         <div className="grid gap-6 py-4">
@@ -273,7 +275,7 @@ export default function SearchResults({ providers, query, uuid, searchDisplayMod
                                             <div>
                                                 <p className="text-sm font-bold text-muted-foreground">Itinerary</p>
                                                 <p className="text-xl font-black">{flight.departure_airport} <ArrowRightLeft className="inline flex-shrink-0 h-4 w-4 mx-1" /> {flight.arrival_airport}</p>
-                                                <p className="text-sm font-medium">{flight.airline_name} • {flight.flight_number}</p>
+                                                <p className="text-sm font-medium">{flight.airline_name} • {flight.airline_code}{flight.flight_number}</p>
                                             </div>
                                             <div className="text-right">
                                                 <p className="text-sm font-bold text-muted-foreground">Grand Total</p>
@@ -335,7 +337,7 @@ export default function SearchResults({ providers, query, uuid, searchDisplayMod
                         </div>
                         <div>
                             <p className="text-xl font-bold">{flightGroup.airline_name.split(' (')[0]}</p>
-                            <p className="text-xs text-muted-foreground font-bold uppercase tracking-widest">{flightGroup.flight_number}</p>
+                            <p className="text-xs text-muted-foreground font-bold uppercase tracking-widest">{flightGroup.airline_code}{flightGroup.flight_number}</p>
                         </div>
                     </div>
 
@@ -350,7 +352,7 @@ export default function SearchResults({ providers, query, uuid, searchDisplayMod
                             <DialogHeader>
                                 <DialogTitle className="text-2xl font-black">Flight Information</DialogTitle>
                                 <DialogDescription className="font-medium">
-                                    Detailed itinerary for {flightGroup.airline_name.split(' (')[0]} {flightGroup.flight_number}
+                                    Detailed itinerary for {flightGroup.airline_name.split(' (')[0]} {flightGroup.airline_code}{flightGroup.flight_number}
                                 </DialogDescription>
                             </DialogHeader>
                             <div className="grid gap-6 py-4">
@@ -570,12 +572,43 @@ export default function SearchResults({ providers, query, uuid, searchDisplayMod
                             }
                         </p>
                     </div>
-                    {results.length > 0 && (
-                        <div className="flex items-center gap-2 px-4 py-2 bg-muted/30 rounded-lg border border-dashed text-sm font-medium text-muted-foreground">
-                            <Info className="h-4 w-4" />
-                            Displaying {searchDisplayMode === 'per_flight' ? 'Grouped Flights' : 'Individual Offers'}
-                        </div>
-                    )}
+                    <div className="flex flex-1 md:flex-none bg-card border rounded-xl shadow-sm overflow-hidden w-full md:w-auto mt-4 md:mt-0">
+                        {[-3, -2, -1, 0, 1, 2, 3].map(offset => {
+                            const date = new Date(query.date);
+                            date.setDate(date.getDate() + offset);
+                            const isSelected = offset === 0;
+                            const isPast = date < new Date(new Date().setHours(0, 0, 0, 0));
+
+                            // Format date for the POST payload (YYYY-MM-DD)
+                            const localDateStr = new Date(date.getTime() - (date.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
+                            const dayName = date.toLocaleDateString('en-US', { weekday: 'short' });
+                            const dayNum = date.getDate();
+                            const monthName = date.toLocaleDateString('en-US', { month: 'short' });
+
+                            if (isPast && !isSelected) {
+                                return (
+                                    <div key={offset} className="flex-1 min-w-[60px] md:min-w-[80px] py-2 border-r last:border-r-0 text-center opacity-40 cursor-not-allowed bg-muted/20">
+                                        <div className="text-[10px] font-bold uppercase text-muted-foreground">{dayName}</div>
+                                        <div className="text-sm md:text-base font-black text-muted-foreground">{monthName} {dayNum}</div>
+                                    </div>
+                                );
+                            }
+
+                            return (
+                                <Link
+                                    key={offset}
+                                    href={route('bookings.search')}
+                                    method="post"
+                                    data={{ ...query, date: localDateStr }}
+                                    as="button"
+                                    className={`flex-1 min-w-[60px] md:min-w-[80px] py-2 px-1 md:px-4 border-r last:border-r-0 text-center transition-colors focus:outline-none hover:bg-primary/5 ${isSelected ? 'bg-primary text-primary-foreground hover:bg-primary' : 'bg-transparent text-foreground'}`}
+                                >
+                                    <div className={`text-[10px] font-bold uppercase ${isSelected ? 'text-primary-foreground/80' : 'text-muted-foreground'}`}>{dayName}</div>
+                                    <div className="text-sm md:text-base font-black whitespace-nowrap">{monthName} {dayNum}</div>
+                                </Link>
+                            );
+                        })}
+                    </div>
                 </div>
 
                 <div className="space-y-6">

@@ -1,12 +1,14 @@
 import React, { useState } from 'react';
 import { Head, useForm, Link } from '@inertiajs/react';
+import axios from 'axios';
 import TenantLayout from '@/Layouts/TenantLayout';
 import { Button } from "@/Components/ui/Button";
 import { Input } from "@/Components/ui/Input";
 import { Label } from "@/Components/ui/Label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/Components/ui/Card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/Components/ui/Tabs";
-import { Plane, Users, CheckCircle2, ChevronRight, Briefcase, Utensils, Armchair, ChevronLeft } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/Components/ui/Dialog";
+import { Plane, Users, CheckCircle2, ChevronRight, Briefcase, Utensils, Armchair, ChevronLeft, Loader2 } from "lucide-react";
 
 export default function PassengerInfo({ uuid, provider_id, flight, searchParams }) {
     // Generate empty passenger forms based on search params
@@ -46,11 +48,82 @@ export default function PassengerInfo({ uuid, provider_id, flight, searchParams 
         extras: {
             bags: 0,
             meals: false,
-            seat_preference: 'Any'
+            seats: {} // e.g. { 0: '1F', 1: '1D' }
         }
     });
 
     const [activeTab, setActiveTab] = useState('contact');
+
+    // Seat Map State
+    const [isSeatMapOpen, setIsSeatMapOpen] = useState(false);
+    const [seatMapData, setSeatMapData] = useState(null);
+    const [loadingSeatMap, setLoadingSeatMap] = useState(false);
+    const [activePaxIndexForSeat, setActivePaxIndexForSeat] = useState(0);
+
+    const fetchSeatMap = async () => {
+        setIsSeatMapOpen(true);
+        if (seatMapData) return;
+        
+        setLoadingSeatMap(true);
+        try {
+            const flightCode = flight.segments?.[0]?.flight_number || flight.flight_number;
+            const flightDate = flight.segments?.[0]?.departure_time || flight.departure_time;
+            const response = await axios.post(route('bookings.seatmap'), {
+                provider_id: provider_id,
+                flight_number: flightCode,
+                date: flightDate
+            });
+            setSeatMapData(response.data);
+        } catch (error) {
+            console.error("Failed to fetch seat map", error);
+        } finally {
+            setLoadingSeatMap(false);
+        }
+    };
+
+    const handleSeatSelection = (seatCode) => {
+        const newSeats = { ...data.extras.seats };
+        
+        // Check if someone else already has this specific seat (allow deselection or swap)
+        const existingPaxIndex = Object.keys(newSeats).find(idx => newSeats[idx] === seatCode);
+        if (existingPaxIndex !== undefined) {
+            if (parseInt(existingPaxIndex) === activePaxIndexForSeat) {
+                // Deselect if already my seat
+                delete newSeats[activePaxIndexForSeat];
+            } else {
+                // Swap or error (For now just re-assigning it to currently active pax and removing from the other)
+                delete newSeats[existingPaxIndex];
+                newSeats[activePaxIndexForSeat] = seatCode;
+            }
+        } else {
+            newSeats[activePaxIndexForSeat] = seatCode;
+        }
+
+        setData('extras', { ...data.extras, seats: newSeats });
+        
+        // Auto-advance to next passenger if there are more
+        if (activePaxIndexForSeat < data.passengers.length - 1 && !newSeats[activePaxIndexForSeat + 1]) {
+            setActivePaxIndexForSeat(activePaxIndexForSeat + 1);
+        }
+    };
+
+    // Helper to generate a 2D grid from seats array
+    const generateGrid = () => {
+        if (!seatMapData || !seatMapData.grid) return [];
+        const { max_row, max_col } = seatMapData.grid;
+        
+        // max_row x max_col empty matrix
+        let grid = Array(max_row).fill(null).map(() => Array(max_col).fill(null));
+        
+        seatMapData.seats.forEach(seat => {
+            if (seat.row > 0 && seat.col > 0) {
+                // Invert columns so Col 9 is index 0 (left-most), Col 1 is max_col - 1 (right-most)
+                grid[seat.row - 1][max_col - seat.col] = seat;
+            }
+        });
+        
+        return grid;
+    };
 
     const handleCustomerChange = (field, value) => {
         setData('customer', { ...data.customer, [field]: value });
@@ -224,7 +297,7 @@ export default function PassengerInfo({ uuid, provider_id, flight, searchParams 
                                         </CardContent>
                                     </Card>
 
-                                    <Card className="col-span-full border-2 hover:border-primary/50 transition-all overflow-hidden relative group">
+                                    <Card onClick={fetchSeatMap} className="col-span-full border-2 hover:border-primary/50 transition-all overflow-hidden relative group cursor-pointer">
                                         <div className="absolute inset-0 bg-muted/50 z-10 flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity backdrop-blur-[1px]">
                                             <Button variant="secondary" className="shadow-lg font-bold">Select Seats (Opens Map)</Button>
                                         </div>
@@ -234,8 +307,18 @@ export default function PassengerInfo({ uuid, provider_id, flight, searchParams 
                                             </div>
                                             <div>
                                                 <h3 className="font-bold text-lg mb-1">Seat Selection</h3>
-                                                <p className="text-sm text-muted-foreground mb-1">Standard auto-assignment applied.</p>
-                                                <p className="font-black text-muted-foreground">Free</p>
+                                                <p className="text-sm text-muted-foreground mb-1">
+                                                    {Object.keys(data.extras.seats).length > 0 
+                                                        ? `${Object.keys(data.extras.seats).length} Seats Selected` 
+                                                        : 'Standard auto-assignment applied.'}
+                                                </p>
+                                                <div className="flex gap-2 mt-2">
+                                                    {Object.entries(data.extras.seats).map(([idx, code]) => (
+                                                        <span key={idx} className="bg-primary/10 text-primary text-xs font-bold px-2 py-1 rounded">
+                                                            Pax {parseInt(idx) + 1}: {code}
+                                                        </span>
+                                                    ))}
+                                                </div>
                                             </div>
                                         </CardContent>
                                     </Card>
@@ -325,6 +408,162 @@ export default function PassengerInfo({ uuid, provider_id, flight, searchParams 
                 </div>
                 
             </div>
+
+            <Dialog open={isSeatMapOpen} onOpenChange={setIsSeatMapOpen}>
+                <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+                    <DialogHeader>
+                        <DialogTitle>Select Your Seats</DialogTitle>
+                        <DialogDescription>
+                            Select seats for each passenger on flight {flight.flight_number}.
+                        </DialogDescription>
+                    </DialogHeader>
+
+                    {loadingSeatMap ? (
+                        <div className="py-20 flex flex-col items-center justify-center space-y-4">
+                            <Loader2 className="w-10 h-10 animate-spin text-primary" />
+                            <p className="font-medium text-muted-foreground">Loading interactive seat map from airline...</p>
+                        </div>
+                    ) : !seatMapData ? (
+                        <div className="py-10 text-center text-muted-foreground">
+                            Could not load seat map.
+                        </div>
+                    ) : (
+                        <div className="flex flex-col lg:flex-row gap-8 mt-4">
+                            {/* Plane Grid Wrapper */}
+                            <div className="flex-1 overflow-x-auto flex justify-center pb-8">
+                                <div className="flex flex-col gap-1 md:gap-2">
+                                    {generateGrid().map((rowArray, rowIndex) => (
+                                        <div key={`row-${rowIndex}`} className="flex justify-center gap-1 md:gap-2 items-center min-w-max">
+                                            {rowArray.map((seat, colIndex) => {
+                                                if (!seat) return <div key={`empty-${rowIndex}-${colIndex}`} className="w-8 h-8 opacity-0"></div>;
+                                                
+                                                // Handle structural columns or non-seats
+                                                const desc = seat.description || '';
+                                                const isTextHeader = desc.length === 1 && /[A-Z]/.test(desc);
+                                                
+                                                if (isTextHeader) {
+                                                    return (
+                                                        <div key={`header-${rowIndex}-${colIndex}`} className="w-10 md:w-11 text-center font-bold text-slate-500 pb-2">
+                                                            {desc}
+                                                        </div>
+                                                    );
+                                                }
+
+                                                if (seat.is_aisle || desc.includes('WidthMarker') || desc.includes('Door') || desc.includes('Wing')) {
+                                                    // Render aisle or empty spacing
+                                                    return <div key={`spacer-${rowIndex}-${colIndex}`} className="w-6 h-8 text-transparent select-none">.</div>;
+                                                }
+
+                                                // Determine booked cabin class of the passenger (Fallback to Economy 'Y' if not found)
+                                                const bookedCabin = flight.pricing?.cabin_type || (flight.segments && flight.segments[0]?.cabin_type) || 'Y';
+                                                
+                                                const isOccupied = seat.is_occupied;
+                                                const isWrongCabin = seat.cabinType && seat.cabinType !== bookedCabin;
+                                                const isSelectedByMe = Object.values(data.extras.seats).includes(seat.code);
+                                                const paxIndexFound = Object.keys(data.extras.seats).find(k => data.extras.seats[k] === seat.code);
+                                                const paxNumberAssigned = paxIndexFound ? parseInt(paxIndexFound) + 1 : null;
+                                                
+                                                const isEmergency = desc === 'EmergencySeat';
+                                                
+                                                // Check infant rule
+                                                const activePax = data.passengers[activePaxIndexForSeat];
+                                                const isInfant = activePax?.type === 'infant';
+                                                const disableForInfant = seat.no_infant && isInfant;
+
+                                                const isDisabled = isOccupied || disableForInfant || isWrongCabin;
+                                                
+                                                // Determine styles based on state
+                                                let buttonClasses = 'bg-white border-slate-300 hover:border-primary text-slate-700 hover:shadow-sm';
+                                                
+                                                if (isSelectedByMe) {
+                                                    buttonClasses = 'bg-primary border-primary text-primary-foreground shadow-md scale-105 z-10';
+                                                } else if (isDisabled && isWrongCabin) {
+                                                    buttonClasses = 'bg-red-50/50 border-red-200 text-red-300 cursor-not-allowed opacity-50';
+                                                } else if (isDisabled) {
+                                                    buttonClasses = 'bg-slate-200 border-slate-300 text-slate-400 cursor-not-allowed opacity-60 bg-[url("data:image/svg+xml,%3Csvg width=\'6\' height=\'6\' viewBox=\'0 0 6 6\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cg fill=\'%23cbd5e1\' fill-opacity=\'1\' fill-rule=\'evenodd\'%3E%3Cpath d=\'M5 0h1L0 6V5zM6 5v1H5z\'/%3E%3C/g%3E%3C/svg%3E")]';
+                                                } else if (isEmergency) {
+                                                    buttonClasses = 'bg-orange-50 border-orange-300 hover:border-orange-500 text-orange-800 hover:shadow-sm';
+                                                }
+                                                
+                                                // Generate title
+                                                let tooltipTitle = `${seat.code} - ${desc || seat.cabinType + ' Class'}`;
+                                                if (disableForInfant) tooltipTitle += ' (No Infants Allowed)';
+                                                if (isWrongCabin) tooltipTitle += ` (Not applicable for your booked ${bookedCabin} Class)`;
+
+                                                return (
+                                                    <button
+                                                        key={`seat-${rowIndex}-${colIndex}-${seat.code}`}
+                                                        disabled={isDisabled}
+                                                        onClick={() => handleSeatSelection(seat.code)}
+                                                        className={`w-10 h-10 md:w-11 md:h-12 rounded-t-lg rounded-b-sm border-2 flex flex-col items-center justify-center transition-all focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-primary ${buttonClasses}`}
+                                                        title={tooltipTitle}
+                                                    >
+                                                        {isSelectedByMe && <span className="text-[10px] font-black tracking-tight leading-none opacity-80 mb-0.5">P{paxNumberAssigned}</span>}
+                                                        <span className={`text-xs font-bold leading-none ${isSelectedByMe ? 'text-white' : ''}`}>{seat.code}</span>
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                            
+                            {/* Passenger Selector Sidebar */}
+                            <div className="w-full lg:w-1/3 flex flex-col gap-4">
+                                <h4 className="font-bold text-lg mb-2 border-b pb-2">Assign Passengers</h4>
+                                <div className="flex flex-col gap-2">
+                                    {data.passengers.map((pax, idx) => {
+                                        const assignedSeat = data.extras.seats[idx];
+                                        const isActive = activePaxIndexForSeat === idx;
+                                        return (
+                                            <button
+                                                key={idx}
+                                                type="button"
+                                                onClick={() => setActivePaxIndexForSeat(idx)}
+                                                className={`flex items-center justify-between p-3 rounded-xl border-2 transition-alltext-left ${
+                                                    isActive 
+                                                        ? 'border-primary bg-primary/5 shadow-sm ring-1 ring-primary' 
+                                                        : 'border-transparent hover:bg-muted'
+                                                }`}
+                                            >
+                                                <div className="flex items-center gap-3">
+                                                    <span className={`flex items-center justify-center w-8 h-8 rounded-full font-bold text-sm ${isActive ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}>
+                                                        {idx + 1}
+                                                    </span>
+                                                    <div>
+                                                        <div className={`font-bold text-sm ${isActive ? 'text-primary' : ''}`}>
+                                                            {pax.first_name || `Passenger ${idx + 1}`}
+                                                        </div>
+                                                        <div className="text-xs text-muted-foreground capitalize">{pax.type}</div>
+                                                    </div>
+                                                </div>
+                                                <div className={`font-mono font-bold text-base bg-white border px-2 py-1 rounded shadow-sm ${assignedSeat ? 'text-emerald-600 border-emerald-200' : 'text-slate-300'}`}>
+                                                    {assignedSeat || '---'}
+                                                </div>
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+
+                                <div className="mt-8 p-4 bg-muted/50 rounded-xl space-y-3">
+                                    <h5 className="font-bold text-sm">Key</h5>
+                                    <div className="flex items-center gap-2 text-sm"><div className="w-4 h-4 rounded-t bg-white border-2 border-slate-300"></div> Available</div>
+                                    <div className="flex items-center gap-2 text-sm"><div className="w-4 h-4 rounded-t bg-orange-50 border-2 border-orange-300"></div> Emergency Exit Row (No Infants)</div>
+                                    <div className="flex items-center gap-2 text-sm"><div className="w-4 h-4 rounded-t bg-slate-200 border-2 border-slate-300"></div> Unavailable</div>
+                                    <div className="flex items-center gap-2 text-sm"><div className="w-4 h-4 rounded-t bg-primary border-2 border-primary"></div> Selected</div>
+                                </div>
+
+                                <div className="mt-auto pt-6 flex justify-end">
+                                    <Button onClick={() => setIsSeatMapOpen(false)} size="lg" className="w-full rounded-full font-bold">
+                                        Done Selecting
+                                    </Button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </DialogContent>
+            </Dialog>
+
         </TenantLayout>
     );
 }

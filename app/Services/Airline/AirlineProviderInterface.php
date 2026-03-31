@@ -43,11 +43,9 @@ interface AirlineProviderInterface
      *
      * @param string $fltNo
      * @param string $date
-     * @param string $origin
-     * @param string $destination
      * @return mixed
      */
-    public function getSeatMap(string $fltNo, string $date, string $origin, string $destination);
+    public function getSeatMap(string $fltNo, string $date);
 
     /**
      * Select a seat for a passenger.

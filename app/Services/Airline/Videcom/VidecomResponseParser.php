@@ -75,6 +75,7 @@ class VidecomResponseParser
                                     'brand_name' => $bandInfo['name'],
                                     'brand_details' => $bandInfo['details'],
                                     'class_code' => $classCode,
+                                    'cabin_type' => $bandInfo['cabin'] ?? 'Y',
                                 ];
 
                                 $options[] = new FlightOption(
@@ -95,6 +96,7 @@ class VidecomResponseParser
                                             'arrival_time' => $arrivalTime,
                                             'aircraft' => $eqp,
                                             'class' => $classCode,
+                                            'cabin_type' => $bandInfo['cabin'] ?? 'Y',
                                             'duration' => $duration,
                                         ],
                                     ],

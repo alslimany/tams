@@ -53,6 +53,7 @@ Route::middleware([
         Route::post('bookings/search', [BookingController::class, 'search'])->name('bookings.search');
         Route::match(['get', 'post'], 'bookings/results/{uuid}', [BookingController::class, 'results'])->name('bookings.results');
         Route::post('bookings/fetch-flights', [BookingController::class, 'fetchFlights'])->name('bookings.fetch-flights');
+        Route::post('bookings/seatmap', [BookingController::class, 'seatmap'])->name('bookings.seatmap');
         Route::post('bookings/select', [BookingController::class, 'select'])->name('bookings.select');
         Route::post('bookings', [BookingController::class, 'store'])->name('bookings.store');
         Route::get('bookings/{booking}', [BookingController::class, 'show'])->name('bookings.show');
