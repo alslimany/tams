@@ -22,9 +22,13 @@ export default function Welcome() {
                         <Link href="/register-agency">Register your Agency</Link>
                     </Button>
                     <Button asChild variant="outline" size="lg">
-                        <Link href="/login">Login</Link>
+                        <Link href={route('landlord.login')}>Landlord Login</Link>
                     </Button>
                 </div>
+
+                <p className="text-sm text-muted-foreground">
+                    Tenant users sign in from their agency subdomain. Platform admins sign in through the landlord console.
+                </p>
             </div>
         </LandlordLayout>
     );

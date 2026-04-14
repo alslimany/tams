@@ -4,14 +4,20 @@ import { Button } from '@/Components/ui/Button';
 import { Toaster } from "sonner";
 
 export default function TenantLayout({ children }) {
-    const { auth } = usePage().props;
+    const { auth, tenant } = usePage().props;
+    const canManageTickets = auth.user?.role === 'admin' || auth.user?.role === 'manager';
 
     return (
         <div className="min-h-screen bg-background text-foreground flex">
             {/* Sidebar */}
             <aside className="w-64 border-r bg-card flex flex-col">
                 <div className="p-6 border-b flex items-center justify-between">
-                    <Link href={route('dashboard')} className="text-xl font-bold tracking-tight">TAMS Agency</Link>
+                    <div>
+                        <Link href={route('dashboard')} className="text-xl font-bold tracking-tight">{tenant?.companyName || 'TAMS Agency'}</Link>
+                        {tenant?.status && (
+                            <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground mt-1">{tenant.status}</p>
+                        )}
+                    </div>
                 </div>
 
                 <nav className="flex-1 p-4 space-y-2">
@@ -21,9 +27,11 @@ export default function TenantLayout({ children }) {
                     <Link href={route('bookings.index')} className="block px-4 py-2 text-sm font-medium rounded-md hover:bg-accent hover:text-accent-foreground transition-colors">
                         Bookings
                     </Link>
-                    <Link href="/providers" className="block px-4 py-2 text-sm font-medium rounded-md hover:bg-accent hover:text-accent-foreground transition-colors">
-                        Providers
-                    </Link>
+                    {canManageTickets && (
+                        <div className="px-4 py-1 text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                            Ticketing enabled
+                        </div>
+                    )}
                     {auth.user?.role === 'admin' && (
                         <>
                             <Link href={route('users.index')} className="block px-4 py-2 text-sm font-medium rounded-md hover:bg-accent hover:text-accent-foreground transition-colors">
@@ -55,9 +63,8 @@ export default function TenantLayout({ children }) {
             {/* Main Content */}
             <div className="flex-1 flex flex-col">
                 <header className="h-16 border-b bg-card px-8 flex items-center justify-between">
-                    <h2 className="text-lg font-semibold">Dashboard</h2>
+                    <h2 className="text-lg font-semibold">Agency Workspace</h2>
                     <div className="flex items-center gap-4">
-                        <Button variant="ghost" size="sm">Settings</Button>
                         <Link href="/logout" method="post" as="button" className="text-sm font-medium text-muted-foreground hover:text-primary">
                             Logout
                         </Link>

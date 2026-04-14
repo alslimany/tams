@@ -114,20 +114,23 @@ class AirlineConfigController extends Controller
             $configs = $configuredAirlines->get($airline['id'], collect());
 
             $airline['accounts'] = collect($airline['accounts'])->map(function ($account) use ($configs, $airline) {
-                    $existing = $configs->firstWhere('account_name', $account['name']);
+                $existing = $configs->firstWhere('account_name', $account['name']);
 
-                    return array_merge($account, [
+                return array_merge($account, [
                     'is_enabled' => $existing ? $existing->is_active : false,
                     'config_id' => $existing ? $existing->id : null,
                     'credentials' => $existing ? $existing->credentials : null,
+                    'last_tested_at' => $existing ? $existing->last_tested_at : null,
+                    'last_test_status' => $existing ? $existing->last_test_status : null,
+                    'last_test_message' => $existing ? $existing->last_test_message : null,
                     'airline_code' => $airline['id'],
                     'provider_type' => $airline['provider_type'],
-                    ]);
-                }
-                );
+                ]);
+            }
+            );
 
-                return $airline;
-            });
+            return $airline;
+        });
 
         return Inertia::render('Tenant/Settings/AirConfig/Index', [
             'airlines' => $airlines,
@@ -161,22 +164,24 @@ class AirlineConfigController extends Controller
         if ($validated['mode'] === 'session') {
             $credentials['username'] = $validated['username'];
             $credentials['password'] = $validated['password'];
-        }
-        else {
+        } else {
             $credentials['token'] = $validated['token'];
         }
 
         $provider = TenantProvider::updateOrCreate(
-        [
-            'provider_type' => $validated['provider_type'],
-            'airline_code' => $validated['airline_code'],
-            'account_name' => $validated['account_name'],
-        ],
-        [
-            'airline_name' => $validated['airline_name'],
-            'credentials' => $credentials,
-            'is_active' => true,
-        ]
+            [
+                'provider_type' => $validated['provider_type'],
+                'airline_code' => $validated['airline_code'],
+                'account_name' => $validated['account_name'],
+            ],
+            [
+                'airline_name' => $validated['airline_name'],
+                'credentials' => $credentials,
+                'is_active' => true,
+                'last_tested_at' => now(),
+                'last_test_status' => 'configured',
+                'last_test_message' => 'Credentials saved and awaiting verification.',
+            ]
         );
 
         return back()->with('success', "{$validated['airline_name']} ({$validated['account_name']}) configured successfully.");
@@ -187,6 +192,7 @@ class AirlineConfigController extends Controller
         $validated = $request->validate([
             'provider_type' => 'required|string',
             'airline_code' => 'required|string',
+            'account_name' => 'nullable|string',
             'mode' => 'required|in:soap,session',
             'username' => 'required_if:mode,session|nullable|string',
             'password' => 'required_if:mode,session|nullable|string',
@@ -207,8 +213,7 @@ class AirlineConfigController extends Controller
         if ($validated['mode'] === 'session') {
             $credentials['username'] = $validated['username'];
             $credentials['password'] = $validated['password'];
-        }
-        else {
+        } else {
             $credentials['token'] = $validated['token'];
         }
 
@@ -223,17 +228,44 @@ class AirlineConfigController extends Controller
             $provider = ProviderFactory::make($tempConfig);
             $provider->testConnection();
 
+            $existing = TenantProvider::query()
+                ->where('provider_type', $validated['provider_type'])
+                ->where('airline_code', $validated['airline_code'])
+                ->where('account_name', $request->string('account_name'))
+                ->first();
+
+            if ($existing) {
+                $existing->update([
+                    'last_tested_at' => now(),
+                    'last_test_status' => 'passed',
+                    'last_test_message' => 'Connection successful.',
+                ]);
+            }
+
             return response()->json(['success' => true, 'message' => 'Connection successful!']);
-        }
-        catch (Exception $e) {
+        } catch (Exception $e) {
+            $existing = TenantProvider::query()
+                ->where('provider_type', $validated['provider_type'])
+                ->where('airline_code', $validated['airline_code'])
+                ->where('account_name', $request->string('account_name'))
+                ->first();
+
+            if ($existing) {
+                $existing->update([
+                    'last_tested_at' => now(),
+                    'last_test_status' => 'failed',
+                    'last_test_message' => $e->getMessage(),
+                ]);
+            }
+
             return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
         }
     }
 
     public function toggle(TenantProvider $provider)
     {
-        $provider->update(['is_active' => !$provider->is_active]);
+        $provider->update(['is_active' => ! $provider->is_active]);
 
-        return back()->with('success', $provider->airline_name . ' ' . ($provider->is_active ? 'enabled' : 'disabled'));
+        return back()->with('success', $provider->airline_name.' '.($provider->is_active ? 'enabled' : 'disabled'));
     }
 }

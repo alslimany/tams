@@ -1,14 +1,16 @@
 import React from 'react';
-import { Head, useForm } from '@inertiajs/react';
+import { Head, Link, router, useForm } from '@inertiajs/react';
 import TenantLayout from '@/Layouts/TenantLayout';
 import { Button } from "@/Components/ui/Button";
 import { Input } from "@/Components/ui/Input";
 import { Label } from "@/Components/ui/Label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/Components/ui/Card";
-import { Plane, Calendar, Users, ArrowRightLeft } from "lucide-react";
+import { Badge } from "@/Components/ui/Badge";
+import { Plane, Calendar, Users } from "lucide-react";
 import { AsyncAirportSelect } from "@/Components/ui/AsyncAirportSelect";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/Components/ui/Table';
 
-export default function Search({ searchDisplayMode }) {
+export default function Search({ searchDisplayMode, bookings, filters, airlines }) {
     const { data, setData, post, processing, errors } = useForm({
         origin: '',
         destination: '',
@@ -32,11 +34,19 @@ export default function Search({ searchDisplayMode }) {
         }
     };
 
+    const filterBookings = (event) => {
+        event.preventDefault();
+
+        const formData = new FormData(event.currentTarget);
+        const query = Object.fromEntries(Array.from(formData.entries()).filter(([, value]) => value));
+        router.get(route('bookings.index'), query, { preserveState: true, preserveScroll: true });
+    };
+
     return (
         <TenantLayout>
             <Head title="Search Flights" />
 
-            <div className="max-w-4xl mx-auto py-8">
+            <div className="max-w-6xl mx-auto py-8 space-y-8">
                 <div className="mb-8">
                     <h2 className="text-3xl font-bold tracking-tight">Search Flights</h2>
                     <p className="text-muted-foreground">Find the best flight options across all your providers.</p>
@@ -168,6 +178,93 @@ export default function Search({ searchDisplayMode }) {
                                 </Button>
                             </div>
                         </form>
+                    </CardContent>
+                </Card>
+
+                <Card>
+                    <CardHeader>
+                        <CardTitle>Booking Management</CardTitle>
+                        <CardDescription>Search, review, and continue work on existing bookings.</CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-6">
+                        <form onSubmit={filterBookings} className="grid gap-4 md:grid-cols-4">
+                            <div className="space-y-2">
+                                <Label htmlFor="pnr">PNR</Label>
+                                <Input id="pnr" name="pnr" defaultValue={filters?.pnr || ''} />
+                            </div>
+                            <div className="space-y-2">
+                                <Label htmlFor="customer">Customer</Label>
+                                <Input id="customer" name="customer" defaultValue={filters?.customer || ''} />
+                            </div>
+                            <div className="space-y-2">
+                                <Label htmlFor="status">Status</Label>
+                                <select id="status" name="status" defaultValue={filters?.status || ''} className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm">
+                                    <option value="">All statuses</option>
+                                    <option value="confirmed">Confirmed</option>
+                                    <option value="ticketed">Ticketed</option>
+                                    <option value="cancelled">Cancelled</option>
+                                    <option value="refunded">Refunded</option>
+                                </select>
+                            </div>
+                            <div className="space-y-2">
+                                <Label htmlFor="airline">Airline</Label>
+                                <select id="airline" name="airline" defaultValue={filters?.airline || ''} className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm">
+                                    <option value="">All airlines</option>
+                                    {airlines.map((airline) => (
+                                        <option key={airline.airline_code} value={airline.airline_code}>{airline.airline_name}</option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div className="md:col-span-4 flex justify-end">
+                                <Button type="submit" variant="outline">Apply filters</Button>
+                            </div>
+                        </form>
+
+                        <div className="rounded-md border">
+                            <Table>
+                                <TableHeader>
+                                    <TableRow>
+                                        <TableHead>PNR</TableHead>
+                                        <TableHead>Customer</TableHead>
+                                        <TableHead>Airline</TableHead>
+                                        <TableHead>Status</TableHead>
+                                        <TableHead>Total</TableHead>
+                                        <TableHead className="text-right">Action</TableHead>
+                                    </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                    {bookings.length === 0 ? (
+                                        <TableRow>
+                                            <TableCell colSpan={6} className="text-center text-muted-foreground">
+                                                No bookings found for the current filters.
+                                            </TableCell>
+                                        </TableRow>
+                                    ) : bookings.map((booking) => (
+                                        <TableRow key={booking.id}>
+                                            <TableCell className="font-semibold">{booking.pnr}</TableCell>
+                                            <TableCell>
+                                                <div>
+                                                    <p>{booking.customer?.first_name} {booking.customer?.last_name}</p>
+                                                    <p className="text-xs text-muted-foreground">{booking.customer?.email}</p>
+                                                </div>
+                                            </TableCell>
+                                            <TableCell>{booking.provider?.airline_name}</TableCell>
+                                            <TableCell>
+                                                <Badge variant={booking.status === 'ticketed' ? 'success' : booking.status === 'refunded' ? 'destructive' : 'secondary'}>
+                                                    {booking.status}
+                                                </Badge>
+                                            </TableCell>
+                                            <TableCell>{booking.total_price} {booking.currency}</TableCell>
+                                            <TableCell className="text-right">
+                                                <Button asChild size="sm" variant="ghost">
+                                                    <Link href={route('bookings.show', booking.id)}>Open</Link>
+                                                </Button>
+                                            </TableCell>
+                                        </TableRow>
+                                    ))}
+                                </TableBody>
+                            </Table>
+                        </div>
                     </CardContent>
                 </Card>
             </div>

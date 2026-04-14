@@ -21,10 +21,16 @@ class TrackUserActivity
             return $next($request);
         }
 
-        if ($request->user()) {
-            $request->user()->update([
+        if (auth('web')->check()) {
+            auth('web')->user()->update([
                 'last_activity_at' => now(),
             ]);
+
+            if (function_exists('tenant') && tenant()) {
+                tenant()->update([
+                    'last_activity_at' => now(),
+                ]);
+            }
         }
 
         return $next($request);

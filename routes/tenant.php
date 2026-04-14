@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 use App\Http\Controllers\Tenant\AirlineConfigController;
 use App\Http\Controllers\Tenant\BookingController;
+use App\Http\Controllers\Tenant\DashboardController;
+use App\Http\Controllers\Tenant\TicketController;
 use App\Http\Controllers\Tenant\UserController;
 use Illuminate\Support\Facades\Route;
 use Laravel\Sanctum\Http\Controllers\CsrfCookieController;
@@ -40,11 +42,8 @@ Route::middleware([
     }
     )->name('home');
 
-    Route::middleware(['auth'])->group(function () {
-        Route::get('dashboard', function () {
-            return inertia('Tenant/Dashboard');
-        }
-        )->name('dashboard');
+    Route::middleware(['auth', 'tenant.status'])->group(function () {
+        Route::get('dashboard', DashboardController::class)->name('dashboard');
 
         // Flight Bookings
         Route::get('api/airports/search', [\App\Http\Controllers\AirportController::class, 'search'])->name('api.airports.search');
@@ -57,6 +56,11 @@ Route::middleware([
         Route::post('bookings/select', [BookingController::class, 'select'])->name('bookings.select');
         Route::post('bookings', [BookingController::class, 'store'])->name('bookings.store');
         Route::get('bookings/{booking}', [BookingController::class, 'show'])->name('bookings.show');
+        Route::middleware('role:manager')->group(function () {
+            Route::post('bookings/{booking}/tickets/issue', [TicketController::class, 'issue'])->name('tickets.issue');
+            Route::post('bookings/{booking}/tickets/{ticket}/void', [TicketController::class, 'void'])->name('tickets.void');
+            Route::post('bookings/{booking}/tickets/{ticket}/refund', [TicketController::class, 'refund'])->name('tickets.refund');
+        });
 
         // User Management (Admin Only)
         Route::middleware('role:admin')->group(function () {

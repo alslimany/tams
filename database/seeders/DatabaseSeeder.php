@@ -2,9 +2,9 @@
 
 namespace Database\Seeders;
 
-use App\Models\User;
-// use Illuminate\Database\Console\Seeds\WithoutModelEvents;
+use App\Models\LandlordUser;
 use Illuminate\Database\Seeder;
+use Illuminate\Support\Facades\Hash;
 
 class DatabaseSeeder extends Seeder
 {
@@ -13,11 +13,17 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
-        // User::factory(10)->create();
+        $email = config('landlord.default_admin.email');
+        $password = config('landlord.default_admin.password');
 
-        User::factory()->create([
-            'name' => 'Test User',
-            'email' => 'test@example.com',
-        ]);
+        if ($email && $password) {
+            LandlordUser::updateOrCreate(
+                ['email' => $email],
+                [
+                    'name' => config('landlord.default_admin.name'),
+                    'password' => Hash::make($password),
+                ]
+            );
+        }
     }
 }

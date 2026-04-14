@@ -65,6 +65,11 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
         return $this->config['currency'] ?? 'USD';
     }
 
+    public function getAncillaryCatalog(array $flight = [], array $searchParams = []): array
+    {
+        return VidecomAncillaryCatalog::forAirline($this->getIataCode(), $this->config);
+    }
+
     /**
      * Search for flight availability.
      */
@@ -259,16 +264,16 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
 
         $flightEntries = [];
         foreach ($itinerary as $segment) {
-            $fltNo = $segment['flt_no'];
-            $class = $segment['class'];
-            $date = $segment['date'];
-            $origin = $segment['origin'];
-            $dest = $segment['dest'];
+            $fltNo = str_pad(preg_replace('/[^0-9]/', '', $segment['flt_no'] ?? '100'), 4, '0', STR_PAD_LEFT);
+            $class = substr($segment['class'] ?? 'Y', 0, 1);
+            $date = strtoupper(\Carbon\Carbon::parse($segment['date'] ?? now())->format('dM'));
+            $origin = strtoupper($segment['origin'] ?? 'TIP');
+            $dest = strtoupper($segment['dest'] ?? 'BEN');
             $status = 'QQ'; // Quote Only
             $flightEntries[] = "0{$this->getIataCode()}{$fltNo}{$class}{$date}{$origin}{$dest}{$status}{$paxCount}";
         }
 
-        $command = "i^{$paxEntry}^".implode('^', $flightEntries).'^FG^*r~x';
+        $command = "I^{$paxEntry}^".implode('^', $flightEntries).'^FG^*r~x';
 
         $response = $this->client->runCommand($command);
 
@@ -285,19 +290,33 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
         $contactInfo = $this->buildContactInfo($params['contact'] ?? [], count($passengers));
         $flightSegments = $this->buildFlightSegments($params['itinerary'] ?? [], count($passengers));
         $apfaxInfo = $this->buildApfaxInfo($passengers, $params['extras'] ?? []);
-        $timeLimit = '8/1800/' . now()->addDays(2)->format('dM'); // Default fallback TTL if none provided
+        $ancillaryInfo = $this->buildAncillaryCommands($params['extras'] ?? [], $passengers, $params['itinerary'] ?? []);
+        $timeLimit = $this->buildTimeLimitCommand();
+
+        // Add standard pricing/agency info from example
+        $agencyInfo = 'FG^FS1^MI-ABC TOURS01012';
 
         $commands = array_filter([
             $paxInfo,
             $contactInfo,
             $flightSegments,
             $apfaxInfo,
+            $ancillaryInfo,
+            $agencyInfo,
             $timeLimit,
-            'E' // End PNR
+            'EZT*R', // End and Ticket (from example)
+            'EZRE',  // End and Receive (from example)
         ]);
 
-        $commandString = implode('^', $commands) . '^*R~x';
+        $commandString = 'I^' . implode('^', $commands) . '^*R~x';
         $response = $this->client->runCommand($commandString);
+
+        return $this->parseXml($response);
+    }
+
+    public function retrieveBooking(string $rloc)
+    {
+        $response = $this->client->runCommand("*{$rloc}~x");
 
         return $this->parseXml($response);
     }
@@ -320,7 +339,7 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
     {
         $fltNo = str_pad(preg_replace('/[^0-9]/', '', $fltNo), 4, '0', STR_PAD_LEFT);
         $formattedDate = strtoupper(\Carbon\Carbon::parse($date)->format('dM'));
-        
+
         // Use LS command for XML details (e.g. LSYL0102/03APR~X)
         $command = "LS{$this->getIataCode()}{$fltNo}/{$formattedDate}~X";
         $response = $this->client->runCommand($command);
@@ -338,7 +357,7 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
             foreach ($xml->CabinCount->Cabin as $cabin) {
                 $cabins[] = [
                     'class' => (string) $cabin['CabinClass'],
-                    'seats' => (int) $cabin['Seats']
+                    'seats' => (int) $cabin['Seats'],
                 ];
             }
         }
@@ -356,7 +375,7 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
 
             // Is the seat currently occupied or blocked?
             $seatId = (int) ($seat['SeatID'] ?? 0);
-            $isOccupied = $seatId > 0 || !empty((string) $seat['Status']) || !empty((string) $seat['RLOC']);
+            $isOccupied = $seatId > 0 || ! empty((string) $seat['Status']) || ! empty((string) $seat['RLOC']);
             $isBlocked = ((string) $seat['CellDescription']) === 'Block Seat';
             $isAisle = ((string) $seat['CellDescription']) === 'Aisle' || str_contains((string) $seat['CellDescription'], 'WidthMarker');
 
@@ -371,14 +390,14 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
                 'prm' => ((string) $seat['PRMSeat']) === 'True',
                 'is_occupied' => $isOccupied || $isBlocked,
                 'is_aisle' => $isAisle,
-                'price' => (float) ($seat['scprice'] ?? 0)
+                'price' => (float) ($seat['scprice'] ?? 0),
             ];
         }
 
         return [
             'grid' => [
                 'max_row' => $maxRow,
-                'max_col' => $maxCol
+                'max_col' => $maxCol,
             ],
             'cabins' => $cabins,
             'seats' => $seatMap,
@@ -449,8 +468,8 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
     {
         $entries = [];
         foreach ($passengers as $i => $pax) {
-            $surname = strtoupper($pax['surname'] ?? 'TEST');
-            $firstname = strtoupper($pax['firstname'] ?? 'PAX');
+            $surname = strtoupper(preg_replace('/[^A-Z]/', '', $pax['last_name'] ?? $pax['surname'] ?? 'TEST'));
+            $firstname = strtoupper(preg_replace('/[^A-Z]/', '', $pax['first_name'] ?? $pax['firstname'] ?? 'PAX'));
             $title = strtoupper($pax['title'] ?? 'MR');
             $entries[] = "-1{$surname}/{$firstname}{$title}";
         }
@@ -468,21 +487,21 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
             $paxNo = $i + 1; // Used for pax index mapping
             $type = strtoupper($pax['type'] ?? 'ADULT');
             $title = strtoupper($pax['title'] ?? 'MR');
-            $surname = strtoupper(preg_replace('/[^A-Z]/', '', $pax['surname'] ?? ''));
-            $firstname = strtoupper(preg_replace('/[^A-Z]/', '', $pax['firstname'] ?? ''));
-            
+            $surname = strtoupper(preg_replace('/[^A-Z]/', '', $pax['last_name'] ?? $pax['surname'] ?? 'TEST'));
+            $firstname = strtoupper(preg_replace('/[^A-Z]/', '', $pax['first_name'] ?? $pax['firstname'] ?? 'PAX'));
+
             // Format: -1LASTNAME/FIRSTNAME TITLE
             $entry = "-1{$surname}/{$firstname}{$title}";
-            
+
             // Append PTC and Age if child or infant
             if ($type === 'CHILD') {
-                $age = str_pad((string)($pax['age'] ?? 9), 2, '0', STR_PAD_LEFT);
+                $age = str_pad((string) ($pax['age'] ?? 9), 2, '0', STR_PAD_LEFT);
                 $entry .= ".CH{$age}";
             } elseif ($type === 'INFANT') {
-                $ageMonths = str_pad((string)($pax['age_months'] ?? 6), 2, '0', STR_PAD_LEFT);
+                $ageMonths = str_pad((string) ($pax['age_months'] ?? 6), 2, '0', STR_PAD_LEFT);
                 $entry .= ".IN{$ageMonths}";
             }
-            
+
             $entries[] = $entry;
         }
 
@@ -498,18 +517,19 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
         $email = $contact['email'] ?? null;
         $phone = $contact['phone'] ?? null;
 
-        if ($email) {
-            $entries[] = "9E*{$email}";
-        }
         if ($phone) {
-            $entries[] = "9H*{$phone}";
-            // Fallback mobile to Business if preferred
-            $entries[] = "9B*{$phone}";
+            // Format: 9-1M*[phone] (from example)
+            $entries[] = "9-1M*{$phone}";
         }
-        
+
+        if ($email) {
+            // Format: 9-1E*[email] (from example)
+            $entries[] = "9-1E*{$email}";
+        }
+
         // Ensure at least one contact exists, else dummy
         if (empty($entries) && $paxCount > 0) {
-            $entries[] = "9T*TRAVEL AGENCY";
+            $entries[] = '9-1T*TRAVEL AGENCY';
         }
 
         return implode('^', $entries);
@@ -521,49 +541,95 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
     protected function buildApfaxInfo(array $passengers, array $extras): string
     {
         $entries = [];
-        
+        $seatSelections = $extras['seats'] ?? [];
+
         foreach ($passengers as $i => $pax) {
             $paxNo = $i + 1;
 
             // 1. DOCS (Passport)
-            // FORMAT: 4-[PAX]FDOCS/P/[ISSUE_COUNTRY]/[PASSPORT]/[NATIONALITY]/[DOB]/[GENDER]/[EXPIRY]/[SURNAME]/[FIRSTNAME]
-            if (!empty($pax['passport_number'])) {
-                $issueCountry = strtoupper($pax['passport_issue_country'] ?? 'LY');
-                $nationality = strtoupper($pax['nationality'] ?? 'LY');
+            // FORMAT: 4-[PAX]FDOCS/P/[ISSUE_COUNTRY]/[PASSPORT]/[NATIONALITY]/[DOB]/[GENDER]/[EXPIRY]/[SURNAME]/[FIRSTNAME]/
+            if (! empty($pax['passport_number'])) {
+                $issueCountry = strtoupper($pax['passport_issue_country'] ?? 'LBY');
+                $nationality = strtoupper($pax['nationality'] ?? 'LBY');
                 $passNo = strtoupper($pax['passport_number']);
-                $dob = \Carbon\Carbon::parse($pax['dob'] ?? '1990-01-01')->format('dMy'); // e.g., 14MAR78
-                $gender = strtoupper(substr($pax['gender'] ?? 'M', 0, 1)); // M or F
+                $dob = \Carbon\Carbon::parse($pax['dob'] ?? '1990-01-01')->format('dMy'); // e.g., 14Mar78
+                $gender = strtolower(substr($pax['gender'] ?? 'M', 0, 1)); // m or f
                 $expiry = \Carbon\Carbon::parse($pax['passport_expiry'] ?? '2030-01-01')->format('dMy');
-                $surname = strtoupper(preg_replace('/[^A-Z]/', '', $pax['surname'] ?? ''));
-                $firstname = strtoupper(preg_replace('/[^A-Z]/', '', $pax['firstname'] ?? ''));
+                $surname = strtoupper(preg_replace('/[^A-Z]/', '', $pax['last_name'] ?? $pax['surname'] ?? 'TEST'));
+                $firstname = strtoupper(preg_replace('/[^A-Z]/', '', $pax['first_name'] ?? $pax['firstname'] ?? 'PAX'));
 
-                $entries[] = "4-{$paxNo}FDOCS/P/{$issueCountry}/{$passNo}/{$nationality}/{$dob}/{$gender}/{$expiry}/{$surname}/{$firstname}";
+                $entries[] = "4-{$paxNo}FDOCS/P/{$issueCountry}/{$passNo}/{$nationality}/{$dob}/{$gender}/{$expiry}/{$surname}/{$firstname}/";
             }
 
             // 2. DOCO (Visa)
             // FORMAT: 4-[PAX]FDOCO//V/[VISA_NO]/[PLACE]/[DATE]/[COUNTRY] OR NA
-            if (!empty($pax['visa_number'])) {
+            if (! empty($pax['visa_number'])) {
                 $visaNo = strtoupper($pax['visa_number']);
                 $visaPlace = strtoupper($pax['visa_issue_country'] ?? 'LY');
                 $visaDate = \Carbon\Carbon::parse($pax['visa_issue_date'] ?? now())->format('dMy');
                 $visaApplies = strtoupper($pax['visa_destination_country'] ?? 'LY');
-                
+
                 $entries[] = "4-{$paxNo}FDOCO//V/{$visaNo}/{$visaPlace}/{$visaDate}/{$visaApplies}";
-            } else {
-                // If it's a domestic flight, you might not even need NA, but as per plan we send NA
-                $entries[] = "4-{$paxNo}FDOCO//V/NA";
             }
 
             // 3. Seats (RQST)
             // FORMAT: 4-[PAX]S[SEG]FRQST[SEAT]
-            if (!empty($extras['seats'][$i])) {
-                $seatCode = strtoupper($extras['seats'][$i]);
-                // Hardcoding segment 1 for MVP single-leg trips
-                $entries[] = "4-{$paxNo}S1FRQST{$seatCode}";
+            if (! empty($seatSelections[$i])) {
+                foreach ((array) $seatSelections[$i] as $segmentNo => $seatCode) {
+                    $segmentIndex = (int) $segmentNo;
+                    $segmentIndex = $segmentIndex > 0 ? $segmentIndex : ((int) $segmentNo + 1);
+
+                    $entries[] = "4-{$paxNo}S{$segmentIndex}FRQST".strtoupper((string) $seatCode);
+                }
             }
         }
 
         return implode('^', $entries);
+    }
+
+    protected function buildAncillaryCommands(array $extras, array $passengers, array $itinerary): string
+    {
+        $selectedServices = $extras['selected_services'] ?? [];
+        $catalog = collect($this->getAncillaryCatalog())
+            ->where('enabled', true)
+            ->keyBy('code');
+
+        $commands = [];
+
+        foreach ($selectedServices as $serviceSelection) {
+            $service = $catalog->get($serviceSelection['code'] ?? null);
+
+            if (! $service || empty($service['command_template'])) {
+                continue;
+            }
+
+            $quantity = max(0, (int) ($serviceSelection['quantity'] ?? 0));
+            $passengerIndexes = collect($serviceSelection['passengers'] ?? [])
+                ->map(fn ($index) => (int) $index)
+                ->all();
+
+            if (empty($passengerIndexes)) {
+                $passengerIndexes = array_keys($passengers);
+            }
+
+            foreach ($passengerIndexes as $passengerIndex) {
+                $paxNo = $passengerIndex + 1;
+
+                foreach ($itinerary as $segmentIndex => $segment) {
+                    $commands[] = strtr($service['command_template'], [
+                        '{PAX}' => (string) $paxNo,
+                        '{SEG}' => (string) ($segmentIndex + 1),
+                        '{QTY}' => (string) $quantity,
+                        '{AIRLINE}' => $this->getIataCode(),
+                        '{FLTNO}' => str_pad(preg_replace('/[^0-9]/', '', $segment['flt_no'] ?? ''), 4, '0', STR_PAD_LEFT),
+                        '{ORIGIN}' => strtoupper($segment['origin'] ?? ''),
+                        '{DEST}' => strtoupper($segment['dest'] ?? ''),
+                    ]);
+                }
+            }
+        }
+
+        return implode('^', array_filter($commands));
     }
 
     /**
@@ -575,15 +641,27 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
         foreach ($itinerary as $segment) {
             $fltNo = str_pad(preg_replace('/[^0-9]/', '', $segment['flt_no'] ?? '100'), 4, '0', STR_PAD_LEFT);
             $class = substr($segment['class'] ?? 'Y', 0, 1);
-            $date = strtoupper(\Carbon\Carbon::parse($segment['date'] ?? now())->format('dM'));
+            $date = \Carbon\Carbon::parse($segment['date'] ?? now())->format('dM');
             $origin = strtoupper($segment['origin'] ?? 'TIP');
             $dest = strtoupper($segment['dest'] ?? 'BEN');
             $status = 'NN'; // Needs Need (Sell)
-            
+
             $entries[] = "0{$this->getIataCode()}{$fltNo}{$class}{$date}{$origin}{$dest}{$status}{$qty}";
         }
 
         return implode('^', $entries);
+    }
+
+    protected function buildTimeLimitCommand(): ?string
+    {
+        if (! ($this->config['supports_manual_time_limit'] ?? false)) {
+            return null;
+        }
+
+        $hours = (int) ($this->config['manual_time_limit_hour'] ?? 18);
+        $days = (int) ($this->config['manual_time_limit_days'] ?? 2);
+
+        return '8/'.str_pad((string) $hours, 2, '0', STR_PAD_LEFT).'00/'.now()->addDays($days)->format('dM');
     }
 
     /**

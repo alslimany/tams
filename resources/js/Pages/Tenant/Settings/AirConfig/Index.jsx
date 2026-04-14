@@ -138,6 +138,14 @@ export default function Index({ airlines }) {
                                                         <span>Airports: {account.airports.join(', ')}</span>
                                                     )}
                                                 </div>
+                                                <div className="mt-2 flex items-center gap-2 text-xs">
+                                                    <Badge variant={account.last_test_status === 'passed' ? 'success' : account.last_test_status === 'failed' ? 'destructive' : 'outline'}>
+                                                        {account.last_test_status || 'untested'}
+                                                    </Badge>
+                                                    <span className="text-muted-foreground">
+                                                        {account.last_test_message || 'No connection result recorded yet.'}
+                                                    </span>
+                                                </div>
                                             </div>
                                         </div>
                                         <div className="flex items-center gap-4">

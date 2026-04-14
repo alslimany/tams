@@ -40,6 +40,12 @@ class HandleInertiaRequests extends Middleware
             ...parent::share($request),
             'auth' => [
                 'user' => $request->user(),
+                'landlordUser' => auth('landlord')->user(),
+            ],
+            'tenant' => [
+                'id' => function_exists('tenant') && tenant() ? tenant()->id : null,
+                'companyName' => function_exists('tenant') && tenant() ? tenant()->company_name : null,
+                'status' => function_exists('tenant') && tenant() ? tenant()->status : null,
             ],
             'ziggy' => fn () => [
                 ...(new Ziggy)->toArray(),

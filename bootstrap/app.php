@@ -20,6 +20,8 @@ return Application::configure(basePath: dirname(__DIR__))
 
         $middleware->alias([
             'role' => \App\Http\Middleware\EnsureUserRole::class,
+            'landlord.auth' => \App\Http\Middleware\EnsureLandlordAuthenticated::class,
+            'tenant.status' => \App\Http\Middleware\CheckTenantOperationalStatus::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

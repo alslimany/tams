@@ -4,6 +4,7 @@ import { Button } from '@/Components/ui/Button';
 
 export default function LandlordLayout({ children }) {
     const { auth } = usePage().props;
+    const landlordUser = auth.landlordUser;
 
     return (
         <div className="min-h-screen bg-background text-foreground flex flex-col">
@@ -14,11 +15,17 @@ export default function LandlordLayout({ children }) {
                 
                 <nav className="flex items-center gap-4">
                     <Link href="/" className="text-sm font-medium hover:text-primary transition-colors">Home</Link>
-                    {auth.user ? (
-                        <Link href="/dashboard" className="text-sm font-medium hover:text-primary transition-colors">Dashboard</Link>
+                    {landlordUser ? (
+                        <>
+                            <Link href={route('landlord.dashboard')} className="text-sm font-medium hover:text-primary transition-colors">Dashboard</Link>
+                            <Link href={route('landlord.tenants.index')} className="text-sm font-medium hover:text-primary transition-colors">Agencies</Link>
+                            <Link href={route('landlord.logout')} method="post" as="button" className="text-sm font-medium hover:text-primary transition-colors">
+                                Logout
+                            </Link>
+                        </>
                     ) : (
                         <>
-                            <Link href="/login" className="text-sm font-medium hover:text-primary transition-colors">Login</Link>
+                            <Link href={route('landlord.login')} className="text-sm font-medium hover:text-primary transition-colors">Landlord Login</Link>
                             <Button asChild variant="default" size="sm">
                                 <Link href="/register-agency">Register Agency</Link>
                             </Button>
@@ -32,7 +39,7 @@ export default function LandlordLayout({ children }) {
             </main>
             
             <footer className="border-t py-6 text-center text-sm text-muted-foreground">
-                © {new Date().getFullYear()} TAMS Inc. All rights reserved.
+                © {new Date().getFullYear()} TAMS. Central landlord console and tenant operations.
             </footer>
         </div>
     );

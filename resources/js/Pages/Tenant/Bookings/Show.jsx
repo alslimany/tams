@@ -1,5 +1,5 @@
 import React from 'react';
-import { Head, Link } from '@inertiajs/react';
+import { Head, Link, usePage } from '@inertiajs/react';
 import TenantLayout from '@/Layouts/TenantLayout';
 import { Card, CardContent, CardHeader, CardTitle } from "@/Components/ui/Card";
 import { Badge } from "@/Components/ui/Badge";
@@ -7,6 +7,8 @@ import { Button } from "@/Components/ui/Button";
 import { Plane, Calendar, Users, CreditCard, CheckCircle2, AlertCircle, ArrowRight, User, Info } from "lucide-react";
 
 export default function Show({ booking }) {
+    const { auth } = usePage().props;
+    const canManageTickets = auth.user?.role === 'admin' || auth.user?.role === 'manager';
     
     // Format dates nicely
     const formatDate = (dateString) => {
@@ -172,6 +174,53 @@ export default function Show({ booking }) {
                                     <div className="mt-8 bg-emerald-50 text-emerald-700 p-4 rounded-xl flex items-center justify-center gap-2 border border-emerald-100">
                                         <CheckCircle2 className="h-5 w-5" />
                                         <span className="font-bold">Payment Complete</span>
+                                    </div>
+                                )}
+                            </CardContent>
+                        </Card>
+
+                        <Card className="border-2 shadow-sm">
+                            <CardHeader>
+                                <CardTitle className="text-lg">Ticketing</CardTitle>
+                            </CardHeader>
+                            <CardContent className="space-y-4">
+                                {booking.tickets?.length ? booking.tickets.map((ticket) => (
+                                    <div key={ticket.id} className="rounded-xl border p-4 space-y-3">
+                                        <div className="flex items-center justify-between gap-3">
+                                            <div>
+                                                <p className="font-bold">{ticket.ticket_number}</p>
+                                                <p className="text-xs text-muted-foreground">Issued {formatDate(ticket.issued_at)}</p>
+                                            </div>
+                                            <Badge variant={ticket.status === 'issued' ? 'success' : ticket.status === 'voided' ? 'secondary' : 'destructive'}>
+                                                {ticket.status}
+                                            </Badge>
+                                        </div>
+
+                                        {ticket.status === 'issued' && canManageTickets && (
+                                            <div className="flex gap-2">
+                                                <Button asChild variant="outline" size="sm">
+                                                    <Link href={route('tickets.void', { booking: booking.id, ticket: ticket.id })} method="post" as="button">
+                                                        Void
+                                                    </Link>
+                                                </Button>
+                                                <Button asChild variant="destructive" size="sm">
+                                                    <Link href={route('tickets.refund', { booking: booking.id, ticket: ticket.id })} method="post" as="button">
+                                                        Refund
+                                                    </Link>
+                                                </Button>
+                                            </div>
+                                        )}
+                                    </div>
+                                )) : (
+                                    <div className="rounded-xl border border-dashed p-4">
+                                        <p className="text-sm text-muted-foreground mb-4">No ticket has been issued for this booking yet.</p>
+                                        {booking.status !== 'cancelled' && booking.status !== 'refunded' && canManageTickets && (
+                                            <Button asChild className="w-full">
+                                                <Link href={route('tickets.issue', { booking: booking.id })} method="post" as="button">
+                                                    Issue Ticket
+                                                </Link>
+                                            </Button>
+                                        )}
                                     </div>
                                 )}
                             </CardContent>

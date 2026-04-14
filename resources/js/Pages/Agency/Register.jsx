@@ -9,6 +9,8 @@ import LandlordLayout from '@/Layouts/LandlordLayout';
 export default function Register() {
     const { data, setData, post, processing, errors, reset } = useForm({
         company_name: '',
+        owner_name: '',
+        phone: '',
         email: '',
         subdomain: '',
         password: '',
@@ -47,6 +49,17 @@ export default function Register() {
                             </div>
 
                             <div className="space-y-2">
+                                <Label htmlFor="owner_name">Owner / Admin Name</Label>
+                                <Input
+                                    id="owner_name"
+                                    type="text"
+                                    value={data.owner_name}
+                                    onChange={(e) => setData('owner_name', e.target.value)}
+                                />
+                                {errors.owner_name && <p className="text-sm text-destructive">{errors.owner_name}</p>}
+                            </div>
+
+                            <div className="space-y-2">
                                 <Label htmlFor="email">Email</Label>
                                 <Input
                                     id="email"
@@ -56,6 +69,17 @@ export default function Register() {
                                     required
                                 />
                                 {errors.email && <p className="text-sm text-destructive">{errors.email}</p>}
+                            </div>
+
+                            <div className="space-y-2">
+                                <Label htmlFor="phone">Phone</Label>
+                                <Input
+                                    id="phone"
+                                    type="text"
+                                    value={data.phone}
+                                    onChange={(e) => setData('phone', e.target.value)}
+                                />
+                                {errors.phone && <p className="text-sm text-destructive">{errors.phone}</p>}
                             </div>
 
                             <div className="space-y-2">
@@ -102,9 +126,9 @@ export default function Register() {
                                 {processing ? 'Registering...' : 'Register Agency'}
                             </Button>
                             <p className="text-sm text-center text-muted-foreground">
-                                Already have an agency?{' '}
-                                <Link href="/login" className="text-primary hover:underline">
-                                    Log in
+                                Platform admin?{' '}
+                                <Link href={route('landlord.login')} className="text-primary hover:underline">
+                                    Open landlord login
                                 </Link>
                             </p>
                         </CardFooter>

@@ -3,10 +3,13 @@
 namespace App\Http\Controllers\Tenant;
 
 use App\Http\Controllers\Controller;
+use App\Models\Tenant\Booking;
 use App\Models\TenantProvider;
 use App\Services\Airline\FlightSearchService;
 use App\Services\Airline\ProviderFactory;
+use App\Services\Airline\Videcom\VidecomAncillaryCatalog;
 use Exception;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
@@ -26,6 +29,32 @@ class BookingController extends Controller
     public function index(): Response
     {
         return Inertia::render('Tenant/Bookings/Search', [
+            'bookings' => Booking::query()
+                ->with(['customer:id,first_name,last_name,email', 'provider:id,airline_name'])
+                ->when(request('status'), fn (Builder $query, string $status) => $query->where('status', $status))
+                ->when(request('pnr'), fn (Builder $query, string $pnr) => $query->where('pnr', 'like', "%{$pnr}%"))
+                ->when(request('customer'), function (Builder $query, string $customer): void {
+                    $query->whereHas('customer', function (Builder $customerQuery) use ($customer): void {
+                        $customerQuery
+                            ->where('email', 'like', "%{$customer}%")
+                            ->orWhere('first_name', 'like', "%{$customer}%")
+                            ->orWhere('last_name', 'like', "%{$customer}%");
+                    });
+                })
+                ->when(request('airline'), function (Builder $query, string $airline): void {
+                    $query->whereHas('provider', function (Builder $providerQuery) use ($airline): void {
+                        $providerQuery->where('airline_code', $airline);
+                    });
+                })
+                ->latest()
+                ->limit(25)
+                ->get(),
+            'filters' => request()->only(['status', 'pnr', 'customer', 'airline']),
+            'airlines' => TenantProvider::query()
+                ->select('airline_code', 'airline_name')
+                ->distinct()
+                ->orderBy('airline_name')
+                ->get(),
             'searchDisplayMode' => tenant()->search_display_mode ?? 'per_offer',
         ]);
     }
@@ -82,6 +111,7 @@ class BookingController extends Controller
 
                 // 1. Authenticated Command Path
                 $providerFlights = collect($provider->searchAvailability($params));
+                $providerConfig->update(['last_used_at' => now()]);
 
                 // 2. Web Scraper Path (Optional Discovery)
                 if ($providerConfig->provider_type === 'videcom') {
@@ -142,6 +172,7 @@ class BookingController extends Controller
         try {
             $providerConfig = TenantProvider::findOrFail($validated['provider_id']);
             $provider = ProviderFactory::make($providerConfig);
+            $providerConfig->update(['last_used_at' => now()]);
 
             $qty = $searchParams['adults'] + ($searchParams['children'] ?? 0);
 
@@ -193,7 +224,7 @@ class BookingController extends Controller
         $validated = $request->validate([
             'provider_id' => 'required|exists:tenant_providers,id',
             'flight_number' => 'required|string',
-            'date' => 'required|date'
+            'date' => 'required|date',
         ]);
 
         try {
@@ -205,7 +236,8 @@ class BookingController extends Controller
             return response()->json($seatMap);
         } catch (Exception $e) {
             Log::error('Async seat map fetch failed: '.$e->getMessage());
-            return response()->json(['error' => 'Failed to fetch seat map: ' . $e->getMessage()], 422);
+
+            return response()->json(['error' => 'Failed to fetch seat map: '.$e->getMessage()], 422);
         }
     }
 
@@ -221,12 +253,15 @@ class BookingController extends Controller
         ]);
 
         $searchParams = Cache::get("flight_search_{$validated['uuid']}");
+        $providerConfig = TenantProvider::findOrFail($validated['provider_id']);
+        $provider = ProviderFactory::make($providerConfig);
 
         return Inertia::render('Tenant/Bookings/PassengerInfo', [
             'uuid' => $validated['uuid'],
             'provider_id' => $validated['provider_id'],
             'flight' => $validated['flight'],
             'searchParams' => $searchParams,
+            'ancillaryCatalog' => $provider->getAncillaryCatalog($validated['flight'], $searchParams ?? []),
         ]);
     }
 
@@ -251,7 +286,18 @@ class BookingController extends Controller
             'customer.last_name' => 'required|string',
             'customer.email' => 'required|email',
             'customer.phone' => 'nullable|string',
+            'extras' => 'nullable|array',
+            'extras.seats' => 'nullable|array',
+            'extras.seats.*' => 'nullable|array',
+            'extras.seats.*.*' => 'nullable|string|max:12',
+            'extras.selected_services' => 'nullable|array',
+            'extras.selected_services.*.code' => 'required|string',
+            'extras.selected_services.*.quantity' => 'nullable|integer|min:0',
+            'extras.selected_services.*.passengers' => 'nullable|array',
+            'extras.selected_services.*.passengers.*' => 'integer|min:0',
         ]);
+
+        $searchParams = Cache::get("flight_search_{$validated['uuid']}") ?? [];
 
         // Create Customer
         $customer = \App\Models\Tenant\Customer::firstOrCreate(
@@ -262,10 +308,11 @@ class BookingController extends Controller
         // Setup Provider
         $providerConfig = \App\Models\TenantProvider::findOrFail($validated['provider_id']);
         $provider = \App\Services\Airline\ProviderFactory::make($providerConfig);
+        $providerConfig->update(['last_used_at' => now()]);
 
         // Map Itinerary for Service
         $itinerary = $validated['flight']['segments'] ?? [$validated['flight']];
-        $mappedItinerary = array_map(function($seg) {
+        $mappedItinerary = array_map(function ($seg) {
             return [
                 'flt_no' => $seg['flight_number'] ?? '000',
                 'class' => $seg['class'] ?? 'Y',
@@ -275,46 +322,71 @@ class BookingController extends Controller
             ];
         }, $itinerary);
 
+        $ancillaryCatalog = $provider->getAncillaryCatalog($validated['flight'], $searchParams);
+        $ancillarySummary = VidecomAncillaryCatalog::selectedTotals(
+            $ancillaryCatalog,
+            $validated['extras']['selected_services'] ?? [],
+            count($validated['passengers']),
+            count($mappedItinerary)
+        );
+
         // Map request payload
         $params = [
             'passengers' => $validated['passengers'],
             'contact' => $validated['customer'],
             'itinerary' => $mappedItinerary,
-            'extras' => $request->input('extras', [])
+            'extras' => $validated['extras'] ?? [],
         ];
 
         // Ensure total price and currency
-        $totalPrice = collect($validated['flight']['pricing'] ?? [])->sum('total') ?: ($validated['flight']['pricing']['total'] ?? 0);
-        $currency = $validated['flight']['pricing'][0]['currency'] ?? ($validated['flight']['pricing']['currency'] ?? 'USD');
-        
+        $pricing = $validated['flight']['pricing'] ?? [];
+        $baseTotal = is_array($pricing) && array_is_list($pricing)
+            ? (float) collect($pricing)->sum(fn (array $price): float => (float) ($price['total'] ?? 0))
+            : (float) ($pricing['total'] ?? 0);
+        $totalPrice = $baseTotal + (float) ($ancillarySummary['total'] ?? 0);
+        $currency = is_array($pricing) && array_is_list($pricing)
+            ? (string) ($pricing[0]['currency'] ?? 'USD')
+            : (string) ($pricing['currency'] ?? 'USD');
+
         $pnr = 'PENDING';
+        $fareResponse = null;
 
         try {
+            $fareResponse = $provider->getPricing($mappedItinerary, $validated['passengers']);
+            $this->ensureProviderResponseIsSuccessful($fareResponse, 'pricing');
+
             // Call airline API to generate PNR
             $bookingResponse = $provider->createBooking($params);
-            
+            $this->ensureProviderResponseIsSuccessful($bookingResponse, 'booking');
+
             // Extract PNR from XML Response
             if ($bookingResponse instanceof \SimpleXMLElement) {
-                if (isset($bookingResponse->Locator)) $pnr = (string) $bookingResponse->Locator;
-                elseif (isset($bookingResponse->RecordLocator)) $pnr = (string) $bookingResponse->RecordLocator;
-                elseif (isset($bookingResponse->PNR)) $pnr = (string) $bookingResponse->PNR;
-                else {
+                if (isset($bookingResponse->Locator)) {
+                    $pnr = (string) $bookingResponse->Locator;
+                } elseif (isset($bookingResponse->RecordLocator)) {
+                    $pnr = (string) $bookingResponse->RecordLocator;
+                } elseif (isset($bookingResponse->PNR)) {
+                    $pnr = (string) $bookingResponse->PNR;
+                } else {
                     $xmlStr = $bookingResponse->asXML();
-                    if (preg_match('/<Locator>([A-Z0-9]{5,6})<\/Locator>/i', $xmlStr, $m)) $pnr = $m[1];
-                    elseif (preg_match('/Locator="([A-Z0-9]{5,6})"/i', $xmlStr, $m)) $pnr = $m[1];
+                    if (preg_match('/<Locator>([A-Z0-9]{5,6})<\/Locator>/i', $xmlStr, $m)) {
+                        $pnr = $m[1];
+                    } elseif (preg_match('/Locator="([A-Z0-9]{5,6})"/i', $xmlStr, $m)) {
+                        $pnr = $m[1];
+                    }
                 }
             } elseif (is_string($bookingResponse) && preg_match('/[A-Z0-9]{5,6}/', $bookingResponse, $m)) {
                 $pnr = $m[0];
             }
-            
+
             // Fallback for demo or unrecognized formats
             if ($pnr === 'PENDING') {
-                Log::warning("Could not parse explicit PNR from response", ['response' => $bookingResponse]);
-                $pnr = strtoupper(Str::random(6)); // Fallback placeholder
+                throw new Exception('Airline did not return a valid PNR locator.');
             }
         } catch (\Exception $e) {
-            Log::error('Flight booking generation failed: ' . $e->getMessage());
-            return back()->with('error', 'Failed to communicate with the airline: ' . $e->getMessage());
+            Log::error('Flight booking generation failed: '.$e->getMessage());
+
+            return back()->with('error', 'Failed to communicate with the airline: '.$e->getMessage());
         }
 
         // Create Booking locally
@@ -326,6 +398,16 @@ class BookingController extends Controller
             'total_price' => $totalPrice,
             'currency' => $currency,
             'created_by' => auth()->id() ?? 1,
+            'raw_request' => [
+                'validated' => $validated,
+                'provider_payload' => $params,
+                'ancillary_catalog' => $ancillaryCatalog,
+                'ancillary_summary' => $ancillarySummary,
+            ],
+            'raw_response' => [
+                'fare' => $fareResponse instanceof \SimpleXMLElement ? $fareResponse->asXML() : $fareResponse,
+                'booking' => $bookingResponse instanceof \SimpleXMLElement ? $bookingResponse->asXML() : $bookingResponse,
+            ],
         ]);
 
         // Create Passengers
@@ -363,10 +445,30 @@ class BookingController extends Controller
      */
     public function show(\App\Models\Tenant\Booking $booking): Response
     {
-        $booking->load(['customer', 'passengers', 'flightSegments', 'provider', 'createdBy']);
+        $booking->load(['customer', 'passengers', 'flightSegments', 'provider', 'createdBy', 'tickets']);
 
         return Inertia::render('Tenant/Bookings/Show', [
             'booking' => $booking,
         ]);
+    }
+
+    protected function ensureProviderResponseIsSuccessful(mixed $response, string $context): void
+    {
+        if (! is_string($response)) {
+            return;
+        }
+
+        $normalizedResponse = Str::lower(trim($response));
+
+        if (Str::contains($normalizedResponse, [
+            'error',
+            'invalid entry',
+            'not authorised',
+            'not authorized',
+            'exception',
+            'failed',
+        ])) {
+            throw new Exception("Videcom {$context} error: ".trim($response));
+        }
     }
 }

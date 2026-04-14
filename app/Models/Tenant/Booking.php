@@ -19,6 +19,10 @@ class Booking extends Model
     {
         return [
             'total_price' => 'decimal:2',
+            'ticketed_at' => 'datetime',
+            'refunded_at' => 'datetime',
+            'raw_request' => 'array',
+            'raw_response' => 'array',
         ];
     }
 
@@ -45,5 +49,10 @@ class Booking extends Model
     public function flightSegments(): HasMany
     {
         return $this->hasMany(FlightSegment::class);
+    }
+
+    public function tickets(): HasMany
+    {
+        return $this->hasMany(Ticket::class);
     }
 }

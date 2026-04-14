@@ -15,8 +15,8 @@ class CheckActiveUser
      */
     public function handle(Request $request, Closure $next): Response
     {
-        if (auth()->check() && !auth()->user()->is_active) {
-            auth()->logout();
+        if (auth('web')->check() && ! auth('web')->user()->is_active) {
+            auth('web')->logout();
             $request->session()->invalidate();
             $request->session()->regenerateToken();
 
