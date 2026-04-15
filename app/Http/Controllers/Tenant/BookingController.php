@@ -250,6 +250,7 @@ class BookingController extends Controller
             'uuid' => 'required|string',
             'provider_id' => 'required|exists:tenant_providers,id',
             'flight' => 'required|array',
+            'reservation_type' => 'required|in:QQ,NN',
         ]);
 
         $searchParams = Cache::get("flight_search_{$validated['uuid']}");
@@ -260,6 +261,7 @@ class BookingController extends Controller
             'uuid' => $validated['uuid'],
             'provider_id' => $validated['provider_id'],
             'flight' => $validated['flight'],
+            'reservation_type' => $validated['reservation_type'],
             'searchParams' => $searchParams,
             'ancillaryCatalog' => $provider->getAncillaryCatalog($validated['flight'], $searchParams ?? []),
         ]);
@@ -274,6 +276,7 @@ class BookingController extends Controller
             'uuid' => 'required|string',
             'provider_id' => 'required|exists:tenant_providers,id',
             'flight' => 'required|array',
+            'reservation_type' => 'required|in:QQ,NN',
             'passengers' => 'required|array|min:1',
             'passengers.*.type' => 'required|in:adult,child,infant',
             'passengers.*.first_name' => 'required|string',
@@ -282,6 +285,8 @@ class BookingController extends Controller
             'passengers.*.gender' => 'required|in:M,F',
             'passengers.*.passport_number' => 'nullable|string',
             'passengers.*.passport_expiry' => 'nullable|date',
+            'passengers.*.passport_issue_country' => 'nullable|string|size:3',
+            'passengers.*.nationality' => 'nullable|string|size:3',
             'customer.first_name' => 'required|string',
             'customer.last_name' => 'required|string',
             'customer.email' => 'required|email',
@@ -336,6 +341,7 @@ class BookingController extends Controller
             'contact' => $validated['customer'],
             'itinerary' => $mappedItinerary,
             'extras' => $validated['extras'] ?? [],
+            'reservation_type' => $validated['reservation_type'],
         ];
 
         // Ensure total price and currency
@@ -351,14 +357,14 @@ class BookingController extends Controller
         $pnr = 'PENDING';
         $fareResponse = null;
 
-        try {
+        
             $fareResponse = $provider->getPricing($mappedItinerary, $validated['passengers']);
             $this->ensureProviderResponseIsSuccessful($fareResponse, 'pricing');
 
             // Call airline API to generate PNR
             $bookingResponse = $provider->createBooking($params);
             $this->ensureProviderResponseIsSuccessful($bookingResponse, 'booking');
-
+try {
             // Extract PNR from XML Response
             if ($bookingResponse instanceof \SimpleXMLElement) {
                 if (isset($bookingResponse->Locator)) {
@@ -386,7 +392,12 @@ class BookingController extends Controller
         } catch (\Exception $e) {
             Log::error('Flight booking generation failed: '.$e->getMessage());
 
-            return back()->with('error', 'Failed to communicate with the airline: '.$e->getMessage());
+            return redirect()->route('bookings.select', [
+                'uuid' => $validated['uuid'],
+                'provider_id' => $validated['provider_id'],
+                'flight' => $validated['flight'],
+                'reservation_type' => $validated['reservation_type'],
+            ])->with('error', 'Failed to communicate with the airline: '.$e->getMessage());
         }
 
         // Create Booking locally
@@ -394,10 +405,10 @@ class BookingController extends Controller
             'customer_id' => $customer->id,
             'pnr' => $pnr,
             'tenant_provider_id' => $validated['provider_id'],
-            'status' => 'confirmed', // Assuming E command holds the seat confirmed
+            'status' => $validated['reservation_type'] === 'NN' ? 'confirmed' : 'pending',
             'total_price' => $totalPrice,
             'currency' => $currency,
-            'created_by' => auth()->id() ?? 1,
+            'created_by' => $request->user()?->id ?? 1,
             'raw_request' => [
                 'validated' => $validated,
                 'provider_payload' => $params,
@@ -454,11 +465,19 @@ class BookingController extends Controller
 
     protected function ensureProviderResponseIsSuccessful(mixed $response, string $context): void
     {
-        if (! is_string($response)) {
-            return;
+        // If it's a string, it's likely an error (either HTML stripped or plain text error)
+        if (is_string($response)) {
+            $response = trim($response);
+
+            // If it's a plain string that doesn't look like XML, treat it as an error
+            if (! str_starts_with($response, '<')) {
+                throw new Exception("Videcom {$context} error: {$response}");
+            }
         }
 
-        $normalizedResponse = Str::lower(trim($response));
+        // Convert SimpleXMLElement back to string to check for the word ERROR
+        $rawResponse = ($response instanceof \SimpleXMLElement) ? $response->asXML() : (string) $response;
+        $normalizedResponse = Str::lower($rawResponse);
 
         if (Str::contains($normalizedResponse, [
             'error',
@@ -468,7 +487,14 @@ class BookingController extends Controller
             'exception',
             'failed',
         ])) {
-            throw new Exception("Videcom {$context} error: ".trim($response));
+            // Try to get a more readable error from XML if possible
+            $errorMessage = $response instanceof \SimpleXMLElement ? (string) ($response->Error ?? $response->Message ?? $response) : trim($rawResponse);
+            
+            if (empty(trim($errorMessage))) {
+                $errorMessage = trim($rawResponse);
+            }
+            
+            throw new Exception("Videcom {$context} error: {$errorMessage}");
         }
     }
 }

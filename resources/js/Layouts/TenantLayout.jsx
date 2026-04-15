@@ -1,11 +1,22 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Link, usePage } from '@inertiajs/react';
 import { Button } from '@/Components/ui/Button';
-import { Toaster } from "sonner";
+import { Toaster, toast } from "sonner";
 
 export default function TenantLayout({ children }) {
-    const { auth, tenant } = usePage().props;
+    const { auth, tenant, flash } = usePage().props;
     const canManageTickets = auth.user?.role === 'admin' || auth.user?.role === 'manager';
+
+    useEffect(() => {
+        if (flash?.success) {
+            toast.success(flash.success);
+        }
+        if (flash?.error) {
+            toast.error(flash.error, {
+                duration: 10000, // Show errors for longer
+            });
+        }
+    }, [flash]);
 
     return (
         <div className="min-h-screen bg-background text-foreground flex">

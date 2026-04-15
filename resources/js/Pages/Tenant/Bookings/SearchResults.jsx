@@ -301,15 +301,26 @@ export default function SearchResults({ providers, query, uuid, searchDisplayMod
                                             </div>
                                         </div>
                                     </div>
-                                    <div className="p-6 border-t bg-muted/30 flex justify-end">
+                                    <div className="p-6 border-t bg-muted/30 flex flex-col sm:flex-row gap-3">
                                         <Link
-                                            href={route('bookings.select', { flight: flight, uuid: uuid, provider_id: provider?.id })}
+                                            href={route('bookings.select', { flight: flight, uuid: uuid, provider_id: provider?.id, reservation_type: 'QQ' })}
                                             method="post"
                                             as="button"
+                                            className="flex-1"
                                         >
-                                            <Button size="lg" className="font-bold shadow-md rounded-full px-8">
-                                                Next: Passenger Details
-                                                <ChevronRight className="ml-2 h-5 w-5" />
+                                            <Button variant="outline" size="lg" className="w-full font-bold shadow-sm rounded-full px-4 text-xs">
+                                                Open Reservation
+                                            </Button>
+                                        </Link>
+                                        <Link
+                                            href={route('bookings.select', { flight: flight, uuid: uuid, provider_id: provider?.id, reservation_type: 'NN' })}
+                                            method="post"
+                                            as="button"
+                                            className="flex-1"
+                                        >
+                                            <Button size="lg" className="w-full font-bold shadow-md rounded-full px-4 text-xs">
+                                                Confirmed Reservation
+                                                <ChevronRight className="ml-2 h-4 w-4" />
                                             </Button>
                                         </Link>
                                     </div>
@@ -525,18 +536,29 @@ export default function SearchResults({ providers, query, uuid, searchDisplayMod
                                                     </div>
                                                 </div>
                                             </div>
-                                            <div className="p-6 border-t bg-muted/30 flex justify-end">
-                                                <Link
-                                                    href={route('bookings.select', { flight: offer, uuid: uuid, provider_id: provider?.id })}
-                                                    method="post"
-                                                    as="button"
-                                                >
-                                                    <Button size="lg" className="font-bold shadow-md rounded-full px-8">
-                                                        Next: Passenger Details
-                                                        <ChevronRight className="ml-2 h-5 w-5" />
-                                                    </Button>
-                                                </Link>
-                                            </div>
+                                            <div className="p-6 border-t bg-muted/30 flex flex-col sm:flex-row gap-3">
+                                                        <Link
+                                                            href={route('bookings.select', { flight: offer, uuid: uuid, provider_id: provider?.id, reservation_type: 'QQ' })}
+                                                            method="post"
+                                                            as="button"
+                                                            className="flex-1"
+                                                        >
+                                                            <Button variant="outline" size="lg" className="w-full font-bold shadow-sm rounded-full px-4 text-xs">
+                                                                Open Reservation
+                                                            </Button>
+                                                        </Link>
+                                                        <Link
+                                                            href={route('bookings.select', { flight: offer, uuid: uuid, provider_id: provider?.id, reservation_type: 'NN' })}
+                                                            method="post"
+                                                            as="button"
+                                                            className="flex-1"
+                                                        >
+                                                            <Button size="lg" className="w-full font-bold shadow-md rounded-full px-4 text-xs">
+                                                                Confirmed Reservation
+                                                                <ChevronRight className="ml-2 h-4 w-4" />
+                                                            </Button>
+                                                        </Link>
+                                                    </div>
                                         </DialogContent>
                                     </Dialog>
                                 </div>

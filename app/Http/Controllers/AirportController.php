@@ -15,17 +15,31 @@ class AirportController extends Controller
             return response()->json([]);
         }
 
-        $query = strtolower($query);
+        $queryLength = strlen($query);
 
-        // Search by name, city, country, or iata/icao code
-        $airports = Airport::where('iata_code', 'LIKE', $query . '%')
-            ->orWhere('name->en', 'LIKE', '%' . $query . '%')
-            ->orWhere('name->ar', 'LIKE', '%' . $query . '%')
-            ->orWhere('city->en', 'LIKE', '%' . $query . '%')
-            ->orWhere('city->ar', 'LIKE', '%' . $query . '%')
-            ->orWhere('country->en', 'LIKE', '%' . $query . '%')
-            ->orWhere('country->ar', 'LIKE', '%' . $query . '%')
-            ->orderBy('iata_code', 'desc') // prioritize those with IATA codes
+        if ($queryLength < 3) {
+            return response()->json([]);
+        }
+
+        // Search by name, city, country, or iata/icao code, but exclude any without IATA code
+        $airports = Airport::whereNotNull('iata_code')
+            ->where('iata_code', '!=', '')
+            ->where(function ($q) use ($query, $queryLength) {
+                if ($queryLength === 3) {
+                    // Exactly 3 chars: filter by IATA only
+                    $q->where('iata_code', 'LIKE', $query . '%');
+                } else {
+                    // More than 3 chars: search with iata and the other filters
+                    $q->where('iata_code', 'LIKE', $query . '%')
+                        ->orWhere('name->en', 'LIKE', '%' . $query . '%')
+                        ->orWhere('name->ar', 'LIKE', '%' . $query . '%')
+                        ->orWhere('city->en', 'LIKE', '%' . $query . '%')
+                        ->orWhere('city->ar', 'LIKE', '%' . $query . '%')
+                        ->orWhere('country->en', 'LIKE', '%' . $query . '%')
+                        ->orWhere('country->ar', 'LIKE', '%' . $query . '%');
+                }
+            })
+            ->orderBy('iata_code', 'asc')
             ->limit(10)
             ->get()
             ->map(function ($airport) {

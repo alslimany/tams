@@ -3,7 +3,9 @@
 namespace App\Services\Airline\Videcom;
 
 use App\Services\Airline\AirlineProviderInterface;
+use Carbon\Carbon;
 use Exception;
+use Illuminate\Support\Facades\Log;
 use SimpleXMLElement;
 
 abstract class BaseVidecomAirline implements AirlineProviderInterface
@@ -269,7 +271,7 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
             $date = strtoupper(\Carbon\Carbon::parse($segment['date'] ?? now())->format('dM'));
             $origin = strtoupper($segment['origin'] ?? 'TIP');
             $dest = strtoupper($segment['dest'] ?? 'BEN');
-            $status = 'QQ'; // Quote Only
+            $status = 'NN'; // Quote Only
             $flightEntries[] = "0{$this->getIataCode()}{$fltNo}{$class}{$date}{$origin}{$dest}{$status}{$paxCount}";
         }
 
@@ -286,9 +288,10 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
     public function createBooking(array $params)
     {
         $passengers = $params['passengers'] ?? [];
+        $resType = $params['reservation_type'] ?? 'NN';
         $paxInfo = $this->buildPaxInfo($passengers);
         $contactInfo = $this->buildContactInfo($params['contact'] ?? [], count($passengers));
-        $flightSegments = $this->buildFlightSegments($params['itinerary'] ?? [], count($passengers));
+        $flightSegments = $this->buildFlightSegments($params['itinerary'] ?? [], count($passengers), $resType);
         $apfaxInfo = $this->buildApfaxInfo($passengers, $params['extras'] ?? []);
         $ancillaryInfo = $this->buildAncillaryCommands($params['extras'] ?? [], $passengers, $params['itinerary'] ?? []);
         $timeLimit = $this->buildTimeLimitCommand();
@@ -309,6 +312,9 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
         ]);
 
         $commandString = 'I^' . implode('^', $commands) . '^*R~x';
+
+        dd($commandString);
+
         $response = $this->client->runCommand($commandString);
 
         return $this->parseXml($response);
@@ -466,15 +472,7 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
      */
     protected function buildPaxPricingEntry(array $passengers): string
     {
-        $entries = [];
-        foreach ($passengers as $i => $pax) {
-            $surname = strtoupper(preg_replace('/[^A-Z]/', '', $pax['last_name'] ?? $pax['surname'] ?? 'TEST'));
-            $firstname = strtoupper(preg_replace('/[^A-Z]/', '', $pax['first_name'] ?? $pax['firstname'] ?? 'PAX'));
-            $title = strtoupper($pax['title'] ?? 'MR');
-            $entries[] = "-1{$surname}/{$firstname}{$title}";
-        }
-
-        return implode('^', $entries);
+        return $this->buildPaxInfo($passengers);
     }
 
     /**
@@ -484,7 +482,6 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
     {
         $entries = [];
         foreach ($passengers as $i => $pax) {
-            $paxNo = $i + 1; // Used for pax index mapping
             $type = strtoupper($pax['type'] ?? 'ADULT');
             $title = strtoupper($pax['title'] ?? 'MR');
             $surname = strtoupper(preg_replace('/[^A-Z]/', '', $pax['last_name'] ?? $pax['surname'] ?? 'TEST'));
@@ -494,10 +491,10 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
             $entry = "-1{$surname}/{$firstname}{$title}";
 
             // Append PTC and Age if child or infant
-            if ($type === 'CHILD') {
+            if (in_array($type, ['CHILD', 'CHD', 'CH'])) {
                 $age = str_pad((string) ($pax['age'] ?? 9), 2, '0', STR_PAD_LEFT);
                 $entry .= ".CH{$age}";
-            } elseif ($type === 'INFANT') {
+            } elseif (in_array($type, ['INFANT', 'INF', 'IN'])) {
                 $ageMonths = str_pad((string) ($pax['age_months'] ?? 6), 2, '0', STR_PAD_LEFT);
                 $entry .= ".IN{$ageMonths}";
             }
@@ -549,8 +546,8 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
             // 1. DOCS (Passport)
             // FORMAT: 4-[PAX]FDOCS/P/[ISSUE_COUNTRY]/[PASSPORT]/[NATIONALITY]/[DOB]/[GENDER]/[EXPIRY]/[SURNAME]/[FIRSTNAME]/
             if (! empty($pax['passport_number'])) {
-                $issueCountry = strtoupper($pax['passport_issue_country'] ?? 'LBY');
-                $nationality = strtoupper($pax['nationality'] ?? 'LBY');
+                $issueCountry = strtoupper(! empty($pax['passport_issue_country']) ? $pax['passport_issue_country'] : 'LBY');
+                $nationality = strtoupper(! empty($pax['nationality']) ? $pax['nationality'] : 'LBY');
                 $passNo = strtoupper($pax['passport_number']);
                 $dob = \Carbon\Carbon::parse($pax['dob'] ?? '1990-01-01')->format('dMy'); // e.g., 14Mar78
                 $gender = strtolower(substr($pax['gender'] ?? 'M', 0, 1)); // m or f
@@ -635,7 +632,7 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
     /**
      * Build flight segments string.
      */
-    protected function buildFlightSegments(array $itinerary, int $qty): string
+    protected function buildFlightSegments(array $itinerary, int $qty, string $status = 'NN'): string
     {
         $entries = [];
         foreach ($itinerary as $segment) {
@@ -644,7 +641,6 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
             $date = \Carbon\Carbon::parse($segment['date'] ?? now())->format('dM');
             $origin = strtoupper($segment['origin'] ?? 'TIP');
             $dest = strtoupper($segment['dest'] ?? 'BEN');
-            $status = 'NN'; // Needs Need (Sell)
 
             $entries[] = "0{$this->getIataCode()}{$fltNo}{$class}{$date}{$origin}{$dest}{$status}{$qty}";
         }
@@ -669,10 +665,23 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
      */
     protected function parseXml(string $xmlContent)
     {
+        $xmlContent = trim($xmlContent);
+
+        // If it looks like HTML, strip tags to get the error message
+        if (stripos($xmlContent, '<html') !== false || stripos($xmlContent, '<body') !== false) {
+            return strip_tags($xmlContent);
+        }
+
         try {
-            return new SimpleXMLElement($xmlContent);
+            // Attempt to parse as XML
+            if (str_starts_with($xmlContent, '<')) {
+                return new SimpleXMLElement($xmlContent);
+            }
         } catch (Exception $e) {
+            // If it's not valid XML, return as string
             return $xmlContent;
         }
+
+        return $xmlContent;
     }
 }

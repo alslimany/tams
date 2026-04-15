@@ -12,7 +12,7 @@ import { Armchair, Briefcase, CheckCircle2, ChevronLeft, ChevronRight, Loader2, 
 
 const PRIMARY_SEGMENT = 1;
 
-export default function PassengerInfo({ uuid, provider_id, flight, searchParams, ancillaryCatalog = [] }) {
+export default function PassengerInfo({ uuid, provider_id, flight, reservation_type, searchParams, ancillaryCatalog = [] }) {
     const initialPassengers = [];
     const types = [
         { type: 'adult', count: searchParams?.adults || 1 },
@@ -30,6 +30,8 @@ export default function PassengerInfo({ uuid, provider_id, flight, searchParams,
                 gender: 'M',
                 passport_number: '',
                 passport_expiry: '',
+                passport_issue_country: 'LBY',
+                nationality: 'LBY',
             });
         }
     });
@@ -38,6 +40,7 @@ export default function PassengerInfo({ uuid, provider_id, flight, searchParams,
         uuid,
         provider_id,
         flight,
+        reservation_type,
         customer: {
             first_name: '',
             last_name: '',
@@ -51,11 +54,44 @@ export default function PassengerInfo({ uuid, provider_id, flight, searchParams,
         },
     });
 
-    const [activeTab, setActiveTab] = useState('contact');
+    const [activeTab, setActiveTab] = useState('passengers');
     const [isSeatMapOpen, setIsSeatMapOpen] = useState(false);
     const [seatMapData, setSeatMapData] = useState(null);
     const [loadingSeatMap, setLoadingSeatMap] = useState(false);
     const [activePaxIndexForSeat, setActivePaxIndexForSeat] = useState(0);
+    const [localErrors, setLocalErrors] = useState({});
+
+    const validateStep = (step) => {
+        const errors = {};
+        if (step === 'passengers') {
+            data.passengers.forEach((p, i) => {
+                if (!p.first_name) errors[`passengers.${i}.first_name`] = 'Required';
+                if (!p.last_name) errors[`passengers.${i}.last_name`] = 'Required';
+                if (!p.dob) errors[`passengers.${i}.dob`] = 'Required';
+                if (!p.gender) errors[`passengers.${i}.gender`] = 'Required';
+                if (!p.passport_number) errors[`passengers.${i}.passport_number`] = 'Required';
+                if (!p.passport_expiry) errors[`passengers.${i}.passport_expiry`] = 'Required';
+                if (!p.nationality) errors[`passengers.${i}.nationality`] = 'Required';
+                if (!p.passport_issue_country) errors[`passengers.${i}.passport_issue_country`] = 'Required';
+            });
+            if (!data.customer.email) errors['customer.email'] = 'Required';
+            if (!data.customer.phone) errors['customer.phone'] = 'Required';
+        }
+        setLocalErrors(errors);
+        return Object.keys(errors).length === 0;
+    };
+
+    const nextStep = (current, next) => {
+        if (validateStep(current)) {
+            setActiveTab(next);
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+    };
+
+    const prevStep = (prev) => {
+        setActiveTab(prev);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    };
 
     const enabledAncillaries = useMemo(
         () => ancillaryCatalog.filter((service) => service.enabled),
@@ -265,7 +301,17 @@ export default function PassengerInfo({ uuid, provider_id, flight, searchParams,
     const handlePassengerChange = (index, field, value) => {
         const updatedPassengers = [...data.passengers];
         updatedPassengers[index][field] = value;
-        setData('passengers', updatedPassengers);
+        
+        const newData = { passengers: updatedPassengers };
+        
+        if (index === 0 && (field === 'first_name' || field === 'last_name')) {
+            newData.customer = {
+                ...data.customer,
+                [field]: value,
+            };
+        }
+        
+        setData((prev) => ({ ...prev, ...newData }));
     };
 
     const submitBooking = (event) => {
@@ -295,51 +341,12 @@ export default function PassengerInfo({ uuid, provider_id, flight, searchParams,
                     </div>
 
                     <form onSubmit={submitBooking} className="space-y-8">
-                        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+                        <Tabs value={activeTab} className="w-full">
                             <TabsList className="mb-8 grid w-full grid-cols-3 rounded-2xl border bg-muted/30 p-1">
-                                <TabsTrigger value="contact" className="rounded-xl font-bold">1. Contact Info</TabsTrigger>
-                                <TabsTrigger value="passengers" className="rounded-xl font-bold">2. Passengers</TabsTrigger>
-                                <TabsTrigger value="extras" className="rounded-xl font-bold">3. Extras</TabsTrigger>
+                                <TabsTrigger value="passengers" disabled className="rounded-xl font-bold">1. Passengers</TabsTrigger>
+                                <TabsTrigger value="extras" disabled className="rounded-xl font-bold">2. Extras</TabsTrigger>
+                                <TabsTrigger value="review" disabled className="rounded-xl font-bold">3. Review & Confirm</TabsTrigger>
                             </TabsList>
-
-                            <TabsContent value="contact" className="space-y-6">
-                                <Card className="border-2 shadow-sm">
-                                    <CardHeader className="border-b bg-muted/10 pb-4">
-                                        <CardTitle className="flex items-center gap-2">
-                                            <div className="rounded-full bg-primary/10 p-2"><Users className="h-5 w-5 text-primary" /></div>
-                                            Primary Contact
-                                        </CardTitle>
-                                        <CardDescription>We’ll send the booking confirmation and tickets to this address.</CardDescription>
-                                    </CardHeader>
-                                    <CardContent className="grid grid-cols-1 gap-6 pt-6 md:grid-cols-2">
-                                        <div className="space-y-2">
-                                            <Label>First Name</Label>
-                                            <Input required value={data.customer.first_name} onChange={(event) => handleCustomerChange('first_name', event.target.value)} />
-                                            {errors['customer.first_name'] && <p className="text-xs text-destructive">{errors['customer.first_name']}</p>}
-                                        </div>
-                                        <div className="space-y-2">
-                                            <Label>Last Name</Label>
-                                            <Input required value={data.customer.last_name} onChange={(event) => handleCustomerChange('last_name', event.target.value)} />
-                                            {errors['customer.last_name'] && <p className="text-xs text-destructive">{errors['customer.last_name']}</p>}
-                                        </div>
-                                        <div className="space-y-2">
-                                            <Label>Email Address</Label>
-                                            <Input required type="email" value={data.customer.email} onChange={(event) => handleCustomerChange('email', event.target.value)} />
-                                            {errors['customer.email'] && <p className="text-xs text-destructive">{errors['customer.email']}</p>}
-                                        </div>
-                                        <div className="space-y-2">
-                                            <Label>Phone Number</Label>
-                                            <Input value={data.customer.phone} onChange={(event) => handleCustomerChange('phone', event.target.value)} />
-                                            {errors['customer.phone'] && <p className="text-xs text-destructive">{errors['customer.phone']}</p>}
-                                        </div>
-                                    </CardContent>
-                                </Card>
-                                <div className="flex justify-end">
-                                    <Button type="button" size="lg" className="rounded-full px-8 shadow-md" onClick={() => setActiveTab('passengers')}>
-                                        Continue to Passengers <ChevronRight className="ml-2 h-4 w-4" />
-                                    </Button>
-                                </div>
-                            </TabsContent>
 
                             <TabsContent value="passengers" className="space-y-6">
                                 {data.passengers.map((passenger, index) => (
@@ -354,12 +361,12 @@ export default function PassengerInfo({ uuid, provider_id, flight, searchParams,
                                             <div className="space-y-2">
                                                 <Label>First Name</Label>
                                                 <Input required value={passenger.first_name} onChange={(event) => handlePassengerChange(index, 'first_name', event.target.value)} />
-                                                {errors[`passengers.${index}.first_name`] && <p className="text-xs text-destructive">{errors[`passengers.${index}.first_name`]}</p>}
+                                                {(localErrors[`passengers.${index}.first_name`] || errors[`passengers.${index}.first_name`]) && <p className="text-xs text-destructive">{localErrors[`passengers.${index}.first_name`] || errors[`passengers.${index}.first_name`]}</p>}
                                             </div>
                                             <div className="space-y-2">
                                                 <Label>Last Name</Label>
                                                 <Input required value={passenger.last_name} onChange={(event) => handlePassengerChange(index, 'last_name', event.target.value)} />
-                                                {errors[`passengers.${index}.last_name`] && <p className="text-xs text-destructive">{errors[`passengers.${index}.last_name`]}</p>}
+                                                {(localErrors[`passengers.${index}.last_name`] || errors[`passengers.${index}.last_name`]) && <p className="text-xs text-destructive">{localErrors[`passengers.${index}.last_name`] || errors[`passengers.${index}.last_name`]}</p>}
                                             </div>
                                             <div className="space-y-2">
                                                 <Label>Gender</Label>
@@ -371,27 +378,61 @@ export default function PassengerInfo({ uuid, provider_id, flight, searchParams,
                                                     <option value="M">Male</option>
                                                     <option value="F">Female</option>
                                                 </select>
+                                                {localErrors[`passengers.${index}.gender`] && <p className="text-xs text-destructive">{localErrors[`passengers.${index}.gender`]}</p>}
                                             </div>
                                             <div className="space-y-2">
                                                 <Label>Date of Birth</Label>
-                                                <Input type="date" value={passenger.dob} onChange={(event) => handlePassengerChange(index, 'dob', event.target.value)} />
+                                                <Input type="date" required value={passenger.dob} onChange={(event) => handlePassengerChange(index, 'dob', event.target.value)} />
+                                                {localErrors[`passengers.${index}.dob`] && <p className="text-xs text-destructive">{localErrors[`passengers.${index}.dob`]}</p>}
                                             </div>
                                             <div className="space-y-2">
                                                 <Label>Passport Number</Label>
-                                                <Input value={passenger.passport_number} onChange={(event) => handlePassengerChange(index, 'passport_number', event.target.value)} />
+                                                <Input required value={passenger.passport_number} onChange={(event) => handlePassengerChange(index, 'passport_number', event.target.value)} />
+                                                {localErrors[`passengers.${index}.passport_number`] && <p className="text-xs text-destructive">{localErrors[`passengers.${index}.passport_number`]}</p>}
                                             </div>
                                             <div className="space-y-2">
                                                 <Label>Passport Expiry</Label>
-                                                <Input type="date" value={passenger.passport_expiry} onChange={(event) => handlePassengerChange(index, 'passport_expiry', event.target.value)} />
+                                                <Input type="date" required value={passenger.passport_expiry} onChange={(event) => handlePassengerChange(index, 'passport_expiry', event.target.value)} />
+                                                {localErrors[`passengers.${index}.passport_expiry`] && <p className="text-xs text-destructive">{localErrors[`passengers.${index}.passport_expiry`]}</p>}
+                                            </div>
+                                            <div className="space-y-2">
+                                                <Label>Nationality (3-letter)</Label>
+                                                <Input required maxLength={3} value={passenger.nationality} onChange={(event) => handlePassengerChange(index, 'nationality', event.target.value.toUpperCase())} placeholder="LBY" />
+                                                {(localErrors[`passengers.${index}.nationality`] || errors[`passengers.${index}.nationality`]) && <p className="text-xs text-destructive">{localErrors[`passengers.${index}.nationality`] || errors[`passengers.${index}.nationality`]}</p>}
+                                            </div>
+                                            <div className="space-y-2">
+                                                <Label>Passport Issue Country (3-letter)</Label>
+                                                <Input required maxLength={3} value={passenger.passport_issue_country} onChange={(event) => handlePassengerChange(index, 'passport_issue_country', event.target.value.toUpperCase())} placeholder="LBY" />
+                                                {(localErrors[`passengers.${index}.passport_issue_country`] || errors[`passengers.${index}.passport_issue_country`]) && <p className="text-xs text-destructive">{localErrors[`passengers.${index}.passport_issue_country`] || errors[`passengers.${index}.passport_issue_country`]}</p>}
                                             </div>
                                         </CardContent>
                                     </Card>
                                 ))}
-                                <div className="flex items-center justify-between">
-                                    <Button type="button" variant="ghost" className="font-bold" onClick={() => setActiveTab('contact')}>
-                                        <ChevronLeft className="mr-2 h-4 w-4" /> Back to Contact
-                                    </Button>
-                                    <Button type="button" size="lg" className="rounded-full px-8 shadow-md" onClick={() => setActiveTab('extras')}>
+
+                                <Card className="border-2 shadow-sm">
+                                    <CardHeader className="border-b bg-muted/10 pb-4">
+                                        <CardTitle className="flex items-center gap-2">
+                                            <div className="rounded-full bg-primary/10 p-2"><Users className="h-5 w-5 text-primary" /></div>
+                                            Contact Information
+                                        </CardTitle>
+                                        <CardDescription>Enter the email and phone number for the primary contact.</CardDescription>
+                                    </CardHeader>
+                                    <CardContent className="grid grid-cols-1 gap-6 pt-6 md:grid-cols-2">
+                                        <div className="space-y-2">
+                                            <Label>Email Address</Label>
+                                            <Input required type="email" value={data.customer.email} onChange={(event) => handleCustomerChange('email', event.target.value)} />
+                                            {(localErrors['customer.email'] || errors['customer.email']) && <p className="text-xs text-destructive">{localErrors['customer.email'] || errors['customer.email']}</p>}
+                                        </div>
+                                        <div className="space-y-2">
+                                            <Label>Phone Number</Label>
+                                            <Input required value={data.customer.phone} onChange={(event) => handleCustomerChange('phone', event.target.value)} />
+                                            {(localErrors['customer.phone'] || errors['customer.phone']) && <p className="text-xs text-destructive">{localErrors['customer.phone'] || errors['customer.phone']}</p>}
+                                        </div>
+                                    </CardContent>
+                                </Card>
+
+                                <div className="flex justify-end">
+                                    <Button type="button" size="lg" className="rounded-full px-8 shadow-md" onClick={() => nextStep('passengers', 'extras')}>
                                         Continue to Extras <ChevronRight className="ml-2 h-4 w-4" />
                                     </Button>
                                 </div>
@@ -526,8 +567,74 @@ export default function PassengerInfo({ uuid, provider_id, flight, searchParams,
                                 </Card>
 
                                 <div className="mt-8 flex items-center justify-between border-t pt-8">
-                                    <Button type="button" variant="ghost" className="font-bold" onClick={() => setActiveTab('passengers')}>
+                                    <Button type="button" variant="ghost" className="font-bold" onClick={() => prevStep('passengers')}>
                                         <ChevronLeft className="mr-2 h-4 w-4" /> Back to Passengers
+                                    </Button>
+                                    <Button type="button" size="lg" className="rounded-full px-8 shadow-md" onClick={() => nextStep('extras', 'review')}>
+                                        Continue to Review <ChevronRight className="ml-2 h-4 w-4" />
+                                    </Button>
+                                </div>
+                            </TabsContent>
+
+                            <TabsContent value="review" className="space-y-6">
+                                <Card className="border-2 shadow-sm overflow-hidden">
+                                    <CardHeader className="border-b bg-muted/10 pb-4">
+                                        <CardTitle className="flex items-center gap-2">
+                                            <CheckCircle2 className="h-5 w-5 text-emerald-600" />
+                                            Review your Details
+                                        </CardTitle>
+                                        <CardDescription>Double-check everything before finalizing the booking.</CardDescription>
+                                    </CardHeader>
+                                    <CardContent className="p-0">
+                                        <div className="p-6 space-y-8">
+                                            <div>
+                                                <p className="text-xs font-black uppercase tracking-widest text-primary mb-4">Passenger Details</p>
+                                                <div className="grid gap-4">
+                                                    {data.passengers.map((p, i) => (
+                                                        <div key={i} className="flex justify-between items-center p-4 rounded-xl border bg-muted/5">
+                                                            <div>
+                                                                <p className="font-bold">{p.first_name} {p.last_name}</p>
+                                                                <p className="text-xs text-muted-foreground uppercase font-black tracking-tighter">{p.type} • {p.gender} • DOB: {p.dob}</p>
+                                                            </div>
+                                                            <div className="text-right">
+                                                                <p className="text-xs font-bold text-muted-foreground">Passport</p>
+                                                                <p className="text-sm font-black">{p.passport_number}</p>
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+
+                                            <div className="grid grid-cols-2 gap-8 border-t pt-8">
+                                                <div>
+                                                    <p className="text-xs font-black uppercase tracking-widest text-primary mb-2">Primary Contact</p>
+                                                    <p className="font-bold">{data.customer.first_name} {data.customer.last_name}</p>
+                                                    <p className="text-sm text-muted-foreground">{data.customer.email}</p>
+                                                    <p className="text-sm text-muted-foreground">{data.customer.phone}</p>
+                                                </div>
+                                                <div>
+                                                    <p className="text-xs font-black uppercase tracking-widest text-primary mb-2">Selected Extras</p>
+                                                    {ancillaryLines.length > 0 || selectedSeatLabels.length > 0 ? (
+                                                        <ul className="space-y-1">
+                                                            {ancillaryLines.map(l => (
+                                                                <li key={l.code} className="text-sm font-medium">{l.label} ({l.quantity})</li>
+                                                            ))}
+                                                            {selectedSeatLabels.map(s => (
+                                                                <li key={s} className="text-sm font-medium">Seat: {s.split(': ')[1]}</li>
+                                                            ))}
+                                                        </ul>
+                                                    ) : (
+                                                        <p className="text-sm text-muted-foreground italic">No extras selected.</p>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </CardContent>
+                                </Card>
+
+                                <div className="mt-8 flex items-center justify-between border-t pt-8">
+                                    <Button type="button" variant="ghost" className="font-bold" onClick={() => prevStep('extras')}>
+                                        <ChevronLeft className="mr-2 h-4 w-4" /> Back to Extras
                                     </Button>
 
                                     <Button type="submit" size="lg" className="rounded-full bg-emerald-600 px-12 text-lg font-black text-white shadow-xl hover:bg-emerald-700" disabled={processing}>
@@ -557,6 +664,12 @@ export default function PassengerInfo({ uuid, provider_id, flight, searchParams,
                                     <div className="flex items-center justify-between text-sm font-bold">
                                         <span className="text-muted-foreground">Flight</span>
                                         <span>{flight.flight_number}</span>
+                                    </div>
+                                    <div className="flex items-center justify-between text-sm font-bold">
+                                        <span className="text-muted-foreground">Reservation Type</span>
+                                        <span className={`rounded-full px-3 py-0.5 text-[10px] font-black uppercase tracking-widest ${reservation_type === 'NN' ? 'bg-emerald-100 text-emerald-700 ring-1 ring-emerald-600/20' : 'bg-amber-100 text-amber-700 ring-1 ring-amber-600/20'}`}>
+                                            {reservation_type === 'NN' ? 'Confirmed (NN)' : 'Open (QQ)'}
+                                        </span>
                                     </div>
                                     <div className="mt-2 flex justify-between text-sm font-bold">
                                         <span className="text-muted-foreground">Passengers</span>
