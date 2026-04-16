@@ -96,6 +96,10 @@ class TenantManagementController extends Controller
                 ->limit(5)
                 ->get(['id', 'pnr', 'status', 'tenant_provider_id', 'total_price', 'currency', 'created_at']);
 
+            $users = User::query()
+                ->latest()
+                ->get(['id', 'name', 'email', 'role', 'is_active', 'last_login_at']);
+
             return [
                 'stats' => [
                     'users' => User::count(),
@@ -107,6 +111,7 @@ class TenantManagementController extends Controller
                 'admin_user' => $admin,
                 'providers' => $providers,
                 'recent_bookings' => $recentBookings,
+                'users' => $users,
             ];
         });
 
@@ -115,6 +120,7 @@ class TenantManagementController extends Controller
             'admin_user' => $data['admin_user'],
             'providers' => Collection::make($data['providers'])->values(),
             'recent_bookings' => Collection::make($data['recent_bookings'])->values(),
+            'users' => Collection::make($data['users'])->values(),
         ];
     }
 }
