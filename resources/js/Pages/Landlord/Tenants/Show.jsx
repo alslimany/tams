@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Head, Link, router, useForm } from '@inertiajs/react';
 import LandlordLayout from '@/Layouts/LandlordLayout';
-import { Card, CardContent, CardHeader, CardTitle } from '@/Components/ui/Card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/Components/ui/Card';
 import { Button } from '@/Components/ui/Button';
 import { Badge } from '@/Components/ui/Badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/Components/ui/Table';
@@ -136,7 +136,7 @@ export default function Show({ tenantRecord }) {
                         <CardHeader className="flex flex-row items-center justify-between space-y-0 border-b bg-muted/10 pb-4">
                             <div>
                                 <CardTitle className="text-lg font-bold">Tenant Users</CardTitle>
-                                <DialogDescription>Manage the accounts that have access to this tenant.</DialogDescription>
+                                <CardDescription>Manage the accounts that have access to this tenant.</CardDescription>
                             </div>
                             <Button onClick={openCreateModal} size="sm" className="rounded-full shadow-md">
                                 <Plus className="mr-2 h-4 w-4" /> Add User
