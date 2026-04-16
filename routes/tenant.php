@@ -10,7 +10,6 @@ use App\Http\Controllers\Tenant\UserController;
 use Illuminate\Support\Facades\Route;
 use Laravel\Sanctum\Http\Controllers\CsrfCookieController;
 use Stancl\Tenancy\Middleware\InitializeTenancyByDomain;
-use Stancl\Tenancy\Middleware\InitializeTenancyByPath;
 use Stancl\Tenancy\Middleware\PreventAccessFromCentralDomains;
 
 /*
@@ -34,11 +33,10 @@ Route::group(['prefix' => config('sanctum.prefix', 'sanctum')], static function 
 });
 
 Route::middleware([
+    InitializeTenancyByDomain::class,
     'web',
-    InitializeTenancyByPath::class,
     PreventAccessFromCentralDomains::class,
-])->prefix('/{tenant}')->group(function () {
-
+])->group(function () {
     Route::get('/', function () {
         return inertia('Welcome');
     }
