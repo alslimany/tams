@@ -8,7 +8,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/Components/ui/Dialog';
 import { Input } from '@/Components/ui/Input';
 import { Label } from '@/Components/ui/Label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/Components/ui/Select';
+import { Select } from '@/Components/ui/Select';
 import { Switch } from '@/Components/ui/Switch';
 import { Plus, Pencil, Trash2, ShieldCheck, User as UserIcon, Mail, Key } from 'lucide-react';
 
@@ -324,15 +324,14 @@ export default function Show({ tenantRecord }) {
                                     <Label htmlFor="role" className="flex items-center gap-2">
                                         <ShieldCheck className="h-4 w-4 text-muted-foreground" /> Role
                                     </Label>
-                                    <Select value={data.role} onValueChange={val => setData('role', val)}>
-                                        <SelectTrigger id="role">
-                                            <SelectValue placeholder="Select role" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            <SelectItem value="admin">Admin</SelectItem>
-                                            <SelectItem value="manager">Manager</SelectItem>
-                                            <SelectItem value="agent">Agent</SelectItem>
-                                        </SelectContent>
+                                    <Select 
+                                        id="role" 
+                                        value={data.role} 
+                                        onChange={e => setData('role', e.target.value)}
+                                    >
+                                        <option value="admin">Admin</option>
+                                        <option value="manager">Manager</option>
+                                        <option value="agent">Agent</option>
                                     </Select>
                                     {errors.role && <p className="text-xs text-destructive">{errors.role}</p>}
                                 </div>
