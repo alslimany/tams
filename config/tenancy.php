@@ -11,6 +11,8 @@ return [
 
     'domain_model' => Domain::class,
 
+    'tenant_identification' => Stancl\Tenancy\Middleware\InitializeTenancyByPath::class,
+
     /**
      * The list of domains hosting your central app.
      *
