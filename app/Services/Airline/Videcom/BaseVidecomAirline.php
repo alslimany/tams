@@ -79,10 +79,14 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
     {
         $rawDate = $params['date'] ?? now()->toDateTimeString();
         $date = strtoupper(\Carbon\Carbon::parse($rawDate)->format('dM'));
+        
+        $returnDateRaw = $params['return_date'] ?? null;
+        $returnDate = $returnDateRaw ? strtoupper(\Carbon\Carbon::parse($returnDateRaw)->format('dM')) : null;
+
         $origin = strtoupper($params['origin'] ?? '');
         $destination = strtoupper($params['destination'] ?? '');
         $qty = $params['qty'] ?? 1;
-        $isReturn = $params['is_return'] ?? false;
+        $isReturn = filter_var($params['is_return'] ?? false, FILTER_VALIDATE_BOOLEAN);
 
         $adults = (int) ($params['adults'] ?? 1);
         $children = (int) ($params['children'] ?? 0);
@@ -93,7 +97,13 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
             throw new Exception("Route {$origin}-{$destination} is not allowed for this airline account.");
         }
 
-        $command = "A{$date}{$origin}{$destination}[SalesCity={$origin},VARS=True,ClassBands=True,StartCity={$origin},SingleSeg=".($isReturn ? 'r' : 's').",FGNoAv=True,qtyseats={$qty}]";
+        $command = "A{$date}{$origin}{$destination}[SalesCity={$origin},VARS=True,ClassBands=True,StartCity={$origin},SingleSeg=".($isReturn ? 'r' : 's').",FGNoAv=True,qtyseats={$qty}";
+        
+        if ($isReturn && $returnDate) {
+            $command .= ",RetDate={$returnDate}";
+        }
+        
+        $command .= "]";
 
         $response = $this->client->runCommand($command);
         $xml = $this->parseXml($response);

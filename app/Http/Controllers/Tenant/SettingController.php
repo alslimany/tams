@@ -16,7 +16,7 @@ class SettingController extends Controller
     {
         return Inertia::render('Tenant/Settings/General', [
             'settings' => [
-                'search_display_mode' => tenant('search_display_mode') ?? 'per_offer',
+                'search_display_mode' => tenant()->getInternal('search_display_mode') ?? 'per_offer',
             ],
         ]);
     }

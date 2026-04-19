@@ -55,7 +55,7 @@ class BookingController extends Controller
                 ->distinct()
                 ->orderBy('airline_name')
                 ->get(),
-            'searchDisplayMode' => tenant()->search_display_mode ?? 'per_offer',
+            'searchDisplayMode' => tenant()->getInternal('search_display_mode') ?? 'per_offer',
         ]);
     }
 
@@ -68,6 +68,7 @@ class BookingController extends Controller
             'origin' => 'required|string|size:3',
             'destination' => 'required|string|size:3',
             'date' => 'required|date_format:Y-m-d',
+            'return_date' => 'nullable|required_if:is_return,true|date_format:Y-m-d|after_or_equal:date',
             'adults' => 'required|integer|min:1|max:9',
             'children' => 'nullable|integer|min:0|max:9',
             'infants' => 'nullable|integer|min:0|max:9',
@@ -149,7 +150,7 @@ class BookingController extends Controller
             'query' => $searchParams,
             'providers' => $providers,
             'flights' => $flights, // This will be empty on initial visit, populated on partial reload
-            'searchDisplayMode' => tenant()->search_display_mode ?? 'per_offer',
+            'searchDisplayMode' => tenant()->getInternal('search_display_mode') ?? 'per_offer',
         ]);
     }
 
