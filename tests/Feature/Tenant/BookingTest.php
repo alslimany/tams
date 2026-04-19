@@ -65,7 +65,7 @@ afterEach(function () {
 test('agent can view the booking selection page', function () {
     $this->actingAs($this->user);
 
-    $url = 'http://'.$this->tenant->domains->first()->domain.route('bookings.select', [], false);
+    $url = 'http://'.$this->tenant->domains->first()->domain.route('flights.select', [], false);
 
     $response = $this->post($url, [
         'uuid' => Str::uuid()->toString(),
@@ -79,7 +79,7 @@ test('agent can view the booking selection page', function () {
 test('agent can submit a booking and it persists to database', function () {
     $this->actingAs($this->user);
 
-    $url = 'http://'.$this->tenant->domains->first()->domain.route('bookings.store', [], false);
+    $url = 'http://'.$this->tenant->domains->first()->domain.route('flights.store', [], false);
 
     $response = $this->post($url, [
         'uuid' => Str::uuid()->toString(),
@@ -134,7 +134,7 @@ test('agent can submit a booking and it persists to database', function () {
     $booking = Booking::first();
     expect($booking)->not->toBeNull();
 
-    $response->assertRedirect(route('bookings.show', $booking));
+    $response->assertRedirect(route('flights.show', $booking));
 
     expect((string) $booking->pnr)->not->toBeEmpty();
     expect((float) $booking->total_price)->toEqual(540.0);
@@ -152,8 +152,8 @@ test('booking is not persisted when videcom returns an authorization error', fun
     $this->actingAs($this->user);
     $this->bookingResponse = 'Agent not authorised to enter manual ticket time limits';
 
-    $url = 'http://'.$this->tenant->domains->first()->domain.route('bookings.store', [], false);
-    $referer = 'http://'.$this->tenant->domains->first()->domain.'/bookings/select';
+    $url = 'http://'.$this->tenant->domains->first()->domain.route('flights.store', [], false);
+    $referer = 'http://'.$this->tenant->domains->first()->domain.'/flights/select';
 
     $response = $this->from($referer)->post($url, [
         'uuid' => Str::uuid()->toString(),

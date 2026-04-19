@@ -1,85 +1,139 @@
 import React from 'react';
-import { Head, Link } from '@inertiajs/react';
-import TenantLayout from '@/Layouts/TenantLayout';
-import { Card, CardContent, CardHeader, CardTitle } from '@/Components/ui/Card';
-import { Badge } from '@/Components/ui/Badge';
+import { Head } from '@inertiajs/react';
+import {
+    BookOpenCheckIcon,
+    PlaneTakeoffIcon,
+    TicketCheckIcon,
+    UsersIcon,
+} from 'lucide-react';
 
-export default function Dashboard({ stats, recentBookings, providerStatus }) {
-    const cards = [
-        { label: "Today's Bookings", value: stats.todaysBookings },
-        { label: 'Issued Tickets', value: stats.issuedTickets },
-        { label: 'Active Users', value: stats.activeAgents },
-        { label: 'Active Providers', value: stats.activeProviders },
+import ChartSalesMetrics from '@/Components/shadcn-studio/blocks/chart-sales-metrics';
+import TransactionDatatable from '@/Components/shadcn-studio/blocks/datatable-transaction';
+import StatisticsCard from '@/Components/shadcn-studio/blocks/statistics-card-01';
+import TotalEarningCard from '@/Components/shadcn-studio/blocks/widget-total-earning';
+import ProductInsightsCard from '@/Components/shadcn-studio/blocks/widget-product-insights';
+import { Card, CardContent, CardHeader, CardTitle } from '@/Components/ui/Card';
+import TenantLayout from '@/Layouts/TenantLayout';
+
+const earningData = [
+    {
+        img: 'https://cdn.shadcnstudio.com/ss-assets/blocks/dashboard-application/widgets/icon-4.svg',
+        platform: 'App booking',
+        technologies: 'Live + API',
+        earnings: '$14,850',
+        progressPercentage: 40,
+    },
+    {
+        img: 'https://cdn.shadcnstudio.com/ss-assets/blocks/dashboard-application/widgets/icon-5.svg',
+        platform: 'Portal booking',
+        technologies: 'Web + Widget',
+        earnings: '$10,430',
+        progressPercentage: 32,
+    },
+    {
+        img: 'https://cdn.shadcnstudio.com/ss-assets/blocks/dashboard-application/widgets/icon-6.svg',
+        platform: 'Agent booking',
+        technologies: 'Backoffice',
+        earnings: '$9,125',
+        progressPercentage: 28,
+    },
+];
+
+const getInitials = (fullName) => {
+    if (!fullName) {
+        return 'GU';
+    }
+
+    const parts = fullName.trim().split(' ').filter(Boolean);
+
+    if (parts.length === 1) {
+        return parts[0].slice(0, 2).toUpperCase();
+    }
+
+    return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
+};
+
+export default function Dashboard({ stats = {}, recentBookings = [] }) {
+    const statCards = [
+        {
+            icon: <BookOpenCheckIcon className="size-4" />,
+            title: "Today's bookings",
+            value: (stats?.todaysBookings ?? 0).toLocaleString(),
+            changePercentage: '+0%',
+        },
+        {
+            icon: <TicketCheckIcon className="size-4" />,
+            title: 'Issued tickets',
+            value: (stats?.issuedTickets ?? 0).toLocaleString(),
+            changePercentage: '+0%',
+        },
+        {
+            icon: <UsersIcon className="size-4" />,
+            title: 'Active agents',
+            value: (stats?.activeAgents ?? 0).toLocaleString(),
+            changePercentage: '+0%',
+        },
+        {
+            icon: <PlaneTakeoffIcon className="size-4" />,
+            title: 'Active providers',
+            value: (stats?.activeProviders ?? 0).toLocaleString(),
+            changePercentage: '+0%',
+        },
     ];
+
+    const transactionData = (recentBookings ?? []).map((booking, index) => {
+        const customerName = `${booking?.first_name ?? ''} ${booking?.surname ?? ''}`.trim() || 'Guest Customer';
+
+        return {
+            id: booking?.id,
+            name: customerName,
+            avatar: null,
+            avatarFallback: getInitials(customerName),
+            email: booking?.email || 'no-email@guest.local',
+            amount: Number(booking?.total_price ?? 0),
+            status: booking?.status || 'pending',
+            paidBy: index % 2 === 0 ? 'mastercard' : 'visa',
+        };
+    });
 
     return (
         <TenantLayout>
             <Head title="Dashboard" />
-            
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                {cards.map((card) => (
-                    <Card key={card.label}>
-                        <CardHeader className="pb-2">
-                            <CardTitle className="text-sm font-medium text-muted-foreground">{card.label}</CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                            <p className="text-3xl font-bold">{card.value}</p>
-                        </CardContent>
-                    </Card>
-                ))}
-            </div>
 
-            <div className="mt-8 grid gap-6 xl:grid-cols-[2fr_1fr]">
-                <Card>
-                    <CardHeader className="flex flex-row items-center justify-between">
-                        <CardTitle className="text-xl">Recent Bookings</CardTitle>
-                        <Link href={route('bookings.index')} className="text-sm font-medium text-primary">
-                            View all
-                        </Link>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                        {recentBookings.length === 0 ? (
-                            <p className="text-muted-foreground">No bookings yet.</p>
-                        ) : recentBookings.map((booking) => (
-                            <div key={booking.id} className="flex items-center justify-between rounded-lg border p-4">
-                                <div>
-                                    <p className="font-semibold">{booking.pnr}</p>
-                                    <p className="text-sm text-muted-foreground">
-                                        {booking.customer?.first_name} {booking.customer?.last_name} • {booking.provider?.airline_name}
-                                    </p>
-                                </div>
-                                <div className="text-right">
-                                    <Badge variant={booking.status === 'ticketed' ? 'success' : 'secondary'}>{booking.status}</Badge>
-                                    <p className="mt-2 text-sm font-medium">{booking.total_price} {booking.currency}</p>
-                                </div>
-                            </div>
-                        ))}
-                    </CardContent>
-                </Card>
+            <div className="space-y-6">
+                <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                    {statCards.map((card) => (
+                        <StatisticsCard
+                            key={card.title}
+                            icon={card.icon}
+                            title={card.title}
+                            value={card.value}
+                            changePercentage={card.changePercentage}
+                        />
+                    ))}
+                </div>
+
+                <div className="grid gap-4 xl:grid-cols-4">
+                    <TotalEarningCard
+                        title="Total booking value"
+                        earning={Number(stats?.ticketValue ?? 0).toLocaleString()}
+                        trend="up"
+                        percentage="8"
+                        comparisonText="Tracking current booking channels"
+                        earningData={earningData}
+                        className="xl:col-span-2"
+                    />
+                    <ProductInsightsCard className="xl:col-span-2" />
+                </div>
+
+                <ChartSalesMetrics />
 
                 <Card>
                     <CardHeader>
-                        <CardTitle className="text-xl">Provider Health</CardTitle>
+                        <CardTitle>Recent bookings</CardTitle>
                     </CardHeader>
-                    <CardContent className="space-y-4">
-                        {providerStatus.length === 0 ? (
-                            <p className="text-muted-foreground">No providers configured yet.</p>
-                        ) : providerStatus.map((provider) => (
-                            <div key={provider.id} className="rounded-lg border p-4">
-                                <div className="flex items-center justify-between gap-3">
-                                    <div>
-                                        <p className="font-semibold">{provider.airline_name}</p>
-                                        <p className="text-sm text-muted-foreground">{provider.account_name}</p>
-                                    </div>
-                                    <Badge variant={provider.last_test_status === 'passed' ? 'success' : provider.is_active ? 'default' : 'outline'}>
-                                        {provider.last_test_status || (provider.is_active ? 'active' : 'inactive')}
-                                    </Badge>
-                                </div>
-                                <p className="mt-2 text-xs text-muted-foreground">
-                                    {provider.last_test_message || 'No connection check recorded yet.'}
-                                </p>
-                            </div>
-                        ))}
+                    <CardContent>
+                        <TransactionDatatable data={transactionData} />
                     </CardContent>
                 </Card>
             </div>

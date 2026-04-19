@@ -19,6 +19,7 @@ return [
     'central_domains' => [
         '127.0.0.1',
         'localhost',
+        'tams.test',
         parse_url(env('APP_URL', 'http://localhost'), PHP_URL_HOST),
     ],
 
@@ -136,7 +137,7 @@ return [
          * disable asset() helper tenancy and explicitly use tenant_asset() calls in places
          * where you want to use tenant-specific assets (product images, avatars, etc).
          */
-        'asset_helper_tenancy' => env("TENANCY_ASSET_HELPER", true),
+        'asset_helper_tenancy' => env('TENANCY_ASSET_HELPER', true),
     ],
 
     /**

@@ -38,7 +38,7 @@ export default function SearchResults({ providers, query, uuid, searchDisplayMod
         }
 
         providers.forEach(provider => {
-            axios.post(route('bookings.fetch-flights'), {
+            axios.post(route('flights.fetch-flights'), {
                 uuid: uuid,
                 provider_id: provider.id
             }).then(response => {
@@ -303,7 +303,7 @@ export default function SearchResults({ providers, query, uuid, searchDisplayMod
                                     </div>
                                     <div className="p-6 border-t bg-muted/30 flex flex-col sm:flex-row gap-3">
                                         <Link
-                                            href={route('bookings.select', { flight: flight, uuid: uuid, provider_id: provider?.id, reservation_type: 'QQ' })}
+                                            href={route('flights.select', { flight: flight, uuid: uuid, provider_id: provider?.id, reservation_type: 'QQ' })}
                                             method="post"
                                             as="button"
                                             className="flex-1"
@@ -313,7 +313,7 @@ export default function SearchResults({ providers, query, uuid, searchDisplayMod
                                             </Button>
                                         </Link>
                                         <Link
-                                            href={route('bookings.select', { flight: flight, uuid: uuid, provider_id: provider?.id, reservation_type: 'NN' })}
+                                            href={route('flights.select', { flight: flight, uuid: uuid, provider_id: provider?.id, reservation_type: 'NN' })}
                                             method="post"
                                             as="button"
                                             className="flex-1"
@@ -432,9 +432,9 @@ export default function SearchResults({ providers, query, uuid, searchDisplayMod
                                         </p>
                                         <Dialog>
                                             <DialogTrigger asChild>
-                                                <button className="text-[10px] font-bold text-primary hover:underline cursor-pointer">
+                                                <Button variant="link" size="sm" className="h-auto p-0 text-[10px] font-bold">
                                                     Price Details
-                                                </button>
+                                                </Button>
                                             </DialogTrigger>
                                             <DialogContent className="max-w-2xl">
                                                 <DialogHeader>
@@ -538,7 +538,7 @@ export default function SearchResults({ providers, query, uuid, searchDisplayMod
                                             </div>
                                             <div className="p-6 border-t bg-muted/30 flex flex-col sm:flex-row gap-3">
                                                         <Link
-                                                            href={route('bookings.select', { flight: offer, uuid: uuid, provider_id: provider?.id, reservation_type: 'QQ' })}
+                                                            href={route('flights.select', { flight: offer, uuid: uuid, provider_id: provider?.id, reservation_type: 'QQ' })}
                                                             method="post"
                                                             as="button"
                                                             className="flex-1"
@@ -548,7 +548,7 @@ export default function SearchResults({ providers, query, uuid, searchDisplayMod
                                                             </Button>
                                                         </Link>
                                                         <Link
-                                                            href={route('bookings.select', { flight: offer, uuid: uuid, provider_id: provider?.id, reservation_type: 'NN' })}
+                                                            href={route('flights.select', { flight: offer, uuid: uuid, provider_id: provider?.id, reservation_type: 'NN' })}
                                                             method="post"
                                                             as="button"
                                                             className="flex-1"
@@ -619,7 +619,7 @@ export default function SearchResults({ providers, query, uuid, searchDisplayMod
                             return (
                                 <Link
                                     key={offset}
-                                    href={route('bookings.search')}
+                                    href={route('flights.search')}
                                     method="post"
                                     data={{ ...query, date: localDateStr }}
                                     as="button"
@@ -657,7 +657,7 @@ export default function SearchResults({ providers, query, uuid, searchDisplayMod
                                 <Plane className="h-16 w-16 text-muted-foreground/20 mx-auto mb-4" />
                                 <h3 className="text-xl font-bold">No Flights Found</h3>
                                 <p className="text-muted-foreground max-w-xs mx-auto">We couldn't find any flights for your selected route and date. Try adjusting your search.</p>
-                                <Link href={route('bookings.index')} className="mt-6 inline-block">
+                                <Link href={route('flights.index')} className="mt-6 inline-block">
                                     <Button variant="outline" className="font-bold">Modify Search</Button>
                                 </Link>
                             </div>

@@ -82,7 +82,7 @@ class BookingController extends Controller
         // Cache search parameters for 30 minutes
         Cache::put("flight_search_{$searchUuid}", $validated, now()->addMinutes(30));
 
-        return redirect()->route('bookings.results', ['uuid' => $searchUuid]);
+        return redirect()->route('flights.results', ['uuid' => $searchUuid]);
     }
 
     /**
@@ -93,7 +93,7 @@ class BookingController extends Controller
         $searchParams = Cache::get("flight_search_{$uuid}");
 
         if (! $searchParams) {
-            return redirect()->route('bookings.index')->with('error', 'Search expired. Please search again.');
+            return redirect()->route('flights.index')->with('error', 'Search expired. Please search again.');
         }
 
         $providers = TenantProvider::where('is_active', '=', true)
@@ -358,14 +358,13 @@ class BookingController extends Controller
         $pnr = 'PENDING';
         $fareResponse = null;
 
-        
-            $fareResponse = $provider->getPricing($mappedItinerary, $validated['passengers']);
-            $this->ensureProviderResponseIsSuccessful($fareResponse, 'pricing');
+        $fareResponse = $provider->getPricing($mappedItinerary, $validated['passengers']);
+        $this->ensureProviderResponseIsSuccessful($fareResponse, 'pricing');
 
-            // Call airline API to generate PNR
-            $bookingResponse = $provider->createBooking($params);
-            $this->ensureProviderResponseIsSuccessful($bookingResponse, 'booking');
-try {
+        // Call airline API to generate PNR
+        $bookingResponse = $provider->createBooking($params);
+        $this->ensureProviderResponseIsSuccessful($bookingResponse, 'booking');
+        try {
             // Extract PNR from XML Response
             if ($bookingResponse instanceof \SimpleXMLElement) {
                 if (isset($bookingResponse->Locator)) {
@@ -393,7 +392,7 @@ try {
         } catch (\Exception $e) {
             Log::error('Flight booking generation failed: '.$e->getMessage());
 
-            return redirect()->route('bookings.select', [
+            return redirect()->route('flights.select', [
                 'uuid' => $validated['uuid'],
                 'provider_id' => $validated['provider_id'],
                 'flight' => $validated['flight'],
@@ -449,7 +448,7 @@ try {
             ]);
         }
 
-        return redirect()->route('bookings.show', $booking)->with('success', 'Booking created successfully!');
+        return redirect()->route('flights.show', $booking)->with('success', 'Booking created successfully!');
     }
 
     /**
@@ -490,11 +489,11 @@ try {
         ])) {
             // Try to get a more readable error from XML if possible
             $errorMessage = $response instanceof \SimpleXMLElement ? (string) ($response->Error ?? $response->Message ?? $response) : trim($rawResponse);
-            
+
             if (empty(trim($errorMessage))) {
                 $errorMessage = trim($rawResponse);
             }
-            
+
             throw new Exception("Videcom {$context} error: {$errorMessage}");
         }
     }

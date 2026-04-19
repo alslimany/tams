@@ -73,39 +73,7 @@ export default function Login({ status, canResetPassword }) {
                 </div>
             )}
 
-            <div className="flex justify-center mb-6">
-                <div className="bg-muted p-1 rounded-lg flex space-x-1">
-                    <button
-                        type="button"
-                        onClick={() => setLoginMethod('email')}
-                        className={cn(
-                            "px-4 py-2 rounded-md text-sm font-medium transition-colors",
-                            loginMethod === 'email' ? "bg-background shadow text-primary" : "text-muted-foreground hover:text-foreground"
-                        )}
-                    >
-                        <div className="flex items-center space-x-2">
-                            <Mail className="w-4 h-4" />
-                            <span>{t("Email Login")}</span>
-                        </div>
-                    </button>
-                    <button
-                        type="button"
-                        onClick={() => {
-                            setLoginMethod('code');
-                            setFocusedField('login_code');
-                        }}
-                        className={cn(
-                            "px-4 py-2 rounded-md text-sm font-medium transition-colors",
-                            loginMethod === 'code' ? "bg-background shadow text-primary" : "text-muted-foreground hover:text-foreground"
-                        )}
-                    >
-                        <div className="flex items-center space-x-2">
-                            <KeyRound className="w-4 h-4" />
-                            <span>{t("Code Login")}</span>
-                        </div>
-                    </button>
-                </div>
-            </div>
+            
 
             <form onSubmit={submit}>
                 <div className={cn("grid gap-8", loginMethod === 'code' ? "md:grid-cols-2" : "grid-cols-1")}>

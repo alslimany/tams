@@ -1,35 +1,167 @@
 import React from 'react';
-import { Head, Link } from '@inertiajs/react';
+import { Head, Link, usePage } from '@inertiajs/react';
 import { Button } from '@/Components/ui/Button';
-import LandlordLayout from '@/Layouts/LandlordLayout';
+import { Badge } from '@/Components/ui/Badge';
+import StorefrontLayout from '@/Layouts/StorefrontLayout';
+import { Plane, ShieldCheck, Globe, Clock, CheckCircle2, ArrowRight, LogIn } from 'lucide-react';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/Components/ui/Card';
 
 export default function Welcome() {
-    return (
-        <LandlordLayout>
-            <div className="min-h-screen bg-background text-foreground flex flex-col items-center justify-center space-y-8 text-center p-4">
-                <Head title="Welcome to TAMS" />
-                
-                <h1 className="text-4xl md:text-6xl font-extrabold tracking-tighter">
-                    Travel Agency Management System
-                </h1>
-                
-                <p className="max-w-[600px] text-muted-foreground text-lg md:text-xl">
-                    The modern platform for travel agencies. Manage bookings, connect airline accounts, and scale your business.
-                </p>
-                
-                <div className="flex flex-col sm:flex-row gap-4">
-                    <Button asChild size="lg">
-                        <Link href="/register-agency">Register your Agency</Link>
-                    </Button>
-                    <Button asChild variant="outline" size="lg">
-                        <Link href={route('landlord.login')}>Landlord Login</Link>
-                    </Button>
-                </div>
+    const { tenant } = usePage().props;
 
-                <p className="text-sm text-muted-foreground">
-                    Tenant users sign in from their agency subdomain. Platform admins sign in through the landlord console.
-                </p>
+    // --- TENANT HOME PAGE (e.g. agency.tams.ly) ---
+    if (tenant?.id) {
+        return (
+            <StorefrontLayout>
+                <div className="min-h-[70vh] flex flex-col items-center justify-center px-4 py-10 md:py-14 space-y-8 bg-slate-50/50">
+                    <Head title={`Welcome to ${tenant.companyName || tenant.id}`} />
+                    
+                    <div className="text-center space-y-4 max-w-2xl">
+                        <div className="inline-flex items-center justify-center p-3 rounded-2xl bg-primary/10 text-primary mb-1">
+                            <Plane className="h-8 w-8" />
+                        </div>
+                        <h1 className="text-3xl md:text-4xl font-bold tracking-tight text-slate-950">
+                            {tenant.companyName || tenant.id}
+                        </h1>
+                        <p className="text-base md:text-lg text-slate-600 font-medium leading-relaxed">
+                            Authorized Travel Agent Portal. Access your airline inventory, manage bookings, and issue tickets securely.
+                        </p>
+                    </div>
+
+                    <Card className="w-full max-w-md border shadow-sm overflow-hidden">
+                        <CardHeader className="bg-slate-50 border-b text-center pb-6 pt-6 px-6">
+                            <CardTitle className="text-xl font-semibold tracking-tight">Agent Access</CardTitle>
+                            <CardDescription className="text-sm font-medium">Sign in to your agency workspace</CardDescription>
+                        </CardHeader>
+                        <CardContent className="p-6">
+                            <div className="grid gap-4">
+                                <Button asChild size="lg" className="w-full font-semibold h-11">
+                                    <Link href={route('login')}>
+                                        <LogIn className="mr-2 h-4 w-4" /> Login to Agency
+                                    </Link>
+                                </Button>
+                                <div className="p-3 rounded-lg bg-amber-50 border border-amber-100 flex gap-2 items-start">
+                                    <ShieldCheck className="h-4 w-4 text-amber-600 mt-0.5 shrink-0" />
+                                    <p className="text-xs text-amber-900 font-medium leading-relaxed">
+                                        Only registered agents of {tenant.companyName || tenant.id} can access this system. All activities are logged.
+                                    </p>
+                                </div>
+                            </div>
+                        </CardContent>
+                    </Card>
+                </div>
+            </StorefrontLayout>
+        );
+    }
+
+    // --- LANDLORD HOME PAGE (e.g. tams.ly) ---
+    return (
+        <StorefrontLayout>
+            <div className="bg-white text-slate-950">
+                <Head title="BookNow - Travel Agency Management" />
+                
+                {/* Hero Section */}
+                <section className="relative py-14 md:py-20 overflow-hidden border-b bg-slate-50/30">
+                    <div className="container mx-auto px-4 md:px-6 relative z-10">
+                        <div className="flex flex-col items-center text-center space-y-6 max-w-3xl mx-auto">
+                            <Badge variant="outline" className="px-3 py-1 border-primary/20 bg-primary/5 text-primary font-medium rounded-full uppercase tracking-wide text-[10px]">
+                                Platform for Modern Travel Agencies
+                            </Badge>
+                            <h1 className="text-3xl md:text-5xl font-bold tracking-tight leading-tight text-slate-950">
+                                Scale your <span className="text-primary">Travel Agency</span>
+                            </h1>
+                            <p className="text-base md:text-lg text-slate-600 font-medium max-w-2xl leading-relaxed">
+                                Connect multiple airline accounts, automate bookings, and manage your team with enterprise-grade tools.
+                            </p>
+                            
+                            <div className="flex flex-col sm:flex-row gap-3 pt-2 w-full justify-center">
+                                <Button asChild size="lg" className="font-semibold h-11 px-6 group">
+                                    <Link href="/register-agency">
+                                        Start Free Trial <ArrowRight className="ml-2 h-4 w-4 group-hover:translate-x-1 transition-transform" />
+                                    </Link>
+                                </Button>
+                                <Button asChild variant="outline" size="lg" className="font-semibold h-11 px-6 border-slate-200 hover:bg-slate-50">
+                                    <Link href="#features">
+                                        See Features
+                                    </Link>
+                                </Button>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                {/* Features Section */}
+                <section id="features" className="py-14 md:py-16">
+                    <div className="container mx-auto px-4 md:px-6">
+                        <div className="text-center mb-10 space-y-3">
+                            <h2 className="text-2xl md:text-3xl font-semibold tracking-tight">Everything you need to succeed</h2>
+                            <p className="text-base text-slate-500 font-medium max-w-2xl mx-auto leading-relaxed">Powerful features designed to automate your workflow and increase your revenue.</p>
+                        </div>
+
+                        <div className="grid md:grid-cols-3 gap-6">
+                            {[
+                                { title: "Multi-Provider Access", desc: "Connect multiple Videcom accounts and search across all of them in real-time.", icon: Globe },
+                                { title: "Automated Ticketing", desc: "Issue, void, and refund tickets directly from your dashboard with one click.", icon: ShieldCheck },
+                                { title: "Agent Management", desc: "Control access for your team with granular roles and security codes.", icon: Clock },
+                            ].map((f, i) => (
+                                <Card key={i} className="border hover:border-primary/20 transition-all group overflow-hidden bg-white">
+                                    <CardContent className="p-6 space-y-4">
+                                        <div className="size-12 rounded-xl bg-primary/10 text-primary flex items-center justify-center group-hover:bg-primary group-hover:text-white transition-all duration-300">
+                                            <f.icon className="h-6 w-6" />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <h3 className="text-lg font-semibold tracking-tight">{f.title}</h3>
+                                            <p className="text-sm text-slate-600 leading-relaxed font-medium">{f.desc}</p>
+                                        </div>
+                                    </CardContent>
+                                </Card>
+                            ))}
+                        </div>
+                    </div>
+                </section>
+
+                {/* Pricing Section */}
+                <section id="pricing" className="py-14 md:py-16 bg-slate-50/50 border-t">
+                    <div className="container mx-auto px-4 md:px-6">
+                        <div className="text-center mb-10 space-y-3">
+                            <h2 className="text-2xl md:text-3xl font-semibold tracking-tight text-slate-950">Simple, Transparent Pricing</h2>
+                            <p className="text-base text-slate-500 font-medium max-w-2xl mx-auto">Choose the plan that fits your agency's scale.</p>
+                        </div>
+
+                        <div className="grid md:grid-cols-2 gap-6 max-w-4xl mx-auto">
+                            {[
+                                { name: "Starter", price: "49", features: ["1 Airline Provider", "5 Agent Accounts", "Unlimited Bookings", "Standard Support"] },
+                                { name: "Professional", price: "149", features: ["Unlimited Providers", "Unlimited Agents", "Priority Support", "Advanced Analytics", "Custom Branding"] },
+                            ].map((p, i) => (
+                                <Card key={i} className={`border overflow-hidden bg-white ${i === 1 ? 'border-primary shadow-sm relative' : ''}`}>
+                                    {i === 1 && <div className="absolute top-0 right-0 bg-primary text-white px-4 py-1 text-xs font-semibold uppercase tracking-wide">Recommended</div>}
+                                    <CardHeader className="p-6 pb-4">
+                                        <CardTitle className="text-xs font-semibold uppercase tracking-wider text-primary mb-2">{p.name}</CardTitle>
+                                        <div className="flex items-baseline gap-1">
+                                            <span className="text-4xl font-bold tracking-tight text-slate-950">${p.price}</span>
+                                            <span className="text-slate-500 font-medium text-sm">/month</span>
+                                        </div>
+                                    </CardHeader>
+                                    <CardContent className="p-6 pt-0 space-y-6">
+                                        <ul className="space-y-3">
+                                            {p.features.map((f, fi) => (
+                                                <li key={fi} className="flex items-center gap-2 font-medium text-slate-700 text-sm">
+                                                    <CheckCircle2 className="h-4 w-4 text-primary shrink-0" /> {f}
+                                                </li>
+                                            ))}
+                                        </ul>
+                                        <Button asChild size="lg" variant={i === 1 ? "default" : "outline"} className="w-full h-11 font-semibold transition-all border-slate-200 hover:bg-slate-50">
+                                            <Link href="/register-agency">Get Started Now</Link>
+                                        </Button>
+                                    </CardContent>
+                                </Card>
+                            ))}
+                        </div>
+                    </div>
+                </section>
             </div>
-        </LandlordLayout>
+        </StorefrontLayout>
     );
 }
+
+

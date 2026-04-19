@@ -1,14 +1,18 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Head, Link, router, useForm } from '@inertiajs/react';
+import { format } from 'date-fns';
 import TenantLayout from '@/Layouts/TenantLayout';
-import { Button } from "@/Components/ui/Button";
-import { Input } from "@/Components/ui/Input";
-import { Label } from "@/Components/ui/Label";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/Components/ui/Card";
-import { Badge } from "@/Components/ui/Badge";
-import { Plane, Calendar, Users, Minus, Plus, ChevronDown, ArrowRightLeft, ArrowRight } from "lucide-react";
-import { AsyncAirportSelect } from "@/Components/ui/AsyncAirportSelect";
+import { Button } from '@/Components/ui/Button';
+import { Input } from '@/Components/ui/Input';
+import { Label } from '@/Components/ui/Label';
+import { Select } from '@/Components/ui/Select';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/Components/ui/Card';
+import { Badge } from '@/Components/ui/Badge';
+import { CalendarIcon, Plane, Users, Minus, Plus, ChevronDown, ArrowRightLeft, ArrowRight } from 'lucide-react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/Components/ui/Table';
+import { Popover, PopoverContent, PopoverTrigger } from '@/Components/ui/popover';
+import { Calendar } from '@/Components/ui/calendar';
+import { AsyncAirportSelect } from '@/Components/ui/AsyncAirportSelect';
 
 export default function Search({ searchDisplayMode, bookings, filters, airlines }) {
     const [isPaxDropdownOpen, setIsPaxDropdownOpen] = useState(false);
@@ -38,7 +42,7 @@ export default function Search({ searchDisplayMode, bookings, filters, airlines 
 
     const submit = (e) => {
         e.preventDefault();
-        post(route('bookings.search'));
+        post(route('flights.search'));
     };
 
     const updatePax = (type, delta) => {
@@ -48,219 +52,265 @@ export default function Search({ searchDisplayMode, bookings, filters, airlines 
 
     const totalPax = data.adults + data.children + data.infants;
 
+    const departureDate = data.date ? new Date(data.date) : undefined;
+    const returnDate = data.return_date ? new Date(data.return_date) : undefined;
+    const tripRange = {
+        from: departureDate,
+        to: returnDate,
+    };
+
+    const applySingleDate = (selectedDate) => {
+        if (!selectedDate) {
+            return;
+        }
+
+        setData('date', format(selectedDate, 'yyyy-MM-dd'));
+    };
+
+    const applyRangeDate = (selectedRange) => {
+        setData('date', selectedRange?.from ? format(selectedRange.from, 'yyyy-MM-dd') : '');
+        setData('return_date', selectedRange?.to ? format(selectedRange.to, 'yyyy-MM-dd') : '');
+    };
+
     const filterBookings = (event) => {
         event.preventDefault();
 
         const formData = new FormData(event.currentTarget);
         const query = Object.fromEntries(Array.from(formData.entries()).filter(([, value]) => value));
-        router.get(route('bookings.index'), query, { preserveState: true, preserveScroll: true });
+        router.get(route('flights.index'), query, { preserveState: true, preserveScroll: true });
     };
 
     return (
         <TenantLayout>
             <Head title="Search Flights" />
 
-            <div className="max-w-6xl mx-auto py-8 space-y-8">
-                <div className="flex items-center justify-between">
+            <div className="mx-auto max-w-6xl space-y-6 py-6">
+                <div>
                     <div>
-                        <h2 className="text-3xl font-bold tracking-tight">Search Flights</h2>
-                        <p className="text-muted-foreground">Find the best flight options across all your providers.</p>
+                        <h2 className="text-2xl font-semibold tracking-tight">Search Flights</h2>
+                        <p className="text-sm text-muted-foreground">Find flight options across all your providers.</p>
                     </div>
                 </div>
 
-                <Card className="shadow-lg border-2 border-primary/10 overflow-visible">
-                    <CardHeader className="bg-primary/5 pb-6">
-                        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                            <CardTitle className="flex items-center gap-2">
-                                <Plane className="h-6 w-6 text-primary" />
-                                Book Your Next Flight
-                            </CardTitle>
-                            
-                            <div className="flex items-center bg-muted/50 p-1 rounded-lg w-fit">
-                                <button
+                <Card className="overflow-visible">
+                    <CardHeader>
+                        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                            <div>
+                                <CardTitle className="flex items-center gap-2">
+                                    <Plane className="h-5 w-5 text-primary" />
+                                    Book Your Next Flight
+                                </CardTitle>
+                                <CardDescription>
+                                    Complete the details below to start a new booking.
+                                </CardDescription>
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                                <Button
                                     type="button"
+                                    variant={!data.is_return ? 'default' : 'outline'}
+                                    size="sm"
                                     onClick={() => setData('is_return', false)}
-                                    className={`flex items-center gap-2 px-4 py-1.5 rounded-md text-sm font-bold transition-all ${!data.is_return ? 'bg-background shadow-sm text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+                                    className="gap-2"
                                 >
                                     <ArrowRight className="h-4 w-4" />
                                     One-way
-                                </button>
-                                <button
+                                </Button>
+                                <Button
                                     type="button"
+                                    variant={data.is_return ? 'default' : 'outline'}
+                                    size="sm"
                                     onClick={() => setData('is_return', true)}
-                                    className={`flex items-center gap-2 px-4 py-1.5 rounded-md text-sm font-bold transition-all ${data.is_return ? 'bg-background shadow-sm text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+                                    className="gap-2"
                                 >
                                     <ArrowRightLeft className="h-4 w-4" />
                                     Round-trip
-                                </button>
+                                </Button>
                             </div>
                         </div>
                     </CardHeader>
-                    <CardContent className="pt-8">
+                    <CardContent>
                         <form onSubmit={submit} className="space-y-6">
-                            <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-end">
-                                <div className="md:col-span-4 space-y-2">
-                                    <Label htmlFor="origin" className="font-bold">From</Label>
+                            <div className="grid gap-4 md:grid-cols-12">
+                                <div className="space-y-2 md:col-span-4">
+                                    <Label htmlFor="origin">From (IATA)</Label>
                                     <AsyncAirportSelect
                                         id="origin"
-                                        placeholder="Departure City"
+                                        placeholder="MJI"
                                         value={data.origin}
-                                        onChange={e => setData('origin', e.target.value.toUpperCase())}
+                                        onChange={(event) => setData('origin', event.target.value.toUpperCase())}
                                     />
-                                    {errors.origin && <p className="text-xs text-destructive font-medium">{errors.origin}</p>}
+                                    {errors.origin && <p className="text-xs text-destructive">{errors.origin}</p>}
                                 </div>
 
-                                <div className="hidden md:flex md:col-span-1 justify-center pb-3">
-                                    <div className="bg-muted p-2 rounded-full border shadow-sm">
+                                <div className="hidden items-end justify-center pb-2 md:col-span-1 md:flex">
+                                    <div className="rounded-md border p-2">
                                         <ArrowRightLeft className="h-4 w-4 text-muted-foreground" />
                                     </div>
                                 </div>
 
-                                <div className="md:col-span-4 space-y-2">
-                                    <Label htmlFor="destination" className="font-bold">To</Label>
+                                <div className="space-y-2 md:col-span-4">
+                                    <Label htmlFor="destination">To (IATA)</Label>
                                     <AsyncAirportSelect
                                         id="destination"
-                                        placeholder="Arrival City"
+                                        placeholder="IST"
                                         value={data.destination}
-                                        onChange={e => setData('destination', e.target.value.toUpperCase())}
-                                        isDestination={true}
+                                        onChange={(event) => setData('destination', event.target.value.toUpperCase())}
+                                        isDestination
                                     />
-                                    {errors.destination && <p className="text-xs text-destructive font-medium">{errors.destination}</p>}
+                                    {errors.destination && <p className="text-xs text-destructive">{errors.destination}</p>}
                                 </div>
 
-                                <div className="md:col-span-3 space-y-2">
-                                    <Label htmlFor="cabin_class" className="font-bold">Class</Label>
-                                    <select
+                                <div className="space-y-2 md:col-span-3">
+                                    <Label htmlFor="cabin_class">Class</Label>
+                                    <Select
                                         id="cabin_class"
                                         value={data.cabin_class}
-                                        onChange={e => setData('cabin_class', e.target.value)}
-                                        className="flex h-12 w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-medium ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                                        onChange={(event) => setData('cabin_class', event.target.value)}
                                     >
                                         <option value="economy">Economy</option>
                                         <option value="premium_economy">Premium Economy</option>
                                         <option value="business">Business</option>
                                         <option value="first">First Class</option>
-                                    </select>
+                                    </Select>
                                 </div>
                             </div>
 
-                            <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-end">
-                                <div className={`space-y-2 ${data.is_return ? 'md:col-span-3' : 'md:col-span-6'}`}>
-                                    <Label htmlFor="date" className="font-bold">Departure Date</Label>
-                                    <div className="relative">
-                                        <Input
-                                            id="date"
-                                            type="date"
-                                            value={data.date}
-                                            onChange={e => setData('date', e.target.value)}
-                                            className="pl-10 h-12 font-medium"
-                                            required
-                                        />
-                                        <Calendar className="absolute left-3 top-3.5 h-5 w-5 text-muted-foreground" />
+                            <div className="grid gap-4 md:grid-cols-12">
+                                {!data.is_return ? (
+                                    <div className="space-y-2 md:col-span-6">
+                                        <Label htmlFor="date">Departure Date</Label>
+                                        <Popover>
+                                            <PopoverTrigger asChild>
+                                                <Button id="date" variant="outline" className="w-full justify-start text-left font-normal">
+                                                    <CalendarIcon className="mr-2 h-4 w-4" />
+                                                    {departureDate ? format(departureDate, 'PPP') : 'Pick a date'}
+                                                </Button>
+                                            </PopoverTrigger>
+                                            <PopoverContent className="w-auto p-0" align="start">
+                                                <Calendar
+                                                    mode="single"
+                                                    selected={departureDate}
+                                                    onSelect={applySingleDate}
+                                                    initialFocus
+                                                />
+                                            </PopoverContent>
+                                        </Popover>
+                                        {errors.date && <p className="text-xs text-destructive">{errors.date}</p>}
                                     </div>
-                                    {errors.date && <p className="text-xs text-destructive font-medium">{errors.date}</p>}
-                                </div>
-
-                                {data.is_return && (
-                                    <div className="md:col-span-3 space-y-2">
-                                        <Label htmlFor="return_date" className="font-bold">Return Date</Label>
-                                        <div className="relative">
-                                            <Input
-                                                id="return_date"
-                                                type="date"
-                                                value={data.return_date}
-                                                onChange={e => setData('return_date', e.target.value)}
-                                                className="pl-10 h-12 font-medium"
-                                                required={data.is_return}
-                                                min={data.date}
-                                            />
-                                            <Calendar className="absolute left-3 top-3.5 h-5 w-5 text-muted-foreground" />
-                                        </div>
-                                        {errors.return_date && <p className="text-xs text-destructive font-medium">{errors.return_date}</p>}
+                                ) : (
+                                    <div className="space-y-2 md:col-span-6">
+                                        <Label htmlFor="date-range">Trip Dates</Label>
+                                        <Popover>
+                                            <PopoverTrigger asChild>
+                                                <Button id="date-range" variant="outline" className="w-full justify-start text-left font-normal">
+                                                    <CalendarIcon className="mr-2 h-4 w-4" />
+                                                    {tripRange.from
+                                                        ? tripRange.to
+                                                            ? `${format(tripRange.from, 'LLL dd, y')} - ${format(tripRange.to, 'LLL dd, y')}`
+                                                            : format(tripRange.from, 'LLL dd, y')
+                                                        : 'Pick a date range'}
+                                                </Button>
+                                            </PopoverTrigger>
+                                            <PopoverContent className="w-auto p-0" align="start">
+                                                <Calendar
+                                                    mode="range"
+                                                    selected={tripRange}
+                                                    onSelect={applyRangeDate}
+                                                    numberOfMonths={2}
+                                                    initialFocus
+                                                />
+                                            </PopoverContent>
+                                        </Popover>
+                                        {errors.date && <p className="text-xs text-destructive">{errors.date}</p>}
+                                        {errors.return_date && <p className="text-xs text-destructive">{errors.return_date}</p>}
                                     </div>
                                 )}
 
-                                <div className="md:col-span-6 space-y-2 relative" ref={paxDropdownRef}>
-                                    <Label className="font-bold">Passengers</Label>
-                                    <button
+                                <div className="relative space-y-2 md:col-span-6" ref={paxDropdownRef}>
+                                    <Label>Passengers</Label>
+                                    <Button
                                         type="button"
+                                        variant="outline"
                                         onClick={() => setIsPaxDropdownOpen(!isPaxDropdownOpen)}
-                                        className="flex h-12 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm font-medium ring-offset-background hover:bg-muted/50 transition-colors"
+                                        className="w-full justify-between"
                                     >
                                         <div className="flex items-center gap-2">
-                                            <Users className="h-5 w-5 text-muted-foreground" />
+                                            <Users className="h-4 w-4 text-muted-foreground" />
                                             <span>{totalPax} Passenger{totalPax > 1 ? 's' : ''}</span>
-                                            <Badge variant="secondary" className="ml-2 font-bold">
+                                            <Badge variant="secondary" className="ml-1 text-xs font-medium">
                                                 {data.adults}A, {data.children}C, {data.infants}I
                                             </Badge>
                                         </div>
                                         <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform ${isPaxDropdownOpen ? 'rotate-180' : ''}`} />
-                                    </button>
+                                    </Button>
 
                                     {isPaxDropdownOpen && (
-                                        <div className="absolute top-full left-0 mt-2 w-full md:w-80 bg-background border rounded-xl shadow-xl z-50 p-4 space-y-4">
+                                        <Card className="absolute left-0 top-full z-50 mt-2 w-full md:w-80">
+                                            <CardContent className="space-y-4 p-4">
                                             <div className="flex items-center justify-between">
                                                 <div>
-                                                    <p className="font-bold text-sm">Adults</p>
-                                                    <p className="text-[10px] text-muted-foreground">Age 12+</p>
+                                                    <p className="text-sm font-medium">Adults</p>
+                                                    <p className="text-xs text-muted-foreground">Age 12+</p>
                                                 </div>
                                                 <div className="flex items-center gap-3">
-                                                    <Button type="button" variant="outline" size="icon" className="h-8 w-8 rounded-full" onClick={() => updatePax('adults', -1)} disabled={data.adults <= 1}>
+                                                    <Button type="button" variant="outline" size="icon" onClick={() => updatePax('adults', -1)} disabled={data.adults <= 1}>
                                                         <Minus className="h-3 w-3" />
                                                     </Button>
-                                                    <span className="w-4 text-center font-bold">{data.adults}</span>
-                                                    <Button type="button" variant="outline" size="icon" className="h-8 w-8 rounded-full" onClick={() => updatePax('adults', 1)} disabled={totalPax >= 9}>
+                                                    <span className="w-4 text-center text-sm font-medium">{data.adults}</span>
+                                                    <Button type="button" variant="outline" size="icon" onClick={() => updatePax('adults', 1)} disabled={totalPax >= 9}>
                                                         <Plus className="h-3 w-3" />
                                                     </Button>
                                                 </div>
                                             </div>
 
-                                            <div className="flex items-center justify-between border-t pt-4">
+                                            <div className="flex items-center justify-between border-t pt-3">
                                                 <div>
-                                                    <p className="font-bold text-sm">Children</p>
-                                                    <p className="text-[10px] text-muted-foreground">Age 2-11</p>
+                                                    <p className="text-sm font-medium">Children</p>
+                                                    <p className="text-xs text-muted-foreground">Age 2-11</p>
                                                 </div>
                                                 <div className="flex items-center gap-3">
-                                                    <Button type="button" variant="outline" size="icon" className="h-8 w-8 rounded-full" onClick={() => updatePax('children', -1)} disabled={data.children <= 0}>
+                                                    <Button type="button" variant="outline" size="icon" onClick={() => updatePax('children', -1)} disabled={data.children <= 0}>
                                                         <Minus className="h-3 w-3" />
                                                     </Button>
-                                                    <span className="w-4 text-center font-bold">{data.children}</span>
-                                                    <Button type="button" variant="outline" size="icon" className="h-8 w-8 rounded-full" onClick={() => updatePax('children', 1)} disabled={totalPax >= 9}>
+                                                    <span className="w-4 text-center text-sm font-medium">{data.children}</span>
+                                                    <Button type="button" variant="outline" size="icon" onClick={() => updatePax('children', 1)} disabled={totalPax >= 9}>
                                                         <Plus className="h-3 w-3" />
                                                     </Button>
                                                 </div>
                                             </div>
 
-                                            <div className="flex items-center justify-between border-t pt-4">
+                                            <div className="flex items-center justify-between border-t pt-3">
                                                 <div>
-                                                    <p className="font-bold text-sm">Infants</p>
-                                                    <p className="text-[10px] text-muted-foreground">Under 2</p>
+                                                    <p className="text-sm font-medium">Infants</p>
+                                                    <p className="text-xs text-muted-foreground">Under 2</p>
                                                 </div>
                                                 <div className="flex items-center gap-3">
-                                                    <Button type="button" variant="outline" size="icon" className="h-8 w-8 rounded-full" onClick={() => updatePax('infants', -1)} disabled={data.infants <= 0}>
+                                                    <Button type="button" variant="outline" size="icon" onClick={() => updatePax('infants', -1)} disabled={data.infants <= 0}>
                                                         <Minus className="h-3 w-3" />
                                                     </Button>
-                                                    <span className="w-4 text-center font-bold">{data.infants}</span>
-                                                    <Button type="button" variant="outline" size="icon" className="h-8 w-8 rounded-full" onClick={() => updatePax('infants', 1)} disabled={totalPax >= 9 || data.infants >= data.adults}>
+                                                    <span className="w-4 text-center text-sm font-medium">{data.infants}</span>
+                                                    <Button type="button" variant="outline" size="icon" onClick={() => updatePax('infants', 1)} disabled={totalPax >= 9 || data.infants >= data.adults}>
                                                         <Plus className="h-3 w-3" />
                                                     </Button>
                                                 </div>
                                             </div>
                                             
                                             <div className="pt-2 border-t">
-                                                <Button type="button" variant="default" className="w-full h-9 text-xs font-bold rounded-lg" onClick={() => setIsPaxDropdownOpen(false)}>
+                                                <Button type="button" className="w-full" onClick={() => setIsPaxDropdownOpen(false)}>
                                                     Done
                                                 </Button>
                                             </div>
-                                        </div>
+                                            </CardContent>
+                                        </Card>
                                     )}
                                 </div>
                             </div>
 
-                            <div className="flex justify-end pt-4 border-t">
+                            <div className="flex justify-end pt-3 border-t">
                                 <Button
                                     type="submit"
-                                    className="w-full md:w-1/4 h-12 text-lg font-black shadow-lg hover:shadow-xl transition-all rounded-full bg-primary"
+                                    className="w-full md:w-auto"
                                     disabled={processing}
                                 >
                                     {processing ? "Searching..." : "Find Flights"}
@@ -272,8 +322,8 @@ export default function Search({ searchDisplayMode, bookings, filters, airlines 
 
                 <Card>
                     <CardHeader>
-                        <CardTitle>Booking Management</CardTitle>
-                        <CardDescription>Search, review, and continue work on existing bookings.</CardDescription>
+                        <CardTitle>Flight Management</CardTitle>
+                        <CardDescription>Search, review, and continue work on existing flights.</CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-6">
                         <form onSubmit={filterBookings} className="grid gap-4 md:grid-cols-4">
@@ -287,25 +337,25 @@ export default function Search({ searchDisplayMode, bookings, filters, airlines 
                             </div>
                             <div className="space-y-2">
                                 <Label htmlFor="status">Status</Label>
-                                <select id="status" name="status" defaultValue={filters?.status || ''} className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm">
+                                <Select id="status" name="status" defaultValue={filters?.status || ''}>
                                     <option value="">All statuses</option>
                                     <option value="confirmed">Confirmed</option>
                                     <option value="ticketed">Ticketed</option>
                                     <option value="cancelled">Cancelled</option>
                                     <option value="refunded">Refunded</option>
-                                </select>
+                                </Select>
                             </div>
                             <div className="space-y-2">
                                 <Label htmlFor="airline">Airline</Label>
-                                <select id="airline" name="airline" defaultValue={filters?.airline || ''} className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm">
+                                <Select id="airline" name="airline" defaultValue={filters?.airline || ''}>
                                     <option value="">All airlines</option>
                                     {airlines.map((airline) => (
                                         <option key={airline.airline_code} value={airline.airline_code}>{airline.airline_name}</option>
                                     ))}
-                                </select>
+                                </Select>
                             </div>
                             <div className="md:col-span-4 flex justify-end">
-                                <Button type="submit" variant="outline">Apply filters</Button>
+                                <Button type="submit" variant="outline">Apply Filters</Button>
                             </div>
                         </form>
 
@@ -325,7 +375,7 @@ export default function Search({ searchDisplayMode, bookings, filters, airlines 
                                     {bookings.length === 0 ? (
                                         <TableRow>
                                             <TableCell colSpan={6} className="text-center text-muted-foreground">
-                                                No bookings found for the current filters.
+                                                No flights found for the current filters.
                                             </TableCell>
                                         </TableRow>
                                     ) : bookings.map((booking) => (
@@ -346,7 +396,7 @@ export default function Search({ searchDisplayMode, bookings, filters, airlines 
                                             <TableCell>{booking.total_price} {booking.currency}</TableCell>
                                             <TableCell className="text-right">
                                                 <Button asChild size="sm" variant="ghost">
-                                                    <Link href={route('bookings.show', booking.id)}>Open</Link>
+                                                    <Link href={route('flights.show', booking.id)}>Open</Link>
                                                 </Button>
                                             </TableCell>
                                         </TableRow>

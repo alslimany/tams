@@ -224,7 +224,7 @@ export default function PassengerInfo({ uuid, provider_id, flight, reservation_t
         try {
             const flightCode = flight.segments?.[0]?.flight_number || flight.flight_number;
             const flightDate = flight.segments?.[0]?.departure_time || flight.departure_time;
-            const response = await axios.post(route('bookings.seatmap'), {
+            const response = await axios.post(route('flights.seatmap'), {
                 provider_id,
                 flight_number: flightCode,
                 date: flightDate,
@@ -316,7 +316,7 @@ export default function PassengerInfo({ uuid, provider_id, flight, reservation_t
 
     const submitBooking = (event) => {
         event.preventDefault();
-        post(route('bookings.store'));
+        post(route('flights.store'));
     };
 
     const providerPrice = Number(flight.pricing?.total || 0);
@@ -333,7 +333,7 @@ export default function PassengerInfo({ uuid, provider_id, flight, reservation_t
             <div className="mx-auto grid max-w-7xl grid-cols-1 gap-8 px-4 py-8 lg:grid-cols-3">
                 <div className="space-y-8 lg:col-span-2">
                     <div>
-                        <Link href={route('bookings.results', { uuid })} className="mb-4 flex items-center text-sm font-bold text-muted-foreground hover:text-primary">
+                        <Link href={route('flights.results', { uuid })} className="mb-4 flex items-center text-sm font-bold text-muted-foreground hover:text-primary">
                             <ChevronLeft className="mr-1 h-4 w-4" /> Back to Flights
                         </Link>
                         <h2 className="text-3xl font-black tracking-tight">Complete your Booking</h2>

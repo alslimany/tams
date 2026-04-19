@@ -2,37 +2,44 @@
 
 namespace App\Services\Airline\Videcom;
 
-use Illuminate\Support\Facades\Http;
 use Exception;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 
 class VidecomClient
 {
+    public const MODE_API = 'api';
+
     public const MODE_SOAP = 'soap';
+
     public const MODE_SESSION = 'session';
 
     protected string $baseUrl;
+
     protected array $config;
+
     protected string $mode;
 
     /**
      * VidecomClient constructor.
      *
-     * @param array $config Configuration containing credentials, base_url, and mode
+     * @param  array  $config  Configuration containing credentials, base_url, and mode
      */
     public function __construct(array $config)
     {
         $this->config = $config;
         $this->baseUrl = rtrim($config['base_url'], '/');
-        $this->mode = $config['mode'] ?? self::MODE_SESSION;
+        $mode = strtolower((string) ($config['mode'] ?? self::MODE_SESSION));
+        $this->mode = $mode === self::MODE_API ? self::MODE_SOAP : $mode;
     }
 
     /**
      * Execute a VRS command.
      *
-     * @param string $command The VRS command to run
+     * @param  string  $command  The VRS command to run
      * @return string The raw response from Videcom
+     *
      * @throws Exception
      */
     public function runCommand(string $command): string
@@ -50,10 +57,10 @@ class VidecomClient
     protected function runSessionCommand(string $command): string
     {
         $username = $this->config['username'] ?? '';
-        $cacheKey = "videcom_session_" . md5($this->baseUrl . $username);
+        $cacheKey = 'videcom_session_'.md5($this->baseUrl.$username);
         $session = Cache::get($cacheKey);
 
-        if (!$session) {
+        if (! $session) {
             $session = $this->login();
             Cache::put($cacheKey, $session, now()->addMinutes(20));
         }
@@ -79,39 +86,39 @@ class VidecomClient
         $password = $this->config['password'] ?? '';
 
         if (empty($username) || empty($password)) {
-            throw new Exception("Videcom credentials (username/password) are missing for Expert Logon.");
+            throw new Exception('Videcom credentials (username/password) are missing for Expert Logon.');
         }
 
         $loginUrl = "{$this->baseUrl}/VARS/Agent/WebServices/LoginWs.asmx/DoLogin?VarsSessionID=undefined";
-        
+
         $response = Http::withBody(json_encode([
             'loginRq' => [
                 'UserName' => $username,
                 'Password' => $password,
-            ]
+            ],
         ]), 'application/json')->post($loginUrl);
 
         if ($response->failed()) {
-            Log::error("Videcom Login HTTP Failed", [
+            Log::error('Videcom Login HTTP Failed', [
                 'status' => $response->status(),
                 'body' => $response->body(),
             ]);
-            throw new Exception("Videcom login failed with status " . $response->status());
+            throw new Exception('Videcom login failed with status '.$response->status());
         }
 
         $data = $response->json('d');
         if (empty($data['NextURL'])) {
-            Log::error("Videcom Login Response Missing NextURL", ['data' => $data]);
-            throw new Exception("Videcom login failed: Invalid credentials or account locked.");
+            Log::error('Videcom Login Response Missing NextURL', ['data' => $data]);
+            throw new Exception('Videcom login failed: Invalid credentials or account locked.');
         }
 
         $nextUrl = $data['NextURL'];
         $parts = parse_url($nextUrl);
         parse_str($parts['query'] ?? '', $query);
-        
+
         $sessionId = $query['VarsSessionID'] ?? null;
 
-        if (!$sessionId) {
+        if (! $sessionId) {
             $exploded = explode('VarsSessionID=', $nextUrl);
             $sessionId = end($exploded);
         }
@@ -132,12 +139,12 @@ class VidecomClient
             ]);
 
             if ($response->failed()) {
-                throw new Exception("Videcom command failed: " . $response->body());
+                throw new Exception('Videcom command failed: '.$response->body());
             }
 
             return $response->json('d')['Data'] ?? '';
         } catch (Exception $e) {
-            Log::error("Videcom Session Command Error: " . $e->getMessage(), [
+            Log::error('Videcom Session Command Error: '.$e->getMessage(), [
                 'base_url' => $this->baseUrl,
                 'command' => $command,
             ]);
@@ -154,7 +161,7 @@ class VidecomClient
         $token = $this->config['token'] ?? '';
 
         if (empty($token)) {
-            throw new Exception("Videcom token is missing for SOAP mode.");
+            throw new Exception('Videcom token is missing for SOAP mode.');
         }
 
         $xml = '<?xml version="1.0" encoding="utf-8"?>
@@ -162,8 +169,8 @@ class VidecomClient
   <soap:Body>
     <RunVRSCommand xmlns="http://videcom.com/">
       <msg>
-        <Token>' . htmlspecialchars($token) . '</Token>
-        <Command>' . htmlspecialchars($command) . '</Command>
+        <Token>'.htmlspecialchars($token).'</Token>
+        <Command>'.htmlspecialchars($command).'</Command>
       </msg>
     </RunVRSCommand>
   </soap:Body>
@@ -177,7 +184,7 @@ class VidecomClient
         ]);
 
         if ($response->failed()) {
-            throw new Exception("Videcom SOAP request failed: " . $response->body());
+            throw new Exception('Videcom SOAP request failed: '.$response->body());
         }
 
         return $this->parseSoapResponse($response->body());
@@ -189,13 +196,15 @@ class VidecomClient
     protected function parseSoapResponse(string $soapResponse): string
     {
         $xml = simplexml_load_string($soapResponse);
-        if (!$xml) return $soapResponse;
+        if (! $xml) {
+            return $soapResponse;
+        }
 
         $xml->registerXPathNamespace('soap', 'http://schemas.xmlsoap.org/soap/envelope/');
         $xml->registerXPathNamespace('ns', 'http://videcom.com/');
 
         $results = $xml->xpath('//ns:RunVRSCommandResult');
 
-        return !empty($results) ? (string) $results[0] : $soapResponse;
+        return ! empty($results) ? (string) $results[0] : $soapResponse;
     }
 }

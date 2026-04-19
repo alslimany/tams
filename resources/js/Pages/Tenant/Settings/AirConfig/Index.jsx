@@ -9,7 +9,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Switch } from "@/Components/ui/Switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/Components/ui/Tabs";
 import { Loader2, CheckCircle2, XCircle, Settings2, Plane, Globe } from "lucide-react";
-import { toast } from "sonner"; // Assuming sonner is installed
+import { toast } from "sonner";
 
 export default function Index({ airlines }) {
     const [selectedAirline, setSelectedAirline] = useState(null);
@@ -199,7 +199,7 @@ export default function Index({ airlines }) {
                                 <Tabs value={data.mode} onValueChange={(val) => setData('mode', val)} className="w-full">
                                     <TabsList className="grid w-full grid-cols-2">
                                         <TabsTrigger value="session">User / Auth Mode</TabsTrigger>
-                                        <TabsTrigger value="soap">API / Token Mode</TabsTrigger>
+                                        <TabsTrigger value="api">API / Token Mode</TabsTrigger>
                                     </TabsList>
                                     <TabsContent value="session" className="space-y-4 pt-4">
                                         <div className="grid gap-2">
@@ -224,7 +224,7 @@ export default function Index({ airlines }) {
                                             {errors.password && <p className="text-xs text-destructive">{errors.password}</p>}
                                         </div>
                                     </TabsContent>
-                                    <TabsContent value="soap" className="space-y-4 pt-4">
+                                    <TabsContent value="api" className="space-y-4 pt-4">
                                         <div className="grid gap-2">
                                             <Label htmlFor="token">API Token</Label>
                                             <Input
