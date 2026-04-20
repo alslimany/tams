@@ -39,7 +39,8 @@ export default function StorefrontLayout({ children }) {
                         {!isTenant && (
                             <nav className="hidden md:flex items-center gap-6">
                                 <Link href="#features" className="text-sm font-medium text-slate-600 hover:text-primary transition-colors">Features</Link>
-                                <Link href="#pricing" className="text-sm font-medium text-slate-600 hover:text-primary transition-colors">Pricing</Link>
+                                <Link href="#offers" className="text-sm font-medium text-slate-600 hover:text-primary transition-colors">Offers</Link>
+                                <Link href="#contact" className="text-sm font-medium text-slate-600 hover:text-primary transition-colors">Contact</Link>
                             </nav>
                         )}
                     </div>
@@ -106,14 +107,14 @@ export default function StorefrontLayout({ children }) {
                                 <ul className="space-y-3">
                                     <li><Link href="#" className="text-sm font-medium text-slate-600 hover:text-primary transition-colors">Features</Link></li>
                                     <li><Link href="#" className="text-sm font-medium text-slate-600 hover:text-primary transition-colors">Integrations</Link></li>
-                                    <li><Link href="#" className="text-sm font-medium text-slate-600 hover:text-primary transition-colors">Pricing</Link></li>
+                                    <li><Link href="#offers" className="text-sm font-medium text-slate-600 hover:text-primary transition-colors">Offers</Link></li>
                                 </ul>
                             </div>
                             <div className="space-y-4">
-                                <h4 className="font-semibold text-sm uppercase tracking-wider text-slate-500">Legal</h4>
+                                <h4 className="font-semibold text-sm uppercase tracking-wider text-slate-500">Company</h4>
                                 <ul className="space-y-3">
-                                    <li><Link href="#" className="text-sm font-medium text-slate-600 hover:text-primary transition-colors">Privacy</Link></li>
-                                    <li><Link href="#" className="text-sm font-medium text-slate-600 hover:text-primary transition-colors">Terms</Link></li>
+                                    <li><Link href="#contact" className="text-sm font-medium text-slate-600 hover:text-primary transition-colors">Contact Us</Link></li>
+                                    <li><a href="mailto:sales@booknow.ly" className="text-sm font-medium text-slate-600 hover:text-primary transition-colors">sales@booknow.ly</a></li>
                                 </ul>
                             </div>
                         </div>
