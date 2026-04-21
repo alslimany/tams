@@ -29,6 +29,18 @@ class BookingController extends Controller
      */
     public function index(): Response
     {
+        $searchDefaults = request()->only([
+            'origin',
+            'destination',
+            'date',
+            'return_date',
+            'adults',
+            'children',
+            'infants',
+            'is_return',
+            'cabin_class',
+        ]);
+
         return Inertia::render('Tenant/Bookings/Search', [
             'bookings' => Booking::query()
                 ->with(['customer:id,first_name,last_name,email', 'provider:id,airline_name'])
@@ -56,6 +68,17 @@ class BookingController extends Controller
                 ->distinct()
                 ->orderBy('airline_name')
                 ->get(),
+            'searchDefaults' => [
+                'origin' => strtoupper((string) ($searchDefaults['origin'] ?? '')),
+                'destination' => strtoupper((string) ($searchDefaults['destination'] ?? '')),
+                'date' => (string) ($searchDefaults['date'] ?? ''),
+                'return_date' => (string) ($searchDefaults['return_date'] ?? ''),
+                'adults' => (int) ($searchDefaults['adults'] ?? 1),
+                'children' => (int) ($searchDefaults['children'] ?? 0),
+                'infants' => (int) ($searchDefaults['infants'] ?? 0),
+                'is_return' => filter_var($searchDefaults['is_return'] ?? false, FILTER_VALIDATE_BOOLEAN),
+                'cabin_class' => (string) ($searchDefaults['cabin_class'] ?? 'economy'),
+            ],
             'searchDisplayMode' => tenant()->getInternal('search_display_mode') ?? 'per_offer',
         ]);
     }
@@ -430,7 +453,7 @@ class BookingController extends Controller
             $fareResponse = $provider->getPricing($mappedItinerary, $validated['passengers']);
             $this->ensureProviderResponseIsSuccessful($fareResponse, 'pricing');
 
-            $previewIssueCommand = filter_var($request->input('preview_issue_command', true), FILTER_VALIDATE_BOOLEAN);
+            $previewIssueCommand = filter_var($request->input('preview_issue_command', false), FILTER_VALIDATE_BOOLEAN);
             if ($previewIssueCommand && (method_exists($provider, 'previewBookingCommand') || is_callable([$provider, 'previewBookingCommand']))) {
                 $issueCommand = $provider->previewBookingCommand($params);
 
@@ -449,25 +472,7 @@ class BookingController extends Controller
             $bookingResponse = $provider->createBooking($params);
             $this->ensureProviderResponseIsSuccessful($bookingResponse, 'booking');
 
-            // Extract PNR from XML Response
-            if ($bookingResponse instanceof \SimpleXMLElement) {
-                if (isset($bookingResponse->Locator)) {
-                    $pnr = (string) $bookingResponse->Locator;
-                } elseif (isset($bookingResponse->RecordLocator)) {
-                    $pnr = (string) $bookingResponse->RecordLocator;
-                } elseif (isset($bookingResponse->PNR)) {
-                    $pnr = (string) $bookingResponse->PNR;
-                } else {
-                    $xmlStr = $bookingResponse->asXML();
-                    if (preg_match('/<Locator>([A-Z0-9]{5,6})<\/Locator>/i', $xmlStr, $m)) {
-                        $pnr = $m[1];
-                    } elseif (preg_match('/Locator="([A-Z0-9]{5,6})"/i', $xmlStr, $m)) {
-                        $pnr = $m[1];
-                    }
-                }
-            } elseif (is_string($bookingResponse) && preg_match('/[A-Z0-9]{5,6}/', $bookingResponse, $m)) {
-                $pnr = $m[0];
-            }
+            $pnr = $this->extractPnrLocator($bookingResponse) ?? 'PENDING';
 
             // Fallback for demo or unrecognized formats
             if ($pnr === 'PENDING') {
@@ -476,12 +481,16 @@ class BookingController extends Controller
         } catch (\Exception $e) {
             Log::error('Flight booking generation failed: '.$e->getMessage());
 
-            return redirect()->route('flights.select', [
-                'uuid' => $validated['uuid'],
-                'provider_id' => $validated['provider_id'],
-                'flight' => $validated['flight'],
-                'reservation_type' => $validated['reservation_type'],
-            ])->with('error', 'Failed to communicate with the airline: '.$e->getMessage());
+            $isTimeout = str_contains(strtolower($e->getMessage()), 'timed out')
+                || str_contains(strtolower($e->getMessage()), 'curl error 28');
+
+            $message = $isTimeout
+                ? 'Airline request timed out. Please review and confirm the booking again.'
+                : 'Failed to communicate with the airline: '.$e->getMessage();
+
+            return back()
+                ->withInput()
+                ->with('error', $message);
         }
 
         // Create Booking locally
@@ -580,6 +589,56 @@ class BookingController extends Controller
 
             throw new Exception("Videcom {$context} error: {$errorMessage}");
         }
+    }
+
+    protected function extractPnrLocator(mixed $bookingResponse): ?string
+    {
+        if ($bookingResponse instanceof \SimpleXMLElement) {
+            $attributeLocator = strtoupper(trim((string) ($bookingResponse['RLOC'] ?? '')));
+            if ($attributeLocator !== '') {
+                return $attributeLocator;
+            }
+
+            $directLocator = strtoupper(trim((string) ($bookingResponse->Locator ?? $bookingResponse->RecordLocator ?? $bookingResponse->PNR ?? '')));
+            if ($directLocator !== '') {
+                return $directLocator;
+            }
+
+            $pnrAttribute = $bookingResponse->xpath('//PNR/@RLOC');
+            if (is_array($pnrAttribute) && isset($pnrAttribute[0])) {
+                $xpathLocator = strtoupper(trim((string) $pnrAttribute[0]));
+                if ($xpathLocator !== '') {
+                    return $xpathLocator;
+                }
+            }
+
+            $xmlString = $bookingResponse->asXML() ?: '';
+
+            return $this->extractPnrLocatorFromString($xmlString);
+        }
+
+        if (is_string($bookingResponse)) {
+            return $this->extractPnrLocatorFromString($bookingResponse);
+        }
+
+        return null;
+    }
+
+    protected function extractPnrLocatorFromString(string $bookingResponse): ?string
+    {
+        if (preg_match('/\bRLOC="([A-Z0-9]{5,8})"/i', $bookingResponse, $matches) === 1) {
+            return strtoupper($matches[1]);
+        }
+
+        if (preg_match('/<Locator>([A-Z0-9]{5,8})<\/Locator>/i', $bookingResponse, $matches) === 1) {
+            return strtoupper($matches[1]);
+        }
+
+        if (preg_match('/<RecordLocator>([A-Z0-9]{5,8})<\/RecordLocator>/i', $bookingResponse, $matches) === 1) {
+            return strtoupper($matches[1]);
+        }
+
+        return null;
     }
 
     protected function isInternationalFlight(array $flight): bool

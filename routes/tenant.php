@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Http\Controllers\Tenant\AirlineConfigController;
 use App\Http\Controllers\Tenant\BookingController;
 use App\Http\Controllers\Tenant\DashboardController;
+use App\Http\Controllers\Tenant\OrderController;
 use App\Http\Controllers\Tenant\TicketController;
 use App\Http\Controllers\Tenant\UserController;
 use Illuminate\Support\Facades\Route;
@@ -56,6 +57,8 @@ Route::middleware([
         Route::post('flights/select', [BookingController::class, 'select'])->name('flights.select');
         Route::post('flights', [BookingController::class, 'store'])->name('flights.store');
         Route::get('flights/{booking}', [BookingController::class, 'show'])->name('flights.show');
+        Route::get('flights/{booking}/completed', [TicketController::class, 'completed'])->name('tickets.completed');
+        Route::get('orders/{order}', [OrderController::class, 'show'])->name('orders.show');
         Route::middleware('role:manager')->group(function () {
             Route::post('flights/{booking}/tickets/issue', [TicketController::class, 'issue'])->name('tickets.issue');
             Route::post('flights/{booking}/tickets/{ticket}/void', [TicketController::class, 'void'])->name('tickets.void');

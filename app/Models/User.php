@@ -2,6 +2,9 @@
 
 namespace App\Models;
 
+use Bavix\Wallet\Interfaces\Wallet as WalletInterface;
+use Bavix\Wallet\Traits\HasWallet;
+use Bavix\Wallet\Traits\HasWallets;
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
@@ -10,10 +13,10 @@ use Illuminate\Support\Str;
 use Laravel\Fortify\TwoFactorAuthenticatable;
 use Laravel\Sanctum\HasApiTokens;
 
-class User extends Authenticatable
+class User extends Authenticatable implements WalletInterface
 {
     /** @use HasFactory<\Database\Factories\UserFactory> */
-    use HasApiTokens, HasFactory, Notifiable, TwoFactorAuthenticatable;
+    use HasApiTokens, HasFactory, HasWallet, HasWallets, Notifiable, TwoFactorAuthenticatable;
 
     /**
      * The attributes that are mass assignable.
@@ -86,5 +89,16 @@ class User extends Authenticatable
             ->take(2)
             ->map(fn ($word) => Str::substr($word, 0, 1))
             ->implode('');
+    }
+
+    public function getOrCreateCurrencyWallet(string $currency)
+    {
+        $slug = strtoupper($currency);
+
+        return $this->getWallet($slug) ?? $this->createWallet([
+            'name' => $slug.' Wallet',
+            'slug' => $slug,
+            'meta' => ['currency' => $slug],
+        ]);
     }
 }

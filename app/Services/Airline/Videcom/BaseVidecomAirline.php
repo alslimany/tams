@@ -2,7 +2,11 @@
 
 namespace App\Services\Airline\Videcom;
 
+use App\Actions\Orders\CreateOrderFromVidecomResponse;
+use App\Models\Tenant\Booking;
+use App\Models\User;
 use App\Services\Airline\AirlineProviderInterface;
+use App\Services\Videcom\VidecomOrderParser;
 use Carbon\Carbon;
 use Exception;
 use SimpleXMLElement;
@@ -376,8 +380,117 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
     {
         $command = "*{$rloc}^MM^EZT*R^EZRE^*R~x";
         $response = $this->client->runCommand($command);
+        $xml = $this->parseXml($response);
 
-        return $this->parseXml($response);
+        if (! $xml instanceof SimpleXMLElement) {
+            return $xml;
+        }
+
+        $result = [
+            'xml' => $xml,
+            'parsed' => null,
+            'order_id' => null,
+        ];
+
+        try {
+            $parser = app(VidecomOrderParser::class);
+            $parsed = $parser->parse($xml->asXML() ?: $response);
+
+            $paymentType = strtolower((string) ($paymentInfo['type'] ?? ''));
+            if ($paymentType !== '') {
+                $parsed->paymentMethod = $paymentType;
+            }
+
+            $result['parsed'] = $parsed->toArray();
+
+            $booking = $this->resolveBookingContext($paymentInfo);
+            $issuer = $this->resolveIssuerContext($paymentInfo);
+
+            if ($booking && $issuer) {
+                $order = app(CreateOrderFromVidecomResponse::class)->execute($parsed, $booking, $issuer);
+                $result['order_id'] = $order->id;
+            }
+        } catch (\Throwable $exception) {
+            report($exception);
+        }
+
+        return $result;
+    }
+
+    /**
+     * Fetch current agency ticket wallet balance from Videcom office command.
+     *
+     * @return array{currency: string, balance: float}
+     */
+    public function fetchWalletBalance(?string $preferredCurrency = null): array
+    {
+        $response = $this->client->runCommand('zua~x');
+        $xml = $this->parseXml($response);
+
+        if (! $xml instanceof SimpleXMLElement) {
+            return [
+                'currency' => strtoupper((string) ($preferredCurrency ?: $this->getCurrency())),
+                'balance' => 0.0,
+            ];
+        }
+
+        $limits = $xml->xpath('//ticketmoneylimit');
+        if (! is_array($limits) || $limits === []) {
+            return [
+                'currency' => strtoupper((string) ($preferredCurrency ?: $this->getCurrency())),
+                'balance' => 0.0,
+            ];
+        }
+
+        $preferred = strtoupper((string) ($preferredCurrency ?: ''));
+        foreach ($limits as $limit) {
+            $current = strtoupper((string) ($limit['cur'] ?? ''));
+            if ($preferred !== '' && $current !== $preferred) {
+                continue;
+            }
+
+            return [
+                'currency' => $current !== '' ? $current : strtoupper((string) ($preferredCurrency ?: $this->getCurrency())),
+                'balance' => (float) ($limit['limit'] ?? 0),
+            ];
+        }
+
+        $first = $limits[0];
+
+        return [
+            'currency' => strtoupper((string) ($first['cur'] ?? ($preferredCurrency ?: $this->getCurrency()))),
+            'balance' => (float) ($first['limit'] ?? 0),
+        ];
+    }
+
+    protected function resolveBookingContext(array $paymentInfo): ?Booking
+    {
+        $booking = $paymentInfo['booking'] ?? null;
+        if ($booking instanceof Booking) {
+            return $booking;
+        }
+
+        $bookingId = $paymentInfo['booking_id'] ?? null;
+        if (is_numeric($bookingId)) {
+            return Booking::query()->find((int) $bookingId);
+        }
+
+        return null;
+    }
+
+    protected function resolveIssuerContext(array $paymentInfo): ?User
+    {
+        $user = $paymentInfo['user'] ?? null;
+        if ($user instanceof User) {
+            return $user;
+        }
+
+        $userId = $paymentInfo['user_id'] ?? null;
+        if (is_numeric($userId)) {
+            return User::query()->find((int) $userId);
+        }
+
+        return null;
     }
 
     /**

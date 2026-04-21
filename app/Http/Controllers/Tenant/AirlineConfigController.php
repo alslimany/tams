@@ -3,8 +3,10 @@
 namespace App\Http\Controllers\Tenant;
 
 use App\Http\Controllers\Controller;
+use App\Models\Tenant\AirlineAccount;
 use App\Models\TenantProvider;
 use App\Services\Airline\ProviderFactory;
+use App\Services\Airline\Videcom\BaseVidecomAirline;
 use Exception;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -38,7 +40,7 @@ class AirlineConfigController extends Controller
                 'videcom_code' => 'Medsky',
                 'base_url' => 'https://customer3.videcom.com/Medsky',
                 'accounts' => [
-                    ['name' => 'LYD Account', 'currency' => 'LYD', 'airports' => ['IST', 'MJI', 'BEN']],
+                    ['name' => 'Default Account', 'currency' => 'LYD', 'airports' => ['IST', 'MJI', 'BEN']],
                     ['name' => 'EUR Account', 'currency' => 'EUR', 'airports' => ['MLA', 'FCO']],
                 ],
             ],
@@ -115,6 +117,18 @@ class AirlineConfigController extends Controller
 
             $airline['accounts'] = collect($airline['accounts'])->map(function ($account) use ($configs, $airline) {
                 $existing = $configs->firstWhere('account_name', $account['name']);
+                $remainingBalance = null;
+
+                if ($existing) {
+                    $accountBalance = AirlineAccount::query()
+                        ->where('tenant_provider_id', $existing->id)
+                        ->where('currency', $account['currency'])
+                        ->value('balance');
+
+                    if ($accountBalance !== null) {
+                        $remainingBalance = number_format((float) $accountBalance, 2, '.', '');
+                    }
+                }
 
                 return array_merge($account, [
                     'is_enabled' => $existing ? $existing->is_active : false,
@@ -125,6 +139,7 @@ class AirlineConfigController extends Controller
                     'last_test_message' => $existing ? $existing->last_test_message : null,
                     'airline_code' => $airline['id'],
                     'provider_type' => $airline['provider_type'],
+                    'remaining_balance' => $remainingBalance,
                 ]);
             }
             );
@@ -180,9 +195,11 @@ class AirlineConfigController extends Controller
                 'is_active' => true,
                 'last_tested_at' => now(),
                 'last_test_status' => 'configured',
-                'last_test_message' => 'Credentials saved and awaiting verification.',
+                'last_test_message' => null,
             ]
         );
+
+        $this->syncOpeningBalance($provider);
 
         return back()->with('success', "{$validated['airline_name']} ({$validated['account_name']}) configured successfully.");
     }
@@ -240,6 +257,8 @@ class AirlineConfigController extends Controller
                     'last_test_status' => 'passed',
                     'last_test_message' => 'Connection successful.',
                 ]);
+
+                $this->syncOpeningBalance($existing);
             }
 
             return response()->json(['success' => true, 'message' => 'Connection successful!']);
@@ -267,5 +286,34 @@ class AirlineConfigController extends Controller
         $provider->update(['is_active' => ! $provider->is_active]);
 
         return back()->with('success', $provider->airline_name.' '.($provider->is_active ? 'enabled' : 'disabled'));
+    }
+
+    protected function syncOpeningBalance(TenantProvider $provider): void
+    {
+        try {
+            $airlineProvider = ProviderFactory::make($provider);
+
+            if (! $airlineProvider instanceof BaseVidecomAirline) {
+                return;
+            }
+
+            $currency = strtoupper((string) data_get($provider->credentials, 'currency', ''));
+            $balanceResult = $airlineProvider->fetchWalletBalance($currency);
+
+            $balanceCurrency = strtoupper((string) ($balanceResult['currency'] ?? $currency));
+            $balanceAmount = (float) ($balanceResult['balance'] ?? 0);
+
+            AirlineAccount::query()->updateOrCreate(
+                [
+                    'tenant_provider_id' => $provider->id,
+                    'currency' => $balanceCurrency,
+                ],
+                [
+                    'balance' => $balanceAmount,
+                ]
+            );
+        } catch (\Throwable $exception) {
+            report($exception);
+        }
     }
 }

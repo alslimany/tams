@@ -153,6 +153,59 @@ test('agent can submit a booking and it persists to database', function () {
     expect($booking->flightSegments->first()->flight_number)->toBe('YI123');
 });
 
+test('agent booking persists when provider returns PNR RLOC attribute format', function () {
+    $this->actingAs($this->user);
+
+    $this->bookingResponse = '<PNR RLOC="AD9PMM"><Tickets><TKT TktNo="928 2972466787" /></Tickets></PNR>';
+
+    $url = 'http://'.$this->tenant->domains->first()->domain.route('flights.store', [], false);
+
+    $response = $this->post($url, [
+        'preview_issue_command' => false,
+        'uuid' => Str::uuid()->toString(),
+        'provider_id' => $this->provider->id,
+        'reservation_type' => 'NN',
+        'flight' => [
+            'pricing' => ['total' => 350, 'currency' => 'LYD'],
+            'segments' => [
+                [
+                    'flight_number' => 'UZ0002',
+                    'departure_airport' => 'MJI',
+                    'arrival_airport' => 'BEN',
+                    'departure_time' => now()->addDays(2)->toDateTimeString(),
+                    'arrival_time' => now()->addDays(2)->addHours(2)->toDateTimeString(),
+                ],
+            ],
+        ],
+        'customer' => [
+            'first_name' => 'Abdullah',
+            'last_name' => 'Mohammed',
+            'email' => 'alslimany@gmail.com',
+            'phone' => '911388788',
+        ],
+        'passengers' => [
+            [
+                'type' => 'adult',
+                'first_name' => 'Abdullah',
+                'last_name' => 'Mohammed',
+                'gender' => 'M',
+                'dob' => '1992-05-07',
+            ],
+        ],
+        'extras' => [
+            'selected_services' => [],
+            'seats' => [],
+        ],
+    ]);
+
+    $booking = Booking::first();
+
+    expect($booking)->not->toBeNull();
+    expect($booking->pnr)->toBe('AD9PMM');
+
+    $response->assertRedirect(route('flights.show', $booking));
+});
+
 test('booking is not persisted when videcom returns an authorization error', function () {
     $this->actingAs($this->user);
     $this->bookingResponse = 'Agent not authorised to enter manual ticket time limits';
@@ -207,7 +260,7 @@ test('booking is not persisted when videcom returns an authorization error', fun
         ],
     ]);
 
-    $response->assertRedirectContains('/flights/select');
+    $response->assertRedirect($referer);
     $response->assertSessionHas('error');
 
     expect(Booking::count())->toBe(0);
@@ -296,6 +349,7 @@ test('passport fields are optional for domestic flights and command preview is r
     $referer = 'http://'.$this->tenant->domains->first()->domain.'/flights/select';
 
     $response = $this->from($referer)->post($url, [
+        'preview_issue_command' => true,
         'uuid' => Str::uuid()->toString(),
         'provider_id' => $this->provider->id,
         'reservation_type' => 'NN',
@@ -332,6 +386,61 @@ test('passport fields are optional for domestic flights and command preview is r
     $response->assertSessionHas('issue_command_preview');
     $response->assertSessionHas('success');
     $response->assertSessionMissing('errors');
+
+    expect(Booking::count())->toBe(0);
+});
+
+test('booking timeout redirects back with retry alert instead of invalid route redirect', function () {
+    $this->actingAs($this->user);
+    $this->bookingResponse = 'cURL error 28: Connection timed out after 10001 milliseconds';
+
+    $url = 'http://'.$this->tenant->domains->first()->domain.route('flights.store', [], false);
+    $referer = 'http://'.$this->tenant->domains->first()->domain.'/flights/select';
+
+    $response = $this->from($referer)->post($url, [
+        'preview_issue_command' => false,
+        'uuid' => Str::uuid()->toString(),
+        'provider_id' => $this->provider->id,
+        'reservation_type' => 'NN',
+        'flight' => [
+            'pricing' => ['total' => 280.02, 'currency' => 'LYD'],
+            'segments' => [
+                [
+                    'flight_number' => '0510',
+                    'departure_airport' => 'MJI',
+                    'arrival_airport' => 'SEB',
+                    'departure_time' => now()->addDays(2)->toDateTimeString(),
+                    'arrival_time' => now()->addDays(2)->addHours(2)->toDateTimeString(),
+                    'class' => 'Y',
+                ],
+            ],
+        ],
+        'customer' => [
+            'first_name' => 'Abdullah',
+            'last_name' => 'Abdullah',
+            'email' => 'alslimany@gmail.com',
+            'phone' => '911388788',
+        ],
+        'passengers' => [
+            [
+                'type' => 'adult',
+                'first_name' => 'Abdullah',
+                'last_name' => 'Abdullah',
+                'gender' => 'M',
+                'dob' => '1992-05-07',
+                'passport_number' => 'HPPLRF3K',
+                'passport_expiry' => '2029-10-01',
+                'passport_issue_country' => 'LBY',
+                'nationality' => 'LBY',
+            ],
+        ],
+        'extras' => [
+            'selected_services' => [],
+        ],
+    ]);
+
+    $response->assertRedirect($referer);
+    $response->assertSessionHas('error', 'Airline request timed out. Please review and confirm the booking again.');
 
     expect(Booking::count())->toBe(0);
 });

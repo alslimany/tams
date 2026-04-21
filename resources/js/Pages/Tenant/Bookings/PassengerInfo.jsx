@@ -379,6 +379,22 @@ export default function PassengerInfo({ uuid, provider_id, flight, reservation_t
                         <p className="mt-1 font-medium text-muted-foreground">Fill the passenger details, seats, and airline services for this offer.</p>
                     </div>
 
+                    {flash.error && (
+                        <Card className="border border-destructive/40 bg-destructive/5">
+                            <CardContent className="py-4 text-sm font-semibold text-destructive">
+                                {flash.error}
+                            </CardContent>
+                        </Card>
+                    )}
+
+                    {flash.success && !issueCommandPreview && (
+                        <Card className="border border-emerald-300 bg-emerald-50">
+                            <CardContent className="py-4 text-sm font-semibold text-emerald-700">
+                                {flash.success}
+                            </CardContent>
+                        </Card>
+                    )}
+
                     {issueCommandPreview && (
                         <Card className="border border-primary/30 bg-primary/5">
                             <CardHeader className="pb-2">
@@ -734,7 +750,7 @@ export default function PassengerInfo({ uuid, provider_id, flight, reservation_t
                                     <div className="flex items-center justify-between text-sm font-bold">
                                         <span className="text-muted-foreground">Reservation Type</span>
                                         <span className={`rounded-full px-3 py-0.5 text-[10px] font-black uppercase tracking-widest ${reservation_type === 'NN' ? 'bg-emerald-100 text-emerald-700 ring-1 ring-emerald-600/20' : 'bg-amber-100 text-amber-700 ring-1 ring-amber-600/20'}`}>
-                                            {reservation_type === 'NN' ? 'Confirmed (NN)' : 'Open (QQ)'}
+                                            {reservation_type === 'NN' ? 'Confirmed' : 'Open'}
                                         </span>
                                     </div>
                                     <div className="mt-2 flex justify-between text-sm font-bold">

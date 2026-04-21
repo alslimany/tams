@@ -14,20 +14,20 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/Components/ui/popover
 import { Calendar } from '@/Components/ui/calendar';
 import { AsyncAirportSelect } from '@/Components/ui/AsyncAirportSelect';
 
-export default function Search({ searchDisplayMode, bookings, filters, airlines }) {
+export default function Search({ searchDisplayMode, bookings, filters, airlines, searchDefaults = {} }) {
     const [isPaxDropdownOpen, setIsPaxDropdownOpen] = useState(false);
     const paxDropdownRef = useRef(null);
 
     const { data, setData, post, processing, errors } = useForm({
-        origin: '',
-        destination: '',
-        date: '',
-        return_date: '',
-        adults: 1,
-        children: 0,
-        infants: 0,
-        is_return: false,
-        cabin_class: 'economy',
+        origin: searchDefaults.origin || '',
+        destination: searchDefaults.destination || '',
+        date: searchDefaults.date || '',
+        return_date: searchDefaults.return_date || '',
+        adults: Number(searchDefaults.adults ?? 1),
+        children: Number(searchDefaults.children ?? 0),
+        infants: Number(searchDefaults.infants ?? 0),
+        is_return: Boolean(searchDefaults.is_return ?? false),
+        cabin_class: searchDefaults.cabin_class || 'economy',
     });
 
     useEffect(() => {

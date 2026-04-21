@@ -10,6 +10,7 @@
     "license": "MIT",
     "require": {
         "php": "^8.2",
+        "bavix/laravel-wallet": "^11.5",
         "inertiajs/inertia-laravel": "*",
         "laravel/fortify": "^1.30",
         "laravel/framework": "^12.0",

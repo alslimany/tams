@@ -15,10 +15,12 @@ import {
     DialogTrigger,
 } from "@/Components/ui/Dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/Components/ui/Table";
+import { formatMoney, formatMoneyValue } from '@/lib/currency';
 
 export default function SearchResults({ providers, query, uuid, searchDisplayMode }) {
     const [results, setResults] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [providerErrors, setProviderErrors] = useState([]);
 
     const formatDuration = (minutes) => {
         if (!minutes) return "N/A";
@@ -30,6 +32,7 @@ export default function SearchResults({ providers, query, uuid, searchDisplayMod
     useEffect(() => {
         setResults([]);
         setLoading(true);
+        setProviderErrors([]);
         let completed = 0;
 
         if (!providers || providers.length === 0) {
@@ -54,6 +57,16 @@ export default function SearchResults({ providers, query, uuid, searchDisplayMod
                     });
                 }
             }).catch(err => {
+                const message = err?.response?.data?.error || err?.message || 'Failed to load flights from provider.';
+
+                setProviderErrors((prev) => ([
+                    ...prev,
+                    {
+                        provider: provider.airline_name,
+                        message,
+                    },
+                ]));
+
                 console.error(`Failed to load flights for ${provider.airline_name}`);
             }).finally(() => {
                 completed++;
@@ -185,7 +198,7 @@ export default function SearchResults({ providers, query, uuid, searchDisplayMod
                             <div className="text-center">
                                 <p className="text-xs text-muted-foreground font-semibold uppercase">From</p>
                                 <p className="text-2xl font-black text-primary">
-                                    {flight?.pricing?.total || 0} <span className="text-sm">{flight?.pricing?.currency || 'LYD'}</span>
+                                    {formatMoneyValue(flight?.pricing?.total || 0)} <span className="text-sm">{flight?.pricing?.currency || 'LYD'}</span>
                                 </p>
                                 <Dialog>
                                     <DialogTrigger asChild>
@@ -238,14 +251,14 @@ export default function SearchResults({ providers, query, uuid, searchDisplayMod
                                                                             {pax.label}
                                                                         </div>
                                                                     </TableCell>
-                                                                    <TableCell className="text-right font-medium">{pax.fare} {flight.pricing.currency}</TableCell>
-                                                                    <TableCell className="text-right font-medium">{pax.tax} {flight.pricing.currency}</TableCell>
-                                                                    <TableCell className="text-right font-black text-primary">{pax.amount} {flight.pricing.currency}</TableCell>
+                                                                    <TableCell className="text-right font-medium">{formatMoney(pax.fare, flight.pricing.currency)}</TableCell>
+                                                                    <TableCell className="text-right font-medium">{formatMoney(pax.tax, flight.pricing.currency)}</TableCell>
+                                                                    <TableCell className="text-right font-black text-primary">{formatMoney(pax.amount, flight.pricing.currency)}</TableCell>
                                                                 </TableRow>
                                                             ))}
                                                             <TableRow className="bg-primary/10 hover:bg-primary/20 transition-colors">
                                                                 <TableCell colSpan={3} className="font-black text-lg py-4">Grand Total</TableCell>
-                                                                <TableCell className="text-right font-black text-2xl text-primary">{flight.pricing.total} {flight.pricing.currency}</TableCell>
+                                                                <TableCell className="text-right font-black text-2xl text-primary">{formatMoney(flight.pricing.total, flight.pricing.currency)}</TableCell>
                                                             </TableRow>
                                                         </TableBody>
                                                     </Table>
@@ -279,7 +292,7 @@ export default function SearchResults({ providers, query, uuid, searchDisplayMod
                                             </div>
                                             <div className="text-right">
                                                 <p className="text-sm font-bold text-muted-foreground">Grand Total</p>
-                                                <p className="text-2xl font-black text-primary">{flight.pricing.total} <span className="text-sm">{flight.pricing.currency}</span></p>
+                                                <p className="text-2xl font-black text-primary">{formatMoneyValue(flight.pricing.total)} <span className="text-sm">{flight.pricing.currency}</span></p>
                                             </div>
                                         </div>
 
@@ -428,7 +441,7 @@ export default function SearchResults({ providers, query, uuid, searchDisplayMod
                                 <div className="flex items-center gap-6">
                                     <div className="text-right">
                                         <p className="text-lg font-bold">
-                                            {offer.pricing.total} <span className="text-xs text-muted-foreground">{offer.pricing.currency}</span>
+                                            {formatMoneyValue(offer.pricing.total)} <span className="text-xs text-muted-foreground">{offer.pricing.currency}</span>
                                         </p>
                                         <Dialog>
                                             <DialogTrigger asChild>
@@ -474,17 +487,17 @@ export default function SearchResults({ providers, query, uuid, searchDisplayMod
                                                                                 </div>
                                                                             </TableCell>
                                                                             <TableCell className="text-right text-xs font-bold text-muted-foreground">
-                                                                                <span className="bg-muted px-2 py-0.5 rounded">Fare: {pax.fare}</span>
+                                                                                <span className="bg-muted px-2 py-0.5 rounded">Fare: {formatMoneyValue(pax.fare)}</span>
                                                                             </TableCell>
                                                                             <TableCell className="text-right text-xs font-bold text-muted-foreground">
-                                                                                <span className="bg-muted px-2 py-0.5 rounded">Tax: {pax.tax}</span>
+                                                                                <span className="bg-muted px-2 py-0.5 rounded">Tax: {formatMoneyValue(pax.tax)}</span>
                                                                             </TableCell>
-                                                                            <TableCell className="text-right font-black text-primary">{pax.amount} {offer.pricing.currency}</TableCell>
+                                                                            <TableCell className="text-right font-black text-primary">{formatMoney(pax.amount, offer.pricing.currency)}</TableCell>
                                                                         </TableRow>
                                                                     ))}
                                                                     <TableRow className="bg-primary/10">
                                                                         <TableCell colSpan={3} className="font-black text-xl py-6">Grand Total</TableCell>
-                                                                        <TableCell className="text-right font-black text-3xl text-primary">{offer.pricing.total} {offer.pricing.currency}</TableCell>
+                                                                        <TableCell className="text-right font-black text-3xl text-primary">{formatMoney(offer.pricing.total, offer.pricing.currency)}</TableCell>
                                                                     </TableRow>
                                                                 </TableBody>
                                                             </Table>
@@ -514,7 +527,7 @@ export default function SearchResults({ providers, query, uuid, searchDisplayMod
                                                     </div>
                                                     <div className="text-right">
                                                         <p className="text-sm font-bold text-muted-foreground">Grand Total</p>
-                                                        <p className="text-2xl font-black text-primary">{offer.pricing.total} <span className="text-sm">{offer.pricing.currency}</span></p>
+                                                        <p className="text-2xl font-black text-primary">{formatMoneyValue(offer.pricing.total)} <span className="text-sm">{offer.pricing.currency}</span></p>
                                                     </div>
                                                 </div>
 
@@ -634,6 +647,17 @@ export default function SearchResults({ providers, query, uuid, searchDisplayMod
                 </div>
 
                 <div className="space-y-6">
+                    {providerErrors.length > 0 && (
+                        <div className="rounded-2xl border border-destructive/40 bg-destructive/5 p-4">
+                            <p className="text-sm font-bold text-destructive">
+                                Some airlines timed out or failed to respond. You can adjust the search and try again.
+                            </p>
+                            <p className="mt-1 text-xs text-destructive/90">
+                                {providerErrors.map((entry) => `${entry.provider}: ${entry.message}`).join(' | ')}
+                            </p>
+                        </div>
+                    )}
+
                     {loading && results.length === 0 && (
                         <div className="flex flex-col items-center justify-center py-24 gap-6 bg-card border rounded-3xl shadow-sm">
                             <div className="relative">
@@ -657,7 +681,7 @@ export default function SearchResults({ providers, query, uuid, searchDisplayMod
                                 <Plane className="h-16 w-16 text-muted-foreground/20 mx-auto mb-4" />
                                 <h3 className="text-xl font-bold">No Flights Found</h3>
                                 <p className="text-muted-foreground max-w-xs mx-auto">We couldn't find any flights for your selected route and date. Try adjusting your search.</p>
-                                <Link href={route('flights.index')} className="mt-6 inline-block">
+                                <Link href={route('flights.index')} data={query} className="mt-6 inline-block">
                                     <Button variant="outline" className="font-bold">Modify Search</Button>
                                 </Link>
                             </div>

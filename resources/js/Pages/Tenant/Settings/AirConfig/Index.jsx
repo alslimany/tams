@@ -8,8 +8,9 @@ import { Badge } from "@/Components/ui/Badge";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/Components/ui/Card";
 import { Switch } from "@/Components/ui/Switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/Components/ui/Tabs";
-import { Loader2, CheckCircle2, XCircle, Settings2, Plane, Globe } from "lucide-react";
+import { Loader2, CheckCircle2, XCircle, Plane, Globe } from "lucide-react";
 import { toast } from "sonner";
+import { formatMoney } from '@/lib/currency';
 
 export default function Index({ airlines }) {
     const [selectedAirline, setSelectedAirline] = useState(null);
@@ -103,13 +104,13 @@ export default function Index({ airlines }) {
                 </div>
             </div>
 
-            <div className="grid gap-6">
+            <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
                 {airlines.map((airline) => (
                     <Card key={airline.id}>
                         <CardHeader className="pb-3">
                             <div className="flex items-center justify-between">
                                 <div className="flex items-center gap-3">
-                                    <div className="bg-primary/5 p-1 rounded-sm shrink-0 flex items-center justify-center min-w-[48px] min-h-[48px]">
+                                    <div className="bg-primary/5 p-1 rounded-sm shrink-0 flex items-center justify-center min-w-12 min-h-12">
                                         {airline.icao || airline.iata || airline.id ? (
                                             <img src={route('api.airlines.logo', { code: airline.icao || airline.iata || airline.id, variant: 'icon-transparent', radius: 8 })} alt={airline.name} className="h-10 w-10 object-contain mix-blend-multiply dark:mix-blend-normal" onError={(e) => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'block'; }} />
                                         ) : null}
@@ -131,46 +132,41 @@ export default function Index({ airlines }) {
                                     <div key={account.name} className="flex items-center justify-between p-4 border rounded-lg bg-muted/30">
                                         <div className="flex items-center gap-4">
                                             <div className="flex flex-col">
-                                                <span className="font-medium">{account.name}</span>
+                                               
                                                 <div className="flex items-center gap-2 text-xs text-muted-foreground">
                                                     <Badge variant="secondary" className="text-[10px] py-0">{account.currency}</Badge>
                                                     {account.airports && (
                                                         <span>Airports: {account.airports.join(', ')}</span>
                                                     )}
                                                 </div>
+                                                <div className="mt-1 text-xs text-muted-foreground">
+                                                    Balance: <span className="font-medium text-foreground">{formatMoney(account.remaining_balance, account.currency)}</span>
+                                                </div>
                                                 <div className="mt-2 flex items-center gap-2 text-xs">
                                                     <Badge variant={account.last_test_status === 'passed' ? 'success' : account.last_test_status === 'failed' ? 'destructive' : 'outline'}>
                                                         {account.last_test_status || 'untested'}
                                                     </Badge>
-                                                    <span className="text-muted-foreground">
-                                                        {account.last_test_message || 'No connection result recorded yet.'}
-                                                    </span>
                                                 </div>
                                             </div>
                                         </div>
-                                        <div className="flex items-center gap-4">
-                                            <div className="flex items-center gap-2">
-                                                <span className="text-xs text-muted-foreground">
-                                                    {account.is_enabled ? 'Enabled' : 'Disabled'}
-                                                </span>
-                                                <Switch
-                                                    checked={account.is_enabled}
-                                                    onCheckedChange={() => {
-                                                        if (account.is_enabled) {
-                                                            toggleAirline(account.config_id);
-                                                        } else {
-                                                            openConfig(airline, account);
-                                                        }
-                                                    }}
-                                                />
-                                            </div>
-                                            <Button
-                                                variant="ghost"
-                                                size="icon"
-                                                onClick={() => openConfig(airline, account)}
-                                            >
-                                                <Settings2 className="h-4 w-4" />
-                                            </Button>
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-xs text-muted-foreground">
+                                                {account.is_enabled ? 'Enabled' : 'Disabled'}
+                                            </span>
+                                            <Switch
+                                                checked={account.is_enabled}
+                                                onCheckedChange={(nextChecked) => {
+                                                    if (nextChecked) {
+                                                        // Always show config modal on enable so user can review credentials/mode.
+                                                        openConfig(airline, account);
+                                                        return;
+                                                    }
+
+                                                    if (account.config_id) {
+                                                        toggleAirline(account.config_id);
+                                                    }
+                                                }}
+                                            />
                                         </div>
                                     </div>
                                 ))}
