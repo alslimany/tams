@@ -42,6 +42,11 @@ class HandleInertiaRequests extends Middleware
                 'user' => $request->user(),
                 'landlordUser' => auth('landlord')->user(),
             ],
+            'flash' => [
+                'success' => fn () => $request->session()->get('success'),
+                'error' => fn () => $request->session()->get('error'),
+                'issue_command_preview' => fn () => $request->session()->get('issue_command_preview'),
+            ],
             'tenant' => [
                 'id' => function_exists('tenant') && tenant() ? tenant()->id : null,
                 'companyName' => function_exists('tenant') && tenant() ? tenant()->company_name : null,

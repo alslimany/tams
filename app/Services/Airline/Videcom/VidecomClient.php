@@ -134,6 +134,12 @@ class VidecomClient
         $url = "{$this->baseUrl}/VARS/Agent/res/EmulatorWS.asmx/SendCommand?{$sessionQuery}";
 
         try {
+            $this->logOutgoingCommand($command, [
+                'transport' => self::MODE_SESSION,
+                'endpoint' => $url,
+                'session_present' => str_contains($sessionQuery, 'VarsSessionID='),
+            ]);
+
             $response = Http::post($url, [
                 'VRSCommand' => $command,
             ]);
@@ -164,6 +170,11 @@ class VidecomClient
             throw new Exception('Videcom token is missing for SOAP mode.');
         }
 
+        $this->logOutgoingCommand($command, [
+            'transport' => self::MODE_SOAP,
+            'endpoint' => $soapUrl,
+        ]);
+
         $xml = '<?xml version="1.0" encoding="utf-8"?>
 <soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
   <soap:Body>
@@ -188,6 +199,19 @@ class VidecomClient
         }
 
         return $this->parseSoapResponse($response->body());
+    }
+
+    /**
+     * Log outbound commands so they can be traced in storage/logs/laravel.log.
+     */
+    protected function logOutgoingCommand(string $command, array $context = []): void
+    {
+        Log::info('Videcom outgoing command', array_merge([
+            'mode' => $this->mode,
+            'base_url' => $this->baseUrl,
+            'airline_code' => $this->config['airline_code'] ?? null,
+            'command' => $command,
+        ], $context));
     }
 
     /**

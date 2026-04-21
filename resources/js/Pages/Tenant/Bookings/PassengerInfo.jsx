@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Head, Link, useForm } from '@inertiajs/react';
+import { Head, Link, useForm, usePage } from '@inertiajs/react';
 import axios from 'axios';
 import TenantLayout from '@/Layouts/TenantLayout';
 import { Button } from '@/Components/ui/Button';
@@ -12,7 +12,10 @@ import { Armchair, Briefcase, CheckCircle2, ChevronLeft, ChevronRight, Loader2, 
 
 const PRIMARY_SEGMENT = 1;
 
-export default function PassengerInfo({ uuid, provider_id, flight, reservation_type, searchParams, ancillaryCatalog = [] }) {
+export default function PassengerInfo({ uuid, provider_id, flight, reservation_type, passportRequired = false, searchParams, ancillaryCatalog = [] }) {
+    const flash = usePage().props.flash ?? {};
+    const issueCommandPreview = flash.issue_command_preview || '';
+
     const initialPassengers = [];
     const types = [
         { type: 'adult', count: searchParams?.adults || 1 },
@@ -61,6 +64,17 @@ export default function PassengerInfo({ uuid, provider_id, flight, reservation_t
     const [activePaxIndexForSeat, setActivePaxIndexForSeat] = useState(0);
     const [localErrors, setLocalErrors] = useState({});
 
+    const passportFields = ['passport_number', 'passport_expiry', 'passport_issue_country', 'nationality'];
+    const hasPartialPassportDetails = useMemo(() => {
+        return data.passengers.some((passenger) => {
+            const values = passportFields.map((field) => (passenger[field] ?? '').toString().trim());
+            const hasAny = values.some((value) => value !== '');
+            const hasMissing = values.some((value) => value === '');
+
+            return hasAny && hasMissing;
+        });
+    }, [data.passengers]);
+
     const validateStep = (step) => {
         const errors = {};
         if (step === 'passengers') {
@@ -69,10 +83,29 @@ export default function PassengerInfo({ uuid, provider_id, flight, reservation_t
                 if (!p.last_name) errors[`passengers.${i}.last_name`] = 'Required';
                 if (!p.dob) errors[`passengers.${i}.dob`] = 'Required';
                 if (!p.gender) errors[`passengers.${i}.gender`] = 'Required';
-                if (!p.passport_number) errors[`passengers.${i}.passport_number`] = 'Required';
-                if (!p.passport_expiry) errors[`passengers.${i}.passport_expiry`] = 'Required';
-                if (!p.nationality) errors[`passengers.${i}.nationality`] = 'Required';
-                if (!p.passport_issue_country) errors[`passengers.${i}.passport_issue_country`] = 'Required';
+
+                if (p.first_name && !/^[A-Za-z]+$/.test(p.first_name)) {
+                    errors[`passengers.${i}.first_name`] = 'Letters only';
+                }
+
+                if (p.last_name && !/^[A-Za-z]+$/.test(p.last_name)) {
+                    errors[`passengers.${i}.last_name`] = 'Letters only';
+                }
+
+                const passportValues = passportFields.map((field) => (p[field] ?? '').toString().trim());
+                const hasAnyPassportDetail = passportValues.some((value) => value !== '');
+                const needsPassportDetails = passportRequired || hasAnyPassportDetail;
+
+                if (needsPassportDetails) {
+                    const passportMessage = passportRequired
+                        ? 'Required for international flights'
+                        : 'Complete all passport fields or clear all passport fields';
+
+                    if (!p.passport_number) errors[`passengers.${i}.passport_number`] = passportMessage;
+                    if (!p.passport_expiry) errors[`passengers.${i}.passport_expiry`] = passportMessage;
+                    if (!p.nationality) errors[`passengers.${i}.nationality`] = passportMessage;
+                    if (!p.passport_issue_country) errors[`passengers.${i}.passport_issue_country`] = passportMessage;
+                }
             });
             if (!data.customer.email) errors['customer.email'] = 'Required';
             if (!data.customer.phone) errors['customer.phone'] = 'Required';
@@ -300,14 +333,20 @@ export default function PassengerInfo({ uuid, provider_id, flight, reservation_t
 
     const handlePassengerChange = (index, field, value) => {
         const updatedPassengers = [...data.passengers];
-        updatedPassengers[index][field] = value;
+        let nextValue = value;
+
+        if (field === 'first_name' || field === 'last_name') {
+            nextValue = value.replace(/[^A-Za-z]/g, '');
+        }
+
+        updatedPassengers[index][field] = nextValue;
         
         const newData = { passengers: updatedPassengers };
         
         if (index === 0 && (field === 'first_name' || field === 'last_name')) {
             newData.customer = {
                 ...data.customer,
-                [field]: value,
+                [field]: nextValue,
             };
         }
         
@@ -340,6 +379,20 @@ export default function PassengerInfo({ uuid, provider_id, flight, reservation_t
                         <p className="mt-1 font-medium text-muted-foreground">Fill the passenger details, seats, and airline services for this offer.</p>
                     </div>
 
+                    {issueCommandPreview && (
+                        <Card className="border border-primary/30 bg-primary/5">
+                            <CardHeader className="pb-2">
+                                <CardTitle className="text-sm font-bold text-primary">Issuance Command Preview</CardTitle>
+                                <CardDescription>This command is generated for validation only and has not been sent to the airline API.</CardDescription>
+                            </CardHeader>
+                            <CardContent>
+                                <pre className="overflow-x-auto rounded-md border bg-background p-3 text-xs font-mono text-foreground">
+                                    {issueCommandPreview}
+                                </pre>
+                            </CardContent>
+                        </Card>
+                    )}
+
                     <form onSubmit={submitBooking} className="space-y-8">
                         <Tabs value={activeTab} className="w-full">
                             <TabsList className="mb-8 grid w-full grid-cols-3 rounded-2xl border bg-muted/30 p-1">
@@ -349,6 +402,19 @@ export default function PassengerInfo({ uuid, provider_id, flight, reservation_t
                             </TabsList>
 
                             <TabsContent value="passengers" className="space-y-6">
+                                <Card className="border bg-muted/10">
+                                    <CardContent className="pt-6">
+                                        <p className="text-sm font-medium text-muted-foreground">
+                                            Passport fields are {passportRequired ? 'required for this international route' : 'optional for this domestic route'}.
+                                        </p>
+                                        {hasPartialPassportDetails && (
+                                            <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
+                                                You entered some passport details. Please complete all passport fields or clear them all.
+                                            </p>
+                                        )}
+                                    </CardContent>
+                                </Card>
+
                                 {data.passengers.map((passenger, index) => (
                                     <Card key={index} className="overflow-hidden border-2 shadow-sm">
                                         <CardHeader className="border-b bg-primary/5 pb-4">
@@ -387,22 +453,22 @@ export default function PassengerInfo({ uuid, provider_id, flight, reservation_t
                                             </div>
                                             <div className="space-y-2">
                                                 <Label>Passport Number</Label>
-                                                <Input required value={passenger.passport_number} onChange={(event) => handlePassengerChange(index, 'passport_number', event.target.value)} />
+                                                <Input required={passportRequired} value={passenger.passport_number} onChange={(event) => handlePassengerChange(index, 'passport_number', event.target.value)} />
                                                 {localErrors[`passengers.${index}.passport_number`] && <p className="text-xs text-destructive">{localErrors[`passengers.${index}.passport_number`]}</p>}
                                             </div>
                                             <div className="space-y-2">
                                                 <Label>Passport Expiry</Label>
-                                                <Input type="date" required value={passenger.passport_expiry} onChange={(event) => handlePassengerChange(index, 'passport_expiry', event.target.value)} />
+                                                <Input type="date" required={passportRequired} value={passenger.passport_expiry} onChange={(event) => handlePassengerChange(index, 'passport_expiry', event.target.value)} />
                                                 {localErrors[`passengers.${index}.passport_expiry`] && <p className="text-xs text-destructive">{localErrors[`passengers.${index}.passport_expiry`]}</p>}
                                             </div>
                                             <div className="space-y-2">
                                                 <Label>Nationality (3-letter)</Label>
-                                                <Input required maxLength={3} value={passenger.nationality} onChange={(event) => handlePassengerChange(index, 'nationality', event.target.value.toUpperCase())} placeholder="LBY" />
+                                                <Input required={passportRequired} maxLength={3} value={passenger.nationality} onChange={(event) => handlePassengerChange(index, 'nationality', event.target.value.toUpperCase())} placeholder="LBY" />
                                                 {(localErrors[`passengers.${index}.nationality`] || errors[`passengers.${index}.nationality`]) && <p className="text-xs text-destructive">{localErrors[`passengers.${index}.nationality`] || errors[`passengers.${index}.nationality`]}</p>}
                                             </div>
                                             <div className="space-y-2">
                                                 <Label>Passport Issue Country (3-letter)</Label>
-                                                <Input required maxLength={3} value={passenger.passport_issue_country} onChange={(event) => handlePassengerChange(index, 'passport_issue_country', event.target.value.toUpperCase())} placeholder="LBY" />
+                                                <Input required={passportRequired} maxLength={3} value={passenger.passport_issue_country} onChange={(event) => handlePassengerChange(index, 'passport_issue_country', event.target.value.toUpperCase())} placeholder="LBY" />
                                                 {(localErrors[`passengers.${index}.passport_issue_country`] || errors[`passengers.${index}.passport_issue_country`]) && <p className="text-xs text-destructive">{localErrors[`passengers.${index}.passport_issue_country`] || errors[`passengers.${index}.passport_issue_country`]}</p>}
                                             </div>
                                         </CardContent>

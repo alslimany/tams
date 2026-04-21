@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Tenant;
 
 use App\Http\Controllers\Controller;
+use App\Models\Airport;
 use App\Models\Tenant\Booking;
 use App\Models\TenantProvider;
 use App\Services\Airline\FlightSearchService;
@@ -115,7 +116,7 @@ class BookingController extends Controller
                 $providerConfig->update(['last_used_at' => now()]);
 
                 // 2. Web Scraper Path (Optional Discovery)
-                if ($providerConfig->provider_type === 'videcom') {
+                if ($this->shouldUseVidecomScraper($providerConfig)) {
                     try {
                         $scraper = new \App\Services\Airline\Videcom\VidecomScraper(
                             $providerConfig->airline_code,
@@ -184,7 +185,7 @@ class BookingController extends Controller
             $flights = collect($provider->searchAvailability($params));
 
             // 2. Web Scraper Path (Optional Discovery)
-            if ($providerConfig->provider_type === 'videcom') {
+            if ($this->shouldUseVidecomScraper($providerConfig)) {
                 try {
                     $scraper = new \App\Services\Airline\Videcom\VidecomScraper(
                         $providerConfig->airline_code,
@@ -257,12 +258,35 @@ class BookingController extends Controller
         $searchParams = Cache::get("flight_search_{$validated['uuid']}");
         $providerConfig = TenantProvider::findOrFail($validated['provider_id']);
         $provider = ProviderFactory::make($providerConfig);
+        $passportRequired = $this->isInternationalFlight($validated['flight']);
+
+        Log::info('Booking payload snapshot', [
+            'provider_id' => $validated['provider_id'],
+            'reservation_type' => $validated['reservation_type'],
+            'passenger_count' => count($validated['passengers'] ?? []),
+            'passengers' => collect($validated['passengers'] ?? [])->map(function (array $passenger): array {
+                return [
+                    'type' => $passenger['type'] ?? null,
+                    'first_name' => $passenger['first_name'] ?? null,
+                    'last_name' => $passenger['last_name'] ?? null,
+                    'gender' => $passenger['gender'] ?? null,
+                    'dob' => $passenger['dob'] ?? null,
+                ];
+            })->values()->all(),
+            'contact' => [
+                'first_name' => $validated['customer']['first_name'] ?? null,
+                'last_name' => $validated['customer']['last_name'] ?? null,
+                'email' => $validated['customer']['email'] ?? null,
+                'phone' => $validated['customer']['phone'] ?? null,
+            ],
+        ]);
 
         return Inertia::render('Tenant/Bookings/PassengerInfo', [
             'uuid' => $validated['uuid'],
             'provider_id' => $validated['provider_id'],
             'flight' => $validated['flight'],
             'reservation_type' => $validated['reservation_type'],
+            'passportRequired' => $passportRequired,
             'searchParams' => $searchParams,
             'ancillaryCatalog' => $provider->getAncillaryCatalog($validated['flight'], $searchParams ?? []),
         ]);
@@ -280,8 +304,8 @@ class BookingController extends Controller
             'reservation_type' => 'required|in:QQ,NN',
             'passengers' => 'required|array|min:1',
             'passengers.*.type' => 'required|in:adult,child,infant',
-            'passengers.*.first_name' => 'required|string',
-            'passengers.*.last_name' => 'required|string',
+            'passengers.*.first_name' => 'required|string|alpha:ascii',
+            'passengers.*.last_name' => 'required|string|alpha:ascii',
             'passengers.*.dob' => 'nullable|date',
             'passengers.*.gender' => 'required|in:M,F',
             'passengers.*.passport_number' => 'nullable|string',
@@ -301,7 +325,48 @@ class BookingController extends Controller
             'extras.selected_services.*.quantity' => 'nullable|integer|min:0',
             'extras.selected_services.*.passengers' => 'nullable|array',
             'extras.selected_services.*.passengers.*' => 'integer|min:0',
+        ], [
+            'passengers.*.first_name.alpha' => 'Passenger first name must contain letters only.',
+            'passengers.*.last_name.alpha' => 'Passenger last name must contain letters only.',
         ]);
+
+        $passportRequired = $this->isInternationalFlight($validated['flight']);
+
+        $passportErrors = [];
+
+        foreach ($validated['passengers'] as $index => $passenger) {
+            $hasAnyPassportDetail = $this->passengerHasAnyPassportDetail($passenger);
+            $mustProvidePassportDetails = $passportRequired || $hasAnyPassportDetail;
+
+            if (! $mustProvidePassportDetails) {
+                continue;
+            }
+
+            $requiredFields = [
+                'passport_number' => $passportRequired
+                    ? 'Passport number is required for international flights.'
+                    : 'Complete all passport fields or clear all passport fields.',
+                'passport_expiry' => $passportRequired
+                    ? 'Passport expiry is required for international flights.'
+                    : 'Complete all passport fields or clear all passport fields.',
+                'passport_issue_country' => $passportRequired
+                    ? 'Passport issue country is required for international flights.'
+                    : 'Complete all passport fields or clear all passport fields.',
+                'nationality' => $passportRequired
+                    ? 'Nationality is required for international flights.'
+                    : 'Complete all passport fields or clear all passport fields.',
+            ];
+
+            foreach ($requiredFields as $field => $message) {
+                if (empty($passenger[$field])) {
+                    $passportErrors["passengers.{$index}.{$field}"] = $message;
+                }
+            }
+        }
+
+        if ($passportErrors !== []) {
+            return back()->withErrors($passportErrors)->withInput();
+        }
 
         $searchParams = Cache::get("flight_search_{$validated['uuid']}") ?? [];
 
@@ -337,11 +402,14 @@ class BookingController extends Controller
         );
 
         // Map request payload
+        $extras = $validated['extras'] ?? [];
+        $extras['include_docs'] = $passportRequired || $this->passengersContainPassportDetails($validated['passengers']);
+
         $params = [
             'passengers' => $validated['passengers'],
             'contact' => $validated['customer'],
             'itinerary' => $mappedItinerary,
-            'extras' => $validated['extras'] ?? [],
+            'extras' => $extras,
             'reservation_type' => $validated['reservation_type'],
         ];
 
@@ -358,13 +426,29 @@ class BookingController extends Controller
         $pnr = 'PENDING';
         $fareResponse = null;
 
-        $fareResponse = $provider->getPricing($mappedItinerary, $validated['passengers']);
-        $this->ensureProviderResponseIsSuccessful($fareResponse, 'pricing');
-
-        // Call airline API to generate PNR
-        $bookingResponse = $provider->createBooking($params);
-        $this->ensureProviderResponseIsSuccessful($bookingResponse, 'booking');
         try {
+            $fareResponse = $provider->getPricing($mappedItinerary, $validated['passengers']);
+            $this->ensureProviderResponseIsSuccessful($fareResponse, 'pricing');
+
+            $previewIssueCommand = filter_var($request->input('preview_issue_command', true), FILTER_VALIDATE_BOOLEAN);
+            if ($previewIssueCommand && (method_exists($provider, 'previewBookingCommand') || is_callable([$provider, 'previewBookingCommand']))) {
+                $issueCommand = $provider->previewBookingCommand($params);
+
+                Log::info('Videcom preview issue command generated', [
+                    'provider_id' => $validated['provider_id'],
+                    'airline_code' => $providerConfig->airline_code,
+                    'command' => $issueCommand,
+                ]);
+
+                return back()
+                    ->with('success', 'Issuance command preview generated. No API call was sent.')
+                    ->with('issue_command_preview', $issueCommand);
+            }
+
+            // Call airline API to generate PNR
+            $bookingResponse = $provider->createBooking($params);
+            $this->ensureProviderResponseIsSuccessful($bookingResponse, 'booking');
+
             // Extract PNR from XML Response
             if ($bookingResponse instanceof \SimpleXMLElement) {
                 if (isset($bookingResponse->Locator)) {
@@ -496,5 +580,105 @@ class BookingController extends Controller
 
             throw new Exception("Videcom {$context} error: {$errorMessage}");
         }
+    }
+
+    protected function isInternationalFlight(array $flight): bool
+    {
+        $segments = $flight['segments'] ?? [$flight];
+        if (empty($segments)) {
+            return false;
+        }
+
+        foreach ($segments as $segment) {
+            $origin = strtoupper((string) ($segment['departure_airport'] ?? ''));
+            $destination = strtoupper((string) ($segment['arrival_airport'] ?? ''));
+
+            if (empty($origin) || empty($destination)) {
+                continue;
+            }
+
+            $airportMap = Airport::query()
+                ->whereIn('iata_code', [$origin, $destination])
+                ->get()
+                ->keyBy('iata_code');
+
+            $originCountry = $this->resolveAirportCountry($airportMap->get($origin));
+            $destinationCountry = $this->resolveAirportCountry($airportMap->get($destination));
+
+            if ($originCountry !== null && $destinationCountry !== null && $originCountry !== $destinationCountry) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    protected function resolveAirportCountry(?Airport $airport): ?string
+    {
+        if (! $airport) {
+            return null;
+        }
+
+        $country = null;
+
+        if (method_exists($airport, 'getTranslation')) {
+            $country = $airport->getTranslation('country', 'en', false);
+        }
+
+        if (! $country) {
+            $rawCountry = $airport->getAttributes()['country'] ?? null;
+
+            if (is_string($rawCountry) && str_starts_with($rawCountry, '{')) {
+                $decoded = json_decode($rawCountry, true);
+                $country = $decoded['en'] ?? reset($decoded) ?: null;
+            } elseif (is_string($rawCountry)) {
+                $country = $rawCountry;
+            }
+        }
+
+        if (! is_string($country) || trim($country) === '') {
+            return null;
+        }
+
+        return strtoupper(trim($country));
+    }
+
+    protected function shouldUseVidecomScraper(TenantProvider $providerConfig): bool
+    {
+        if ($providerConfig->provider_type !== 'videcom') {
+            return false;
+        }
+
+        $useScraper = data_get($providerConfig->credentials ?? [], 'use_scraper', false);
+
+        return filter_var($useScraper, FILTER_VALIDATE_BOOLEAN);
+    }
+
+    protected function passengerHasAnyPassportDetail(array $passenger): bool
+    {
+        foreach (['passport_number', 'passport_expiry', 'passport_issue_country', 'nationality'] as $field) {
+            $value = $passenger[$field] ?? null;
+
+            if (is_string($value) && trim($value) !== '') {
+                return true;
+            }
+
+            if ($value !== null && ! is_string($value)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    protected function passengersContainPassportDetails(array $passengers): bool
+    {
+        foreach ($passengers as $passenger) {
+            if (is_array($passenger) && $this->passengerHasAnyPassportDetail($passenger)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

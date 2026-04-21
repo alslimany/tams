@@ -26,6 +26,11 @@ interface AirlineProviderInterface
     public function createBooking(array $params);
 
     /**
+     * Build the provider issuance command string without sending it.
+     */
+    public function previewBookingCommand(array $params): string;
+
+    /**
      * Retrieve a booking/PNR in XML form when supported.
      *
      * @return mixed

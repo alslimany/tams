@@ -5,7 +5,6 @@ namespace App\Services\Airline\Videcom;
 use App\Services\Airline\AirlineProviderInterface;
 use Carbon\Carbon;
 use Exception;
-use Illuminate\Support\Facades\Log;
 use SimpleXMLElement;
 
 abstract class BaseVidecomAirline implements AirlineProviderInterface
@@ -79,7 +78,7 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
     {
         $rawDate = $params['date'] ?? now()->toDateTimeString();
         $date = strtoupper(\Carbon\Carbon::parse($rawDate)->format('dM'));
-        
+
         $returnDateRaw = $params['return_date'] ?? null;
         $returnDate = $returnDateRaw ? strtoupper(\Carbon\Carbon::parse($returnDateRaw)->format('dM')) : null;
 
@@ -98,12 +97,12 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
         }
 
         $command = "A{$date}{$origin}{$destination}[SalesCity={$origin},VARS=True,ClassBands=True,StartCity={$origin},SingleSeg=".($isReturn ? 'r' : 's').",FGNoAv=True,qtyseats={$qty}";
-        
+
         if ($isReturn && $returnDate) {
             $command .= ",RetDate={$returnDate}";
         }
-        
-        $command .= "]";
+
+        $command .= ']';
 
         $response = $this->client->runCommand($command);
         $xml = $this->parseXml($response);
@@ -285,7 +284,7 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
             $flightEntries[] = "0{$this->getIataCode()}{$fltNo}{$class}{$date}{$origin}{$dest}{$status}{$paxCount}";
         }
 
-        $command = "I^{$paxEntry}^".implode('^', $flightEntries).'^FG^*r~x';
+        $command = "i^{$paxEntry}^".implode('^', $flightEntries).'^FG^*r~x';
 
         $response = $this->client->runCommand($command);
 
@@ -306,9 +305,48 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
         $ancillaryInfo = $this->buildAncillaryCommands($params['extras'] ?? [], $passengers, $params['itinerary'] ?? []);
         $timeLimit = $this->buildTimeLimitCommand();
 
-        // Add standard pricing/agency info from example
         $agencyInfo = 'FG^FS1^MI-ABC TOURS01012';
 
+        $commandString = $this->previewBookingCommand($params);
+
+        $response = $this->client->runCommand($commandString);
+
+        return $this->parseXml($response);
+    }
+
+    public function previewBookingCommand(array $params): string
+    {
+        $passengers = $params['passengers'] ?? [];
+        $resType = $params['reservation_type'] ?? 'NN';
+        $paxInfo = $this->buildPaxInfo($passengers);
+        $contactInfo = $this->buildContactInfo($params['contact'] ?? [], count($passengers));
+        $flightSegments = $this->buildFlightSegments($params['itinerary'] ?? [], count($passengers), $resType);
+        $apfaxInfo = $this->buildApfaxInfo($passengers, $params['extras'] ?? []);
+        $ancillaryInfo = $this->buildAncillaryCommands($params['extras'] ?? [], $passengers, $params['itinerary'] ?? []);
+        $timeLimit = $this->buildTimeLimitCommand();
+
+        $agencyInfo = 'FG^FS1^MI-ABC TOURS01012';
+
+        return $this->buildIssuanceCommand(
+            paxInfo: $paxInfo,
+            contactInfo: $contactInfo,
+            flightSegments: $flightSegments,
+            apfaxInfo: $apfaxInfo,
+            ancillaryInfo: $ancillaryInfo,
+            agencyInfo: $agencyInfo,
+            timeLimit: $timeLimit,
+        );
+    }
+
+    protected function buildIssuanceCommand(
+        string $paxInfo,
+        string $contactInfo,
+        string $flightSegments,
+        string $apfaxInfo,
+        string $ancillaryInfo,
+        string $agencyInfo,
+        ?string $timeLimit = null,
+    ): string {
         $commands = array_filter([
             $paxInfo,
             $contactInfo,
@@ -317,17 +355,11 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
             $ancillaryInfo,
             $agencyInfo,
             $timeLimit,
-            'EZT*R', // End and Ticket (from example)
-            'EZRE',  // End and Receive (from example)
+            'EZT*R',
+            'EZRE',
         ]);
 
-        $commandString = 'I^' . implode('^', $commands) . '^*R~x';
-
-        dd($commandString);
-
-        $response = $this->client->runCommand($commandString);
-
-        return $this->parseXml($response);
+        return 'i^'.implode('^', $commands).'^*R~x';
     }
 
     public function retrieveBooking(string $rloc)
@@ -494,8 +526,8 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
         foreach ($passengers as $i => $pax) {
             $type = strtoupper($pax['type'] ?? 'ADULT');
             $title = strtoupper($pax['title'] ?? 'MR');
-            $surname = strtoupper(preg_replace('/[^A-Z]/', '', $pax['last_name'] ?? $pax['surname'] ?? 'TEST'));
-            $firstname = strtoupper(preg_replace('/[^A-Z]/', '', $pax['first_name'] ?? $pax['firstname'] ?? 'PAX'));
+            $surname = $this->normalizeNameToken((string) ($pax['last_name'] ?? $pax['surname'] ?? ''), 'TEST');
+            $firstname = $this->normalizeNameToken((string) ($pax['first_name'] ?? $pax['firstname'] ?? ''), 'PAX');
 
             // Format: -1LASTNAME/FIRSTNAME TITLE
             $entry = "-1{$surname}/{$firstname}{$title}";
@@ -525,16 +557,18 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
         $phone = $contact['phone'] ?? null;
 
         if ($phone) {
-            // Format: 9-1M*[phone] (from example)
-            $entries[] = "9-1M*{$phone}";
+            $normalizedPhone = trim((string) $phone);
+            if (! str_starts_with($normalizedPhone, '+')) {
+                $normalizedPhone = '+'.ltrim($normalizedPhone, '+');
+            }
+
+            $entries[] = "9-1M*{$normalizedPhone}";
         }
 
         if ($email) {
-            // Format: 9-1E*[email] (from example)
-            $entries[] = "9-1E*{$email}";
+            $entries[] = '9-1E*'.trim((string) $email);
         }
 
-        // Ensure at least one contact exists, else dummy
         if (empty($entries) && $paxCount > 0) {
             $entries[] = '9-1T*TRAVEL AGENCY';
         }
@@ -549,31 +583,35 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
     {
         $entries = [];
         $seatSelections = $extras['seats'] ?? [];
+        $includeDocs = (bool) ($extras['include_docs'] ?? false);
 
         foreach ($passengers as $i => $pax) {
             $paxNo = $i + 1;
 
-            // 1. DOCS (Passport)
-            // FORMAT: 4-[PAX]FDOCS/P/[ISSUE_COUNTRY]/[PASSPORT]/[NATIONALITY]/[DOB]/[GENDER]/[EXPIRY]/[SURNAME]/[FIRSTNAME]/
-            if (! empty($pax['passport_number'])) {
+            if ($includeDocs &&
+                ! empty($pax['passport_number']) &&
+                ! empty($pax['passport_issue_country']) &&
+                ! empty($pax['nationality']) &&
+                ! empty($pax['dob']) &&
+                ! empty($pax['passport_expiry']) &&
+                ! empty($pax['gender'])
+            ) {
                 $issueCountry = strtoupper(! empty($pax['passport_issue_country']) ? $pax['passport_issue_country'] : 'LBY');
                 $nationality = strtoupper(! empty($pax['nationality']) ? $pax['nationality'] : 'LBY');
                 $passNo = strtoupper($pax['passport_number']);
-                $dob = \Carbon\Carbon::parse($pax['dob'] ?? '1990-01-01')->format('dMy'); // e.g., 14Mar78
-                $gender = strtolower(substr($pax['gender'] ?? 'M', 0, 1)); // m or f
-                $expiry = \Carbon\Carbon::parse($pax['passport_expiry'] ?? '2030-01-01')->format('dMy');
-                $surname = strtoupper(preg_replace('/[^A-Z]/', '', $pax['last_name'] ?? $pax['surname'] ?? 'TEST'));
-                $firstname = strtoupper(preg_replace('/[^A-Z]/', '', $pax['first_name'] ?? $pax['firstname'] ?? 'PAX'));
+                $dob = Carbon::parse($pax['dob'])->format('dMy');
+                $gender = strtolower(substr((string) $pax['gender'], 0, 1));
+                $expiry = Carbon::parse($pax['passport_expiry'])->format('dMy');
+                $surname = $this->normalizeNameToken((string) ($pax['last_name'] ?? $pax['surname'] ?? ''), 'TEST');
+                $firstname = $this->normalizeNameToken((string) ($pax['first_name'] ?? $pax['firstname'] ?? ''), 'PAX');
 
                 $entries[] = "4-{$paxNo}FDOCS/P/{$issueCountry}/{$passNo}/{$nationality}/{$dob}/{$gender}/{$expiry}/{$surname}/{$firstname}/";
             }
 
-            // 2. DOCO (Visa)
-            // FORMAT: 4-[PAX]FDOCO//V/[VISA_NO]/[PLACE]/[DATE]/[COUNTRY] OR NA
             if (! empty($pax['visa_number'])) {
                 $visaNo = strtoupper($pax['visa_number']);
                 $visaPlace = strtoupper($pax['visa_issue_country'] ?? 'LY');
-                $visaDate = \Carbon\Carbon::parse($pax['visa_issue_date'] ?? now())->format('dMy');
+                $visaDate = Carbon::parse($pax['visa_issue_date'] ?? now())->format('dMy');
                 $visaApplies = strtoupper($pax['visa_destination_country'] ?? 'LY');
 
                 $entries[] = "4-{$paxNo}FDOCO//V/{$visaNo}/{$visaPlace}/{$visaDate}/{$visaApplies}";
@@ -693,5 +731,12 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
         }
 
         return $xmlContent;
+    }
+
+    protected function normalizeNameToken(string $value, string $fallback = 'PAX'): string
+    {
+        $normalized = strtoupper(preg_replace('/[^A-Za-z]/', '', trim($value)));
+
+        return $normalized !== '' ? $normalized : $fallback;
     }
 }

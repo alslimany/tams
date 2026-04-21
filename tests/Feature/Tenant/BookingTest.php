@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\Airport;
 use App\Models\Tenant;
 use App\Models\Tenant\Booking;
 use App\Models\TenantProvider;
@@ -50,6 +51,7 @@ beforeEach(function () {
     $providerMock->shouldReceive('createBooking')->andReturnUsing(fn () => $this->bookingResponse);
     $providerMock->shouldReceive('getPricing')->andReturnUsing(fn () => $this->pricingResponse);
     $providerMock->shouldReceive('getAncillaryCatalog')->andReturnUsing(fn () => $this->ancillaryCatalog);
+    $providerMock->shouldReceive('previewBookingCommand')->andReturn('i^-1TEST/TESTMR^9-1M*+123456789^9-1E*temp@example.com^0YI0510Y12AprMJISEBNN1^FG^FS1^MI-ABC TOURS01012^EZT*R^EZRE^*R~x');
 
     \Mockery::mock('alias:App\Services\Airline\ProviderFactory')
         ->shouldReceive('make')
@@ -71,6 +73,7 @@ test('agent can view the booking selection page', function () {
         'uuid' => Str::uuid()->toString(),
         'provider_id' => $this->provider->id,
         'flight' => ['pricing' => ['total' => 100, 'currency' => 'USD']],
+        'reservation_type' => 'NN',
     ]);
 
     $response->assertOk();
@@ -82,8 +85,10 @@ test('agent can submit a booking and it persists to database', function () {
     $url = 'http://'.$this->tenant->domains->first()->domain.route('flights.store', [], false);
 
     $response = $this->post($url, [
+        'preview_issue_command' => false,
         'uuid' => Str::uuid()->toString(),
         'provider_id' => $this->provider->id,
+        'reservation_type' => 'NN',
         'flight' => [
             'pricing' => ['total' => 500, 'currency' => 'LYD'],
             'segments' => [
@@ -156,8 +161,10 @@ test('booking is not persisted when videcom returns an authorization error', fun
     $referer = 'http://'.$this->tenant->domains->first()->domain.'/flights/select';
 
     $response = $this->from($referer)->post($url, [
+        'preview_issue_command' => false,
         'uuid' => Str::uuid()->toString(),
         'provider_id' => $this->provider->id,
+        'reservation_type' => 'NN',
         'flight' => [
             'pricing' => ['total' => 280.02, 'currency' => 'LYD'],
             'segments' => [
@@ -186,6 +193,8 @@ test('booking is not persisted when videcom returns an authorization error', fun
                 'dob' => '1992-05-07',
                 'passport_number' => 'HPPLRF3K',
                 'passport_expiry' => '2029-10-01',
+                'passport_issue_country' => 'LBY',
+                'nationality' => 'LBY',
             ],
         ],
         'extras' => [
@@ -198,8 +207,239 @@ test('booking is not persisted when videcom returns an authorization error', fun
         ],
     ]);
 
-    $response->assertRedirect($referer);
+    $response->assertRedirectContains('/flights/select');
     $response->assertSessionHas('error');
 
     expect(Booking::count())->toBe(0);
+});
+
+test('passport fields are required for international flights', function () {
+    $this->actingAs($this->user);
+
+    Airport::query()->create([
+        'name' => ['en' => 'Mitiga International Airport'],
+        'city' => ['en' => 'Tripoli'],
+        'country' => ['en' => 'Libya'],
+        'iata_code' => 'MJI',
+    ]);
+
+    Airport::query()->create([
+        'name' => ['en' => 'Tunis-Carthage International Airport'],
+        'city' => ['en' => 'Tunis'],
+        'country' => ['en' => 'Tunisia'],
+        'iata_code' => 'TUN',
+    ]);
+
+    $url = 'http://'.$this->tenant->domains->first()->domain.route('flights.store', [], false);
+    $referer = 'http://'.$this->tenant->domains->first()->domain.'/flights/select';
+
+    $response = $this->from($referer)->post($url, [
+        'uuid' => Str::uuid()->toString(),
+        'provider_id' => $this->provider->id,
+        'reservation_type' => 'NN',
+        'flight' => [
+            'pricing' => ['total' => 500, 'currency' => 'LYD'],
+            'segments' => [
+                [
+                    'flight_number' => 'UZ0123',
+                    'departure_airport' => 'MJI',
+                    'arrival_airport' => 'TUN',
+                    'departure_time' => now()->addDays(3)->toDateTimeString(),
+                    'arrival_time' => now()->addDays(3)->addHours(2)->toDateTimeString(),
+                ],
+            ],
+        ],
+        'customer' => [
+            'first_name' => 'Abdullah',
+            'last_name' => 'Abdullah',
+            'email' => 'abdullah@test.com',
+            'phone' => '+218910000000',
+        ],
+        'passengers' => [
+            [
+                'type' => 'adult',
+                'first_name' => 'Abdullah',
+                'last_name' => 'Abdullah',
+                'gender' => 'M',
+                'dob' => '1992-05-07',
+            ],
+        ],
+    ]);
+
+    $response->assertRedirect($referer);
+    $response->assertSessionHasErrors([
+        'passengers.0.passport_number',
+        'passengers.0.passport_expiry',
+        'passengers.0.passport_issue_country',
+        'passengers.0.nationality',
+    ]);
+});
+
+test('passport fields are optional for domestic flights and command preview is returned', function () {
+    $this->actingAs($this->user);
+
+    Airport::query()->create([
+        'name' => ['en' => 'Mitiga International Airport'],
+        'city' => ['en' => 'Tripoli'],
+        'country' => ['en' => 'Libya'],
+        'iata_code' => 'MJI',
+    ]);
+
+    Airport::query()->create([
+        'name' => ['en' => 'Benina International Airport'],
+        'city' => ['en' => 'Benghazi'],
+        'country' => ['en' => 'Libya'],
+        'iata_code' => 'BEN',
+    ]);
+
+    $url = 'http://'.$this->tenant->domains->first()->domain.route('flights.store', [], false);
+    $referer = 'http://'.$this->tenant->domains->first()->domain.'/flights/select';
+
+    $response = $this->from($referer)->post($url, [
+        'uuid' => Str::uuid()->toString(),
+        'provider_id' => $this->provider->id,
+        'reservation_type' => 'NN',
+        'flight' => [
+            'pricing' => ['total' => 500, 'currency' => 'LYD'],
+            'segments' => [
+                [
+                    'flight_number' => 'YI0510',
+                    'departure_airport' => 'MJI',
+                    'arrival_airport' => 'BEN',
+                    'departure_time' => now()->addDays(3)->toDateTimeString(),
+                    'arrival_time' => now()->addDays(3)->addHours(1)->toDateTimeString(),
+                ],
+            ],
+        ],
+        'customer' => [
+            'first_name' => 'Abdullah',
+            'last_name' => 'Abdullah',
+            'email' => 'abdullah@test.com',
+            'phone' => '+218910000000',
+        ],
+        'passengers' => [
+            [
+                'type' => 'adult',
+                'first_name' => 'Abdullah',
+                'last_name' => 'Abdullah',
+                'gender' => 'M',
+                'dob' => '1992-05-07',
+            ],
+        ],
+    ]);
+
+    $response->assertRedirect($referer);
+    $response->assertSessionHas('issue_command_preview');
+    $response->assertSessionHas('success');
+    $response->assertSessionMissing('errors');
+
+    expect(Booking::count())->toBe(0);
+});
+
+test('domestic flights require full passport details when any passport field is entered', function () {
+    $this->actingAs($this->user);
+
+    Airport::query()->create([
+        'name' => ['en' => 'Mitiga International Airport'],
+        'city' => ['en' => 'Tripoli'],
+        'country' => ['en' => 'Libya'],
+        'iata_code' => 'MJI',
+    ]);
+
+    Airport::query()->create([
+        'name' => ['en' => 'Benina International Airport'],
+        'city' => ['en' => 'Benghazi'],
+        'country' => ['en' => 'Libya'],
+        'iata_code' => 'BEN',
+    ]);
+
+    $url = 'http://'.$this->tenant->domains->first()->domain.route('flights.store', [], false);
+    $referer = 'http://'.$this->tenant->domains->first()->domain.'/flights/select';
+
+    $response = $this->from($referer)->post($url, [
+        'uuid' => Str::uuid()->toString(),
+        'provider_id' => $this->provider->id,
+        'reservation_type' => 'NN',
+        'flight' => [
+            'pricing' => ['total' => 500, 'currency' => 'LYD'],
+            'segments' => [
+                [
+                    'flight_number' => 'YI0510',
+                    'departure_airport' => 'MJI',
+                    'arrival_airport' => 'BEN',
+                    'departure_time' => now()->addDays(3)->toDateTimeString(),
+                    'arrival_time' => now()->addDays(3)->addHours(1)->toDateTimeString(),
+                ],
+            ],
+        ],
+        'customer' => [
+            'first_name' => 'Abdullah',
+            'last_name' => 'Ishtiwy',
+            'email' => 'abdullah@test.com',
+            'phone' => '+218910000000',
+        ],
+        'passengers' => [
+            [
+                'type' => 'adult',
+                'first_name' => 'Abdullah',
+                'last_name' => 'Ishtiwy',
+                'gender' => 'M',
+                'dob' => '1992-05-07',
+                'passport_number' => 'LB1234567',
+            ],
+        ],
+    ]);
+
+    $response->assertRedirect($referer);
+    $response->assertSessionHasErrors([
+        'passengers.0.passport_expiry',
+        'passengers.0.passport_issue_country',
+        'passengers.0.nationality',
+    ]);
+});
+
+test('passenger names only allow letters', function () {
+    $this->actingAs($this->user);
+
+    $url = 'http://'.$this->tenant->domains->first()->domain.route('flights.store', [], false);
+    $referer = 'http://'.$this->tenant->domains->first()->domain.'/flights/select';
+
+    $response = $this->from($referer)->post($url, [
+        'uuid' => Str::uuid()->toString(),
+        'provider_id' => $this->provider->id,
+        'reservation_type' => 'NN',
+        'flight' => [
+            'pricing' => ['total' => 500, 'currency' => 'LYD'],
+            'segments' => [
+                [
+                    'flight_number' => 'YI0510',
+                    'departure_airport' => 'MJI',
+                    'arrival_airport' => 'BEN',
+                    'departure_time' => now()->addDays(3)->toDateTimeString(),
+                    'arrival_time' => now()->addDays(3)->addHours(1)->toDateTimeString(),
+                ],
+            ],
+        ],
+        'customer' => [
+            'first_name' => 'Abdullah',
+            'last_name' => 'Ishtiwy',
+            'email' => 'abdullah@test.com',
+            'phone' => '+218910000000',
+        ],
+        'passengers' => [
+            [
+                'type' => 'adult',
+                'first_name' => 'Abdullah1',
+                'last_name' => 'Ishtiwy-',
+                'gender' => 'M',
+                'dob' => '1992-05-07',
+            ],
+        ],
+    ]);
+
+    $response->assertRedirect($referer);
+    $response->assertSessionHasErrors([
+        'passengers.0.first_name',
+        'passengers.0.last_name',
+    ]);
 });
