@@ -452,17 +452,54 @@ class BookingController extends Controller
         $providerConfig = TenantProvider::findOrFail($validated['provider_id']);
         $provider = ProviderFactory::make($providerConfig);
 
+        $isRoundTrip = filter_var($validated['is_round_trip'] ?? false, FILTER_VALIDATE_BOOLEAN);
+        $ancillaryCatalogByOffer = [];
+
+        if ($isRoundTrip) {
+            $outboundProviderId = (int) ($validated['outbound_provider_id'] ?? $validated['provider_id']);
+            $returnProviderId = (int) ($validated['return_provider_id'] ?? $validated['provider_id']);
+
+            $outboundProvider = $outboundProviderId === (int) $providerConfig->id
+                ? $providerConfig
+                : TenantProvider::find($outboundProviderId);
+            $returnProvider = $returnProviderId === (int) $providerConfig->id
+                ? $providerConfig
+                : TenantProvider::find($returnProviderId);
+
+            $outboundFlight = data_get($validated, 'flight.round_trip.outbound_flight', $validated['flight']);
+            $returnFlight = data_get($validated, 'flight.round_trip.return_flight', $validated['flight']);
+
+            if ($outboundProvider instanceof TenantProvider) {
+                $outboundAirlineProvider = $outboundProvider->id === $providerConfig->id
+                    ? $provider
+                    : ProviderFactory::make($outboundProvider);
+                $ancillaryCatalogByOffer['outbound'] = $outboundAirlineProvider->getAncillaryCatalog($outboundFlight, $searchParams ?? []);
+            }
+
+            if ($returnProvider instanceof TenantProvider) {
+                $returnAirlineProvider = $returnProvider->id === $providerConfig->id
+                    ? $provider
+                    : ProviderFactory::make($returnProvider);
+                $ancillaryCatalogByOffer['return'] = $returnAirlineProvider->getAncillaryCatalog($returnFlight, $searchParams ?? []);
+            }
+        }
+
+        if ($ancillaryCatalogByOffer === []) {
+            $ancillaryCatalogByOffer['oneway'] = $provider->getAncillaryCatalog($validated['flight'], $searchParams ?? []);
+        }
+
         return Inertia::render('Tenant/Bookings/PassengerInfo', [
             'uuid' => $validated['uuid'],
             'provider_id' => $validated['provider_id'],
             'flight' => $validated['flight'],
             'reservation_type' => $validated['reservation_type'],
-            'is_round_trip' => filter_var($validated['is_round_trip'] ?? false, FILTER_VALIDATE_BOOLEAN),
+            'is_round_trip' => $isRoundTrip,
             'outbound_provider_id' => $validated['outbound_provider_id'] ?? null,
             'return_provider_id' => $validated['return_provider_id'] ?? null,
             'passportRequired' => $this->isInternationalFlight($validated['flight']),
             'searchParams' => $searchParams,
-            'ancillaryCatalog' => $provider->getAncillaryCatalog($validated['flight'], $searchParams ?? []),
+            'ancillaryCatalog' => $ancillaryCatalogByOffer['oneway'] ?? $provider->getAncillaryCatalog($validated['flight'], $searchParams ?? []),
+            'ancillaryCatalogByOffer' => $ancillaryCatalogByOffer,
         ]);
     }
 
@@ -495,6 +532,7 @@ class BookingController extends Controller
             'extras.seats.*' => 'nullable|array',
             'extras.seats.*.*' => 'nullable|string|max:12',
             'extras.selected_services' => 'nullable|array',
+            'extras.selected_services.*.offer_key' => 'nullable|string|in:oneway,outbound,return',
             'extras.selected_services.*.code' => 'required|string',
             'extras.selected_services.*.quantity' => 'nullable|integer|min:0',
             'extras.selected_services.*.passengers' => 'nullable|array',
@@ -544,15 +582,108 @@ class BookingController extends Controller
             ];
         }, $itinerary);
 
-        $ancillaryCatalog = $provider->getAncillaryCatalog($validated['flight'], $searchParams);
-        $ancillarySummary = VidecomAncillaryCatalog::selectedTotals(
-            $ancillaryCatalog,
-            $validated['extras']['selected_services'] ?? [],
-            count($validated['passengers']),
-            count($mappedItinerary)
-        );
+        $isRoundTrip = filter_var($validated['is_round_trip'] ?? false, FILTER_VALIDATE_BOOLEAN);
+
+        $catalogByOffer = [];
+        $flightByOffer = [];
+
+        if ($isRoundTrip) {
+            $outboundProviderId = (int) ($validated['outbound_provider_id'] ?? $validated['provider_id']);
+            $returnProviderId = (int) ($validated['return_provider_id'] ?? $validated['provider_id']);
+
+            $outboundProvider = $outboundProviderId === (int) $providerConfig->id
+                ? $providerConfig
+                : TenantProvider::find($outboundProviderId);
+            $returnProvider = $returnProviderId === (int) $providerConfig->id
+                ? $providerConfig
+                : TenantProvider::find($returnProviderId);
+
+            $flightByOffer['outbound'] = data_get($validated, 'flight.round_trip.outbound_flight', $validated['flight']);
+            $flightByOffer['return'] = data_get($validated, 'flight.round_trip.return_flight', $validated['flight']);
+
+            if ($outboundProvider instanceof TenantProvider) {
+                $outboundAirlineProvider = $outboundProvider->id === $providerConfig->id
+                    ? $provider
+                    : ProviderFactory::make($outboundProvider);
+                $catalogByOffer['outbound'] = $outboundAirlineProvider->getAncillaryCatalog($flightByOffer['outbound'], $searchParams);
+            }
+
+            if ($returnProvider instanceof TenantProvider) {
+                $returnAirlineProvider = $returnProvider->id === $providerConfig->id
+                    ? $provider
+                    : ProviderFactory::make($returnProvider);
+                $catalogByOffer['return'] = $returnAirlineProvider->getAncillaryCatalog($flightByOffer['return'], $searchParams);
+            }
+        }
+
+        if ($catalogByOffer === []) {
+            $catalogByOffer['oneway'] = $provider->getAncillaryCatalog($validated['flight'], $searchParams);
+            $flightByOffer['oneway'] = $validated['flight'];
+        }
+
+        $selectedServices = collect($validated['extras']['selected_services'] ?? []);
+        $passengerCount = count($validated['passengers']);
+        $ancillarySummary = [
+            'lines' => [],
+            'total' => 0.0,
+        ];
+
+        foreach ($catalogByOffer as $offerKey => $catalog) {
+            $servicesForOffer = $selectedServices
+                ->filter(function (array $selection) use ($offerKey, $catalogByOffer): bool {
+                    if (isset($selection['offer_key'])) {
+                        return $selection['offer_key'] === $offerKey;
+                    }
+
+                    if (count($catalogByOffer) === 1) {
+                        return true;
+                    }
+
+                    return false;
+                })
+                ->map(fn (array $selection): array => [
+                    'code' => $selection['code'] ?? null,
+                    'quantity' => $selection['quantity'] ?? null,
+                    'passengers' => $selection['passengers'] ?? [],
+                ])
+                ->values()
+                ->all();
+
+            if ($servicesForOffer === []) {
+                continue;
+            }
+
+            $offerSegments = data_get($flightByOffer, "{$offerKey}.segments", [data_get($flightByOffer, $offerKey, [])]);
+
+            $offerSummary = VidecomAncillaryCatalog::selectedTotals(
+                $catalog,
+                $servicesForOffer,
+                $passengerCount,
+                count($offerSegments)
+            );
+
+            $ancillarySummary['total'] += (float) ($offerSummary['total'] ?? 0);
+
+            foreach ($offerSummary['lines'] ?? [] as $line) {
+                $line['offer_key'] = $offerKey;
+                $ancillarySummary['lines'][] = $line;
+            }
+        }
+
+        $ancillaryCatalog = count($catalogByOffer) === 1
+            ? reset($catalogByOffer)
+            : $catalogByOffer;
 
         $extras = $validated['extras'] ?? [];
+
+        if (isset($extras['selected_services']) && is_array($extras['selected_services'])) {
+            $extras['selected_services'] = array_map(fn (array $selection): array => [
+                'code' => $selection['code'] ?? null,
+                'quantity' => $selection['quantity'] ?? null,
+                'passengers' => $selection['passengers'] ?? [],
+            ], $extras['selected_services']);
+        }
+
         $extras['include_docs'] = $passportRequired || $this->passengersContainPassportDetails($validated['passengers']);
 
         $providerPayload = [

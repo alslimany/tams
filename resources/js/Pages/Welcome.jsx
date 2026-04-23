@@ -247,7 +247,7 @@ export default function Welcome() {
                             </p>
                         </div>
 
-                        <div className="grid gap-6 md:grid-cols-3 max-w-5xl mx-auto">
+                        <div className="grid gap-6 md:grid-cols-3 max-w-7xl mx-auto">
                             <Card className="border bg-white">
                                 <CardContent className="p-6 text-center space-y-3">
                                     <Phone className="h-5 w-5 text-primary mx-auto" />

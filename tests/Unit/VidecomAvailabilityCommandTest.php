@@ -511,6 +511,8 @@ XML;
 });
 
 test('open reservation availability is cached by airline route and class', function () {
+    Cache::flush();
+
     $client = new class extends VidecomClient
     {
         public int $calls = 0;
@@ -550,4 +552,74 @@ XML;
     expect($provider->canBookOpenReservation($segment))->toBeTrue()
         ->and($provider->canBookOpenReservation($segment))->toBeTrue()
         ->and($client->calls)->toBe(1);
+});
+
+test('open reservation availability accepts valid pnr itinerary without fare totals', function () {
+    Cache::flush();
+
+    $client = new class extends VidecomClient
+    {
+        public function __construct() {}
+
+        public function runCommand(string $command): string
+        {
+            return <<<'XML'
+<PNR NeedFG="True">
+    <Itinerary>
+        <Itin Line="1" AirID="5S" FltNo="0754" Class="C" DepDate="2026-04-30" Depart="MJI" Arrive="BEN" Status="QQ" PaxQty="1" />
+    </Itinerary>
+    <FareQuote>
+        <FQItin />
+        <FareStore />
+    </FareQuote>
+</PNR>
+XML;
+        }
+    };
+
+    $provider = new class(['base_url' => 'https://booking.gair.test']) extends GlobalAirline {};
+
+    \Closure::bind(function (VidecomClient $client): void {
+        $this->client = $client;
+    }, $provider, $provider)($client);
+
+    $segment = [
+        'flight_number' => '5S0754',
+        'class' => 'C',
+        'departure_time' => '2026-04-30 20:00:00',
+        'departure_airport' => 'MJI',
+        'arrival_airport' => 'BEN',
+    ];
+
+    expect($provider->canBookOpenReservation($segment))->toBeTrue();
+});
+
+test('open reservation availability returns false for explicit provider error message', function () {
+    Cache::flush();
+
+    $client = new class extends VidecomClient
+    {
+        public function __construct() {}
+
+        public function runCommand(string $command): string
+        {
+            return 'ERROR: CLASS H CANNOT BE BOOKED AS OPEN ON THIS ROUTE';
+        }
+    };
+
+    $provider = new class(['base_url' => 'https://booking.gair.test']) extends GlobalAirline {};
+
+    \Closure::bind(function (VidecomClient $client): void {
+        $this->client = $client;
+    }, $provider, $provider)($client);
+
+    $segment = [
+        'flight_number' => '5S0754',
+        'class' => 'H',
+        'departure_time' => '2026-04-30 20:00:00',
+        'departure_airport' => 'MJI',
+        'arrival_airport' => 'BEN',
+    ];
+
+    expect($provider->canBookOpenReservation($segment))->toBeFalse();
 });

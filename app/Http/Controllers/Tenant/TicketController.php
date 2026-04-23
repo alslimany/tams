@@ -10,6 +10,7 @@ use App\Models\TenantProvider;
 use App\Models\User;
 use App\Services\Airline\ProviderFactory;
 use App\Services\Airline\Videcom\VidecomPnrParser;
+use App\Services\Commission\TenantProviderCommissionCalculator;
 use Carbon\Carbon;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\RedirectResponse;
@@ -22,6 +23,8 @@ use SimpleXMLElement;
 
 class TicketController extends Controller
 {
+    public function __construct(protected TenantProviderCommissionCalculator $tenantProviderCommissionCalculator) {}
+
     public function issue(Request $request, Order $booking): RedirectResponse
     {
         $booking->loadMissing('items');
@@ -74,8 +77,11 @@ class TicketController extends Controller
         $parsed = VidecomPnrParser::parse($pnrXml);
         $formatted = VidecomPnrParser::formatForOrderDetails($pnrXml);
         $ticketsByNumber = collect($parsed['tickets'] ?? [])->groupBy('ticket_number');
+        $agentCommission = $this->tenantProviderCommissionCalculator->calculateForFormattedOrderDetails($providerConfig, $formatted);
+        $flightType = $this->tenantProviderCommissionCalculator->resolveFlightTypeFromOrderDetails($formatted);
+        $commissionAllocations = $this->allocateCommissionAcrossItems($booking->items, $agentCommission);
 
-        foreach ($booking->items as $item) {
+        foreach ($booking->items->values() as $index => $item) {
             $ticketNumber = (string) ($item->ticket_number ?? '');
             $ticketRows = $ticketNumber !== '' ? $ticketsByNumber->get($ticketNumber) : null;
 
@@ -88,6 +94,11 @@ class TicketController extends Controller
 
             $details = $formatted;
             $details['pnr_synced_at'] = now()->toIso8601String();
+            $details['commission'] = [
+                'flight_type' => $flightType,
+                'fare_total' => (float) data_get($formatted, 'total_fare', 0),
+                'agent_commission' => $commissionAllocations[$index] ?? 0.0,
+            ];
 
             $item->update([
                 'provider_reference' => (string) ($parsed['rloc'] ?? $pnr),
@@ -96,6 +107,8 @@ class TicketController extends Controller
                 'status' => 'issued',
                 'remaining' => 0,
                 'paid' => (float) $item->total,
+                'agent_commission' => $commissionAllocations[$index] ?? 0.0,
+                'net_commission' => $commissionAllocations[$index] ?? 0.0,
             ]);
         }
 
@@ -402,5 +415,38 @@ class TicketController extends Controller
     {
         UpdateAirlineBalanceJob::dispatch($provider->id)
             ->delay(now()->addMinutes(10));
+    }
+
+    /**
+     * @return array<int, float>
+     */
+    protected function allocateCommissionAcrossItems(Collection $items, float $commissionTotal): array
+    {
+        if ($commissionTotal <= 0 || $items->isEmpty()) {
+            return $items->map(fn (): float => 0.0)->values()->all();
+        }
+
+        $items = $items->values();
+        $itemsTotal = (float) $items->sum(fn (OrderItem $item): float => (float) $item->total);
+        if ($itemsTotal <= 0) {
+            return $items->map(fn (): float => 0.0)->values()->all();
+        }
+
+        $allocations = [];
+        $allocated = 0.0;
+
+        foreach ($items as $index => $item) {
+            if ($index === $items->count() - 1) {
+                $allocations[] = round($commissionTotal - $allocated, 2);
+
+                continue;
+            }
+
+            $portion = round($commissionTotal * (((float) $item->total) / $itemsTotal), 2);
+            $allocations[] = $portion;
+            $allocated += $portion;
+        }
+
+        return $allocations;
     }
 }

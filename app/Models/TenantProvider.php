@@ -17,6 +17,8 @@ class TenantProvider extends Model
         'last_test_status',
         'last_test_message',
         'last_used_at',
+        'domestic_commission_rate',
+        'international_commission_rate',
     ];
 
     protected $casts = [
@@ -24,5 +26,7 @@ class TenantProvider extends Model
         'credentials' => 'encrypted:json',
         'last_tested_at' => 'datetime',
         'last_used_at' => 'datetime',
+        'domestic_commission_rate' => 'decimal:2',
+        'international_commission_rate' => 'decimal:2',
     ];
 }

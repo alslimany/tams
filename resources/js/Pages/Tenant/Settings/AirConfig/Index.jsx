@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import axios from 'axios';
 import { Head, useForm, router } from '@inertiajs/react';
 import TenantLayout from '@/Layouts/TenantLayout';
 import { Button } from "@/Components/ui/Button";
@@ -8,13 +9,14 @@ import { Badge } from "@/Components/ui/Badge";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/Components/ui/Card";
 import { Switch } from "@/Components/ui/Switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/Components/ui/Tabs";
-import { Loader2, CheckCircle2, XCircle, Plane, Globe } from "lucide-react";
+import { Loader2, CheckCircle2, XCircle, Plane, Globe, Settings } from "lucide-react";
 import { toast } from "sonner";
 import { formatMoney } from '@/lib/currency';
 
 export default function Index({ airlines }) {
     const [selectedAirline, setSelectedAirline] = useState(null);
     const [selectedAccount, setSelectedAccount] = useState(null);
+    const [selectedConfigTab, setSelectedConfigTab] = useState('connection');
     const [testing, setTesting] = useState(false);
     const [testResult, setTestResult] = useState(null);
 
@@ -30,11 +32,14 @@ export default function Index({ airlines }) {
         base_url: '',
         currency: '',
         airports: [],
+        domestic_commission_rate: '',
+        international_commission_rate: '',
     });
 
     const openConfig = (airline, account) => {
         setSelectedAirline(airline);
         setSelectedAccount(account);
+        setSelectedConfigTab('connection');
         setTestResult(null);
 
         // Populate form with account defaults and existing credentials
@@ -50,6 +55,8 @@ export default function Index({ airlines }) {
             base_url: airline.base_url,
             currency: account.currency,
             airports: account.airports || [],
+            domestic_commission_rate: account.domestic_commission_rate || '',
+            international_commission_rate: account.international_commission_rate || '',
         });
     };
 
@@ -93,6 +100,8 @@ export default function Index({ airlines }) {
         router.patch(route('settings.airlines.toggle', id));
     };
 
+    const isVidecomProvider = selectedAirline?.provider_type === 'videcom';
+
     return (
         <TenantLayout>
             <Head title="Airline Configuration" />
@@ -118,7 +127,7 @@ export default function Index({ airlines }) {
                                     </div>
                                     <div>
                                         <CardTitle>{airline.name}</CardTitle>
-                                        <CardDescription>IATA Code: {airline.id}</CardDescription>
+                                        {/* <CardDescription>IATA Code: {airline.id}</CardDescription> */}
                                     </div>
                                 </div>
                                 <Badge variant="outline" className="capitalize">
@@ -134,7 +143,7 @@ export default function Index({ airlines }) {
                                             <div className="flex flex-col">
                                                
                                                 <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                                                    <Badge variant="secondary" className="text-[10px] py-0">{account.currency}</Badge>
+                                                    {/* <Badge variant="secondary" className="text-[10px] py-0">{account.currency}</Badge> */}
                                                     {account.airports && (
                                                         <span>Airports: {account.airports.join(', ')}</span>
                                                     )}
@@ -142,17 +151,21 @@ export default function Index({ airlines }) {
                                                 <div className="mt-1 text-xs text-muted-foreground">
                                                     Balance: <span className="font-medium text-foreground">{formatMoney(account.remaining_balance, account.currency)}</span>
                                                 </div>
-                                                <div className="mt-2 flex items-center gap-2 text-xs">
+                                                {airline.provider_type === 'videcom' && (
+                                                    <div className="mt-1 text-xs text-muted-foreground">
+                                                        Commission: Domestic <span className="font-medium text-foreground">{account.domestic_commission_rate || '0.00'}%</span> · International <span className="font-medium text-foreground">{account.international_commission_rate || '0.00'}%</span>
+                                                    </div>
+                                                )}
+                                                {/* <div className="mt-2 flex items-center gap-2 text-xs">
                                                     <Badge variant={account.last_test_status === 'passed' ? 'success' : account.last_test_status === 'failed' ? 'destructive' : 'outline'}>
                                                         {account.last_test_status || 'untested'}
                                                     </Badge>
-                                                </div>
+                                                </div> */}
                                             </div>
                                         </div>
                                         <div className="flex items-center gap-2">
-                                            <span className="text-xs text-muted-foreground">
-                                                {account.is_enabled ? 'Enabled' : 'Disabled'}
-                                            </span>
+                                            
+                                            
                                             <Switch
                                                 checked={account.is_enabled}
                                                 onCheckedChange={(nextChecked) => {
@@ -167,6 +180,16 @@ export default function Index({ airlines }) {
                                                     }
                                                 }}
                                             />
+
+                                            <Button
+                                                type="button"
+                                                variant="outline"
+                                                size="sm"
+                                                onClick={() => openConfig(airline, account)}
+                                            >
+                                                <Settings className="h-3.5 w-3.5" />
+
+                                            </Button>
                                         </div>
                                     </div>
                                 ))}
@@ -192,58 +215,101 @@ export default function Index({ airlines }) {
                                 </CardDescription>
                             </CardHeader>
                             <CardContent className="space-y-6">
-                                <Tabs value={data.mode} onValueChange={(val) => setData('mode', val)} className="w-full">
-                                    <TabsList className="grid w-full grid-cols-2">
-                                        <TabsTrigger value="session">User / Auth Mode</TabsTrigger>
-                                        <TabsTrigger value="api">API / Token Mode</TabsTrigger>
+                                <Tabs value={selectedConfigTab} onValueChange={setSelectedConfigTab} className="w-full">
+                                    <TabsList className={`grid w-full ${isVidecomProvider ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                                        <TabsTrigger value="connection">Connection</TabsTrigger>
+                                        {isVidecomProvider && <TabsTrigger value="commission">Commission</TabsTrigger>}
                                     </TabsList>
-                                    <TabsContent value="session" className="space-y-4 pt-4">
-                                        <div className="grid gap-2">
-                                            <Label htmlFor="username">VRS Sine Code / Username</Label>
-                                            <Input
-                                                id="username"
-                                                value={data.username}
-                                                onChange={e => setData('username', e.target.value)}
-                                                placeholder="e.g. AGENT123"
-                                            />
-                                            {errors.username && <p className="text-xs text-destructive">{errors.username}</p>}
-                                        </div>
-                                        <div className="grid gap-2">
-                                            <Label htmlFor="password">VRS Password</Label>
-                                            <Input
-                                                id="password"
-                                                type="password"
-                                                value={data.password}
-                                                onChange={e => setData('password', e.target.value)}
-                                                placeholder="••••••••"
-                                            />
-                                            {errors.password && <p className="text-xs text-destructive">{errors.password}</p>}
-                                        </div>
-                                    </TabsContent>
-                                    <TabsContent value="api" className="space-y-4 pt-4">
-                                        <div className="grid gap-2">
-                                            <Label htmlFor="token">API Token</Label>
-                                            <Input
-                                                id="token"
-                                                value={data.token}
-                                                onChange={e => setData('token', e.target.value)}
-                                                placeholder="Paste your XML API token here"
-                                            />
-                                            {errors.token && <p className="text-xs text-destructive">{errors.token}</p>}
-                                        </div>
-                                    </TabsContent>
-                                </Tabs>
+                                    <TabsContent value="connection" className="space-y-6 pt-4">
+                                        <Tabs value={data.mode} onValueChange={(val) => setData('mode', val)} className="w-full">
+                                            <TabsList className="grid w-full grid-cols-2">
+                                                <TabsTrigger value="session">User / Auth Mode</TabsTrigger>
+                                                <TabsTrigger value="api">API / Token Mode</TabsTrigger>
+                                            </TabsList>
+                                            <TabsContent value="session" className="space-y-4 pt-4">
+                                                <div className="grid gap-2">
+                                                    <Label htmlFor="username">VRS Sine Code / Username</Label>
+                                                    <Input
+                                                        id="username"
+                                                        value={data.username}
+                                                        onChange={e => setData('username', e.target.value)}
+                                                        placeholder="e.g. AGENT123"
+                                                    />
+                                                    {errors.username && <p className="text-xs text-destructive">{errors.username}</p>}
+                                                </div>
+                                                <div className="grid gap-2">
+                                                    <Label htmlFor="password">VRS Password</Label>
+                                                    <Input
+                                                        id="password"
+                                                        type="password"
+                                                        value={data.password}
+                                                        onChange={e => setData('password', e.target.value)}
+                                                        placeholder="••••••••"
+                                                    />
+                                                    {errors.password && <p className="text-xs text-destructive">{errors.password}</p>}
+                                                </div>
+                                            </TabsContent>
+                                            <TabsContent value="api" className="space-y-4 pt-4">
+                                                <div className="grid gap-2">
+                                                    <Label htmlFor="token">API Token</Label>
+                                                    <Input
+                                                        id="token"
+                                                        value={data.token}
+                                                        onChange={e => setData('token', e.target.value)}
+                                                        placeholder="Paste your XML API token here"
+                                                    />
+                                                    {errors.token && <p className="text-xs text-destructive">{errors.token}</p>}
+                                                </div>
+                                            </TabsContent>
+                                        </Tabs>
 
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div className="grid gap-2">
-                                        <Label>Currency</Label>
-                                        <Input value={data.currency} disabled />
-                                    </div>
-                                    <div className="grid gap-2">
-                                        <Label>Base URL</Label>
-                                        <Input value={data.base_url} disabled />
-                                    </div>
-                                </div>
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <div className="grid gap-2">
+                                                <Label>Currency</Label>
+                                                <Input value={data.currency} disabled />
+                                            </div>
+                                            <div className="grid gap-2">
+                                                <Label>Base URL</Label>
+                                                <Input value={data.base_url} disabled />
+                                            </div>
+                                        </div>
+                                    </TabsContent>
+                                    {isVidecomProvider && (
+                                        <TabsContent value="commission" className="space-y-4 pt-4">
+                                            <div className="grid gap-2">
+                                                <Label htmlFor="domestic_commission_rate">Domestic Commission %</Label>
+                                                <Input
+                                                    id="domestic_commission_rate"
+                                                    type="number"
+                                                    min="0"
+                                                    max="100"
+                                                    step="0.01"
+                                                    value={data.domestic_commission_rate}
+                                                    onChange={e => setData('domestic_commission_rate', e.target.value)}
+                                                    placeholder="0.00"
+                                                />
+                                                {errors.domestic_commission_rate && <p className="text-xs text-destructive">{errors.domestic_commission_rate}</p>}
+                                            </div>
+                                            <div className="grid gap-2">
+                                                <Label htmlFor="international_commission_rate">International Commission %</Label>
+                                                <Input
+                                                    id="international_commission_rate"
+                                                    type="number"
+                                                    min="0"
+                                                    max="100"
+                                                    step="0.01"
+                                                    value={data.international_commission_rate}
+                                                    onChange={e => setData('international_commission_rate', e.target.value)}
+                                                    placeholder="0.00"
+                                                />
+                                                {errors.international_commission_rate && <p className="text-xs text-destructive">{errors.international_commission_rate}</p>}
+                                            </div>
+                                            <div className="rounded-lg border bg-muted/30 p-4 text-sm text-muted-foreground">
+                                                Commission is calculated from the fare amount only. Domestic flights use the domestic rate, and international flights use the international rate.
+                                            </div>
+                                        </TabsContent>
+                                    )}
+                                </Tabs>
 
                                 {testResult && (
                                     <div className={`p-3 rounded-lg flex items-center gap-3 text-sm ${testResult.success ? 'bg-green-500/10 text-green-600 border border-green-200' : 'bg-destructive/10 text-destructive border border-destructive/20'}`}>

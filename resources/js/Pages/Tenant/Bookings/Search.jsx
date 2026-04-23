@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Head, Link, router, useForm } from '@inertiajs/react';
 import { format } from 'date-fns';
-import TenantLayout from '@/Layouts/TenantLayout';
+import TenantSidebarLayout from '@/Layouts/TenantSidebarLayout';
 import { Button } from '@/Components/ui/Button';
 import { Input } from '@/Components/ui/Input';
 import { Label } from '@/Components/ui/Label';
@@ -132,8 +132,8 @@ export default function Search({ searchDisplayMode, bookings, filters, airlines,
             <button {...dayButtonProps} type="button" className={`${dayButtonProps.className || ''} h-12`}>
                 <span>{children}</span>
                 {hasHint ? (
-                    <span className="mt-0.5 block text-[10px] leading-none text-emerald-600">
-                        from {Math.round(hint.price)} {hint.currency}
+                    <span className="mt-0.5 flex items-center text-[10px] leading-none text-emerald-600">
+                        {Math.round(hint.price)} {hint.currency}
                     </span>
                 ) : null}
             </button>
@@ -149,7 +149,7 @@ export default function Search({ searchDisplayMode, bookings, filters, airlines,
     };
 
     return (
-        <TenantLayout>
+        <TenantSidebarLayout>
             <Head title="Search Flights" />
 
             <div className="mx-auto max-w-6xl space-y-6 py-6">
@@ -394,6 +394,6 @@ export default function Search({ searchDisplayMode, bookings, filters, airlines,
                     </CardContent>
                 </Card>
             </div>
-        </TenantLayout>
+        </TenantSidebarLayout>
     );
 }

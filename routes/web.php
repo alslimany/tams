@@ -27,6 +27,7 @@ Route::prefix('admin')->name('landlord.')->group(function () {
 
     Route::middleware('landlord.auth')->group(function () {
         Route::get('dashboard', LandlordDashboardController::class)->name('dashboard');
+        Route::get('settings/flight-cache', [GlobalFlightCacheSettingsController::class, 'index'])->name('settings.flight-cache.index');
         Route::patch('settings/flight-cache', [GlobalFlightCacheSettingsController::class, 'update'])->name('settings.flight-cache.update');
         Route::get('tenants', [TenantManagementController::class, 'index'])->name('tenants.index');
         Route::get('tenants/{tenant}', [TenantManagementController::class, 'show'])->name('tenants.show');

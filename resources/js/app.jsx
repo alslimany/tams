@@ -6,6 +6,8 @@ import { createInertiaApp } from '@inertiajs/react';
 import { resolvePageComponent } from 'laravel-vite-plugin/inertia-helpers';
 import { route } from 'ziggy-js';
 
+import { TooltipProvider } from '@/Components/ui/tooltip';
+
 const appName = import.meta.env.VITE_APP_NAME || 'Laravel';
 
 createInertiaApp({
@@ -15,7 +17,11 @@ createInertiaApp({
         const root = createRoot(el);
 
         window.route = route;
-        root.render(<App {...props} />);
+        root.render(
+            <TooltipProvider>
+                <App {...props} />
+            </TooltipProvider>,
+        );
     },
     progress: {
         color: '#4B5563',

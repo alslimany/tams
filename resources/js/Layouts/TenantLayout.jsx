@@ -1,11 +1,9 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect } from 'react';
 import { Link, usePage } from '@inertiajs/react';
 import {
     BookOpenCheckIcon,
     LayoutDashboardIcon,
     LogOutIcon,
-    MenuIcon,
-    XIcon,
     PlaneTakeoffIcon,
     SettingsIcon,
     ShieldCheckIcon,
@@ -15,16 +13,26 @@ import {
 } from 'lucide-react';
 import { Toaster, toast } from 'sonner';
 
-import { Button } from '@/Components/ui/Button';
+import {
+    Sidebar,
+    SidebarContent,
+    SidebarFooter,
+    SidebarGroup,
+    SidebarGroupContent,
+    SidebarGroupLabel,
+    SidebarHeader,
+    SidebarInset,
+    SidebarMenu,
+    SidebarMenuButton,
+    SidebarMenuItem,
+    SidebarProvider,
+    SidebarTrigger,
+} from '@/Components/ui/sidebar';
 import { Separator } from '@/Components/ui/separator';
-import { useIsMobile } from '@/hooks/use-mobile';
 
 export default function TenantLayout({ children }) {
     const { auth, tenant, flash } = usePage().props;
     const currentPath = usePage().url;
-    const isMobile = useIsMobile();
-    const [desktopExpanded, setDesktopExpanded] = useState(true);
-    const [mobileOpen, setMobileOpen] = useState(false);
 
     const isAdmin = auth.user?.role === 'admin';
 
@@ -73,20 +81,13 @@ export default function TenantLayout({ children }) {
         { name: 'Password', route: 'user-password.edit', icon: ShieldCheckIcon },
     ].filter((item) => hasRoute(item.route));
 
-    const toggleSidebar = () => {
-        if (isMobile) {
-            setMobileOpen((value) => !value);
-            return;
-        }
-
-        setDesktopExpanded((value) => !value);
-    };
-
-    const closeMobileSidebar = () => {
-        if (isMobile) {
-            setMobileOpen(false);
-        }
-    };
+    const currentPathLabel = currentPath
+        .split('?')[0]
+        .split('/')
+        .filter(Boolean)
+        .map((segment) => segment.replace(/-/g, ' '))
+        .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
+        .join(' / ') || 'Dashboard';
 
     const renderNavSection = (label, links) => {
         if (links.length === 0) {
@@ -94,111 +95,88 @@ export default function TenantLayout({ children }) {
         }
 
         return (
-            <div className="space-y-2">
-                {desktopExpanded && <p className="px-2 text-sm text-muted-foreground">{label}</p>}
-                <div className="space-y-1">
+            <SidebarGroup>
+                <SidebarGroupLabel>{label}</SidebarGroupLabel>
+                <SidebarGroupContent>
+                    <SidebarMenu>
                     {links.map((item) => {
                         const Icon = item.icon;
 
                         return (
-                            <Link
-                                key={item.route}
-                                href={route(item.route)}
-                                onClick={closeMobileSidebar}
-                                className={`flex items-center gap-3 rounded-md px-3 py-2 text-base transition-colors hover:bg-accent hover:text-accent-foreground ${
-                                    isActive(item.route) ? 'bg-accent text-accent-foreground font-medium' : 'text-foreground'
-                                }`}
-                                title={desktopExpanded ? undefined : item.name}
-                            >
-                                <Icon className="size-5 shrink-0" />
-                                {desktopExpanded && <span className="truncate">{item.name}</span>}
-                            </Link>
+                            <SidebarMenuItem key={item.route}>
+                                <SidebarMenuButton asChild isActive={isActive(item.route)} tooltip={item.name}>
+                                    <Link href={route(item.route)}>
+                                        <Icon />
+                                        <span>{item.name}</span>
+                                    </Link>
+                                </SidebarMenuButton>
+                            </SidebarMenuItem>
                         );
                     })}
-                </div>
-            </div>
+                    </SidebarMenu>
+                </SidebarGroupContent>
+            </SidebarGroup>
         );
     };
 
-    const sidebarContent = (
-        <div className="flex h-full flex-col bg-card">
-            <div className="border-b p-2">
-                <Link
-                    href={hasRoute('dashboard') ? route('dashboard') : '/dashboard'}
-                    onClick={closeMobileSidebar}
-                    className="flex items-center gap-3 rounded-md px-3 py-2 hover:bg-accent"
-                >
-                    <LayoutDashboardIcon className="size-5 shrink-0" />
-                    {desktopExpanded && <span className="truncate text-xl font-semibold">{tenant?.companyName || 'TAMS Agency'}</span>}
-                </Link>
-            </div>
-
-            <nav className="flex-1 space-y-6 overflow-y-auto p-4">
-                {renderNavSection('Workspace', mainLinks)}
-                {renderNavSection('Administration', adminLinks)}
-                {renderNavSection('Account', accountLinks)}
-            </nav>
-
-            <div className="border-t p-3">
-                <div className="px-2 py-1.5">
-                    {desktopExpanded && <p className="truncate text-sm font-medium">{auth.user?.name}</p>}
-                    {desktopExpanded && <p className="truncate text-xs text-muted-foreground">{auth.user?.email}</p>}
-                    {desktopExpanded && tenant?.status && (
-                        <p className="mt-1 text-[11px] uppercase tracking-[0.2em] text-muted-foreground">{tenant.status}</p>
-                    )}
-                </div>
-                <Button asChild variant="ghost" className={`w-full ${desktopExpanded ? 'justify-start' : 'justify-center'}`}>
-                    <Link href="/logout" method="post" as="button">
-                        <LogOutIcon />
-                        {desktopExpanded && <span>Logout</span>}
-                    </Link>
-                </Button>
-            </div>
-        </div>
-    );
-
     return (
         <>
-            <div className="flex min-h-dvh bg-background text-foreground">
-                <aside
-                    className={`hidden shrink-0 border-r md:flex md:h-dvh md:sticky md:top-0 md:flex-col md:transition-[width] md:duration-200 ${
-                        desktopExpanded ? 'md:w-72' : 'md:w-18'
-                    }`}
-                >
-                    {sidebarContent}
-                </aside>
+            <SidebarProvider>
+                <Sidebar collapsible="icon" variant="inset">
+                    <SidebarHeader>
+                        <SidebarMenu>
+                            <SidebarMenuItem>
+                                <SidebarMenuButton size="lg" asChild tooltip="Dashboard">
+                                    <Link href={hasRoute('dashboard') ? route('dashboard') : '/dashboard'}>
+                                        <div className="flex size-8 items-center justify-center rounded-md bg-sidebar-primary text-sidebar-primary-foreground">
+                                            <LayoutDashboardIcon className="size-4" />
+                                        </div>
+                                        <span className="truncate text-sm font-semibold">{tenant?.companyName || 'TAMS Agency'}</span>
+                                    </Link>
+                                </SidebarMenuButton>
+                            </SidebarMenuItem>
+                        </SidebarMenu>
+                    </SidebarHeader>
 
-                {isMobile && mobileOpen && (
-                    <button
-                        type="button"
-                        className="fixed inset-0 z-40 bg-black/40"
-                        onClick={closeMobileSidebar}
-                        aria-label="Close sidebar"
-                    />
-                )}
+                    <SidebarContent>
+                        {renderNavSection('Workspace', mainLinks)}
+                        {renderNavSection('Administration', adminLinks)}
+                        {renderNavSection('Account', accountLinks)}
+                    </SidebarContent>
 
-                <aside
-                    className={`fixed inset-y-0 left-0 z-50 w-72 border-r bg-card transition-transform duration-200 md:hidden ${
-                        mobileOpen ? 'translate-x-0' : '-translate-x-full'
-                    }`}
-                >
-                    {sidebarContent}
-                </aside>
+                    <SidebarFooter>
+                        <div className="rounded-md border border-sidebar-border bg-sidebar-accent/40 px-2 py-2 text-xs group-data-[collapsible=icon]:hidden">
+                            <p className="truncate font-medium text-sidebar-foreground">{auth.user?.name}</p>
+                            <p className="truncate text-sidebar-foreground/70">{auth.user?.email}</p>
+                            {tenant?.status && (
+                                <p className="mt-1 truncate uppercase tracking-[0.16em] text-[10px] text-sidebar-foreground/60">{tenant.status}</p>
+                            )}
+                        </div>
+                        <SidebarMenu>
+                            <SidebarMenuItem>
+                                <SidebarMenuButton asChild tooltip="Logout">
+                                    <Link href="/logout" method="post" as="button">
+                                        <LogOutIcon />
+                                        <span>Logout</span>
+                                    </Link>
+                                </SidebarMenuButton>
+                            </SidebarMenuItem>
+                        </SidebarMenu>
+                    </SidebarFooter>
+                </Sidebar>
 
-                <div className="flex min-w-0 flex-1 flex-col">
-                    <header className="sticky top-0 z-20 border-b bg-card">
+                <SidebarInset className="overflow-x-hidden">
+                    <header className="sticky top-0 z-20 border-b border-sidebar-border/70 bg-background/90 backdrop-blur">
                         <div className="flex h-14 items-center gap-3 px-4 sm:px-6">
-                            <Button variant="ghost" size="icon" onClick={toggleSidebar} aria-label="Toggle sidebar">
-                                {isMobile && mobileOpen ? <XIcon className="size-5" /> : <MenuIcon className="size-5" />}
-                            </Button>
-                            <Separator orientation="vertical" className="h-4!" />
-                            <p className="text-sm text-muted-foreground">{currentPath}</p>
+                            <SidebarTrigger className="-ml-1" />
+                          
+                            <p className="truncate text-sm text-muted-foreground">{currentPathLabel}</p>
                         </div>
                     </header>
 
-                    <main className="flex-1 overflow-y-auto p-6">{children}</main>
-                </div>
-            </div>
+                    <main className="flex-1 overflow-y-auto p-4 sm:p-6">{children}</main>
+                </SidebarInset>
+            </SidebarProvider>
             <Toaster richColors position="top-right" />
         </>
     );

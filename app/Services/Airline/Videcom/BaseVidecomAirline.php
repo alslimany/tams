@@ -505,7 +505,16 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
                     $response = $this->client->runCommand($command);
                     $xml = $this->parseXml($response);
 
+                    if (is_string($xml)) {
+                        return ! $this->isOpenReservationErrorResponse($xml);
+                    }
+
                     if (! ($xml instanceof SimpleXMLElement) || ! isset($xml->FareQuote)) {
+                        return false;
+                    }
+
+                    $rawXml = (string) ($xml->asXML() ?: '');
+                    if ($this->isOpenReservationErrorResponse($rawXml)) {
                         return false;
                     }
 
@@ -513,7 +522,14 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
                     $fareQuote = $xml->FareQuote->FQItin[0] ?? null;
                     $total = (float) ($fareStore['Total'] ?? $fareQuote['Total'] ?? 0);
 
-                    return $total > 0;
+                    if ($total > 0) {
+                        return true;
+                    }
+
+                    // Some providers return valid open-reservation eligibility without a priced FareStore.
+                    $itineraryRows = $xml->xpath('//Itinerary/Itin') ?: [];
+
+                    return count($itineraryRows) > 0;
                 } catch (\Throwable $exception) {
                     report($exception);
 
@@ -521,6 +537,22 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
                 }
             }
         );
+    }
+
+    protected function isOpenReservationErrorResponse(string $payload): bool
+    {
+        $normalized = strtolower(trim($payload));
+
+        if ($normalized === '') {
+            return true;
+        }
+
+        return str_contains($normalized, 'error:')
+            || str_contains($normalized, 'cannot be booked as open')
+            || str_contains($normalized, 'invalid entry')
+            || str_contains($normalized, 'not authorised')
+            || str_contains($normalized, 'not authorized')
+            || str_contains($normalized, 'failed');
     }
 
     /**

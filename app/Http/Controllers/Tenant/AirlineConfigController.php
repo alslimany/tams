@@ -140,6 +140,8 @@ class AirlineConfigController extends Controller
                     'airline_code' => $airline['id'],
                     'provider_type' => $airline['provider_type'],
                     'remaining_balance' => $remainingBalance,
+                    'domestic_commission_rate' => $existing ? $existing->domestic_commission_rate : null,
+                    'international_commission_rate' => $existing ? $existing->international_commission_rate : null,
                 ]);
             }
             );
@@ -166,6 +168,8 @@ class AirlineConfigController extends Controller
             'base_url' => 'required|url',
             'currency' => 'required|string|size:3',
             'airports' => 'nullable|array',
+            'domestic_commission_rate' => 'nullable|numeric|min:0|max:100',
+            'international_commission_rate' => 'nullable|numeric|min:0|max:100',
         ]);
 
         $credentials = [
@@ -196,6 +200,8 @@ class AirlineConfigController extends Controller
                 'last_tested_at' => now(),
                 'last_test_status' => 'configured',
                 'last_test_message' => null,
+                'domestic_commission_rate' => $this->normalizeCommissionRate($validated['domestic_commission_rate'] ?? null),
+                'international_commission_rate' => $this->normalizeCommissionRate($validated['international_commission_rate'] ?? null),
             ]
         );
 
@@ -217,6 +223,8 @@ class AirlineConfigController extends Controller
             'base_url' => 'required|url',
             'currency' => 'required|string|size:3',
             'airports' => 'nullable|array',
+            'domestic_commission_rate' => 'nullable|numeric|min:0|max:100',
+            'international_commission_rate' => 'nullable|numeric|min:0|max:100',
         ]);
 
         $credentials = [
@@ -315,5 +323,14 @@ class AirlineConfigController extends Controller
         } catch (\Throwable $exception) {
             report($exception);
         }
+    }
+
+    protected function normalizeCommissionRate(mixed $value): ?float
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        return round((float) $value, 2);
     }
 }

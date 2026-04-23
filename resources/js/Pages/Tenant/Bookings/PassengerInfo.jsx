@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Head, Link, useForm, usePage } from '@inertiajs/react';
 import axios from 'axios';
 import TenantLayout from '@/Layouts/TenantLayout';
@@ -10,9 +10,7 @@ import { Label } from '@/Components/ui/Label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/Components/ui/Tabs';
 import { Armchair, Briefcase, CheckCircle2, ChevronLeft, ChevronRight, Loader2, Settings2, Users } from 'lucide-react';
 
-const PRIMARY_SEGMENT = 1;
-
-export default function PassengerInfo({ uuid, provider_id, flight, reservation_type, is_round_trip = false, outbound_provider_id = null, return_provider_id = null, passportRequired = false, searchParams, ancillaryCatalog = [] }) {
+export default function PassengerInfo({ uuid, provider_id, flight, reservation_type, is_round_trip = false, outbound_provider_id = null, return_provider_id = null, passportRequired = false, searchParams, ancillaryCatalog = [], ancillaryCatalogByOffer = {} }) {
     const flash = usePage().props.flash ?? {};
     const issueCommandPreview = flash.issue_command_preview || '';
 
@@ -62,10 +60,75 @@ export default function PassengerInfo({ uuid, provider_id, flight, reservation_t
 
     const [activeTab, setActiveTab] = useState('passengers');
     const [isSeatMapOpen, setIsSeatMapOpen] = useState(false);
-    const [seatMapData, setSeatMapData] = useState(null);
+    const [seatMapByOffer, setSeatMapByOffer] = useState({});
     const [loadingSeatMap, setLoadingSeatMap] = useState(false);
+    const [activeOfferKeyForSeat, setActiveOfferKeyForSeat] = useState('oneway');
     const [activePaxIndexForSeat, setActivePaxIndexForSeat] = useState(0);
     const [localErrors, setLocalErrors] = useState({});
+
+    const offerContexts = useMemo(() => {
+        if (is_round_trip && flight?.round_trip) {
+            const outboundFlight = flight.round_trip.outbound_flight;
+            const returnFlight = flight.round_trip.return_flight;
+
+            const contexts = [];
+
+            if (outboundFlight) {
+                contexts.push({
+                    key: 'outbound',
+                    label: 'Outbound Offer',
+                    providerId: Number(outbound_provider_id || provider_id),
+                    flight: outboundFlight,
+                    segments: outboundFlight.segments || [outboundFlight],
+                });
+            }
+
+            if (returnFlight) {
+                contexts.push({
+                    key: 'return',
+                    label: 'Return Offer',
+                    providerId: Number(return_provider_id || provider_id),
+                    flight: returnFlight,
+                    segments: returnFlight.segments || [returnFlight],
+                });
+            }
+
+            if (contexts.length > 0) {
+                return contexts;
+            }
+        }
+
+        return [
+            {
+                key: 'oneway',
+                label: 'Offer',
+                providerId: Number(provider_id),
+                flight,
+                segments: flight?.segments || [flight],
+            },
+        ];
+    }, [flight, is_round_trip, outbound_provider_id, provider_id, return_provider_id]);
+
+    const isRoundTripBooking = offerContexts.length > 1;
+
+    useEffect(() => {
+        if (!offerContexts.some((offer) => offer.key === activeOfferKeyForSeat)) {
+            setActiveOfferKeyForSeat(offerContexts[0]?.key || 'oneway');
+        }
+    }, [activeOfferKeyForSeat, offerContexts]);
+
+    const ancillaryCatalogByOfferMap = useMemo(() => {
+        const map = {};
+
+        offerContexts.forEach((offer) => {
+            const offerCatalog = ancillaryCatalogByOffer?.[offer.key] ?? ancillaryCatalog;
+            map[offer.key] = Array.isArray(offerCatalog)
+                ? offerCatalog.filter((service) => service.enabled)
+                : [];
+        });
+
+        return map;
+    }, [ancillaryCatalog, ancillaryCatalogByOffer, offerContexts]);
 
     const passportFields = ['passport_number', 'passport_expiry', 'passport_issue_country', 'nationality'];
     const hasPartialPassportDetails = useMemo(() => {
@@ -129,13 +192,8 @@ export default function PassengerInfo({ uuid, provider_id, flight, reservation_t
         window.scrollTo({ top: 0, behavior: 'smooth' });
     };
 
-    const enabledAncillaries = useMemo(
-        () => ancillaryCatalog.filter((service) => service.enabled),
-        [ancillaryCatalog],
-    );
-
-    const getSelectedService = (code) => {
-        return data.extras.selected_services.find((service) => service.code === code) ?? null;
+    const getSelectedService = (offerKey, code) => {
+        return data.extras.selected_services.find((service) => service.offer_key === offerKey && service.code === code) ?? null;
     };
 
     const replaceSelectedServices = (services) => {
@@ -145,10 +203,10 @@ export default function PassengerInfo({ uuid, provider_id, flight, reservation_t
         });
     };
 
-    const upsertService = (code, updater) => {
-        const currentService = getSelectedService(code) ?? { code, quantity: 0, passengers: [] };
+    const upsertService = (offerKey, code, updater) => {
+        const currentService = getSelectedService(offerKey, code) ?? { offer_key: offerKey, code, quantity: 0, passengers: [] };
         const nextService = updater(currentService);
-        const nextServices = data.extras.selected_services.filter((service) => service.code !== code);
+        const nextServices = data.extras.selected_services.filter((service) => !(service.offer_key === offerKey && service.code === code));
         const normalizedPassengers = [...new Set((nextService.passengers ?? []).map((value) => Number(value)))];
         const normalizedQuantity = Math.max(0, Number(nextService.quantity ?? 0));
 
@@ -162,14 +220,15 @@ export default function PassengerInfo({ uuid, provider_id, flight, reservation_t
             ...nextServices,
             {
                 code,
+                offer_key: offerKey,
                 quantity: normalizedQuantity,
                 passengers: normalizedPassengers,
             },
         ]);
     };
 
-    const togglePassengerService = (service, passengerIndex) => {
-        upsertService(service.code, (currentService) => {
+    const togglePassengerService = (offerKey, service, passengerIndex) => {
+        upsertService(offerKey, service.code, (currentService) => {
             const passengers = new Set((currentService.passengers ?? []).map((value) => Number(value)));
 
             if (passengers.has(passengerIndex)) {
@@ -186,8 +245,8 @@ export default function PassengerInfo({ uuid, provider_id, flight, reservation_t
         });
     };
 
-    const toggleBookingService = (service) => {
-        upsertService(service.code, (currentService) => {
+    const toggleBookingService = (offerKey, service) => {
+        upsertService(offerKey, service.code, (currentService) => {
             const isSelected = Number(currentService.quantity ?? 0) > 0;
 
             return {
@@ -198,8 +257,8 @@ export default function PassengerInfo({ uuid, provider_id, flight, reservation_t
         });
     };
 
-    const setQuantityService = (service, quantity) => {
-        upsertService(service.code, (currentService) => ({
+    const setQuantityService = (offerKey, service, quantity) => {
+        upsertService(offerKey, service.code, (currentService) => ({
             ...currentService,
             quantity: Math.min(
                 service.max_quantity || quantity,
@@ -209,63 +268,113 @@ export default function PassengerInfo({ uuid, provider_id, flight, reservation_t
         }));
     };
 
+    const applyServiceToAllOffers = (sourceOfferKey, service) => {
+        const sourceSelection = getSelectedService(sourceOfferKey, service.code);
+        const defaultPassengers = data.passengers.map((_, index) => index);
+        const nextQuantity = sourceSelection
+            ? Number(sourceSelection.quantity ?? 0)
+            : Math.max(service.min_quantity || 0, service.default_quantity || 1);
+        const nextPassengers = sourceSelection
+            ? [...new Set((sourceSelection.passengers ?? []).map((value) => Number(value)))]
+            : (service.pricing_mode === 'per_booking' || service.pricing_mode === 'per_kg' ? [] : defaultPassengers);
+
+        const nextServices = data.extras.selected_services.filter((selectedService) => selectedService.code !== service.code);
+
+        const appliedToOffers = offerContexts.map((offer) => ({
+            offer_key: offer.key,
+            code: service.code,
+            quantity: nextQuantity,
+            passengers: nextPassengers,
+        }));
+
+        replaceSelectedServices([...nextServices, ...appliedToOffers]);
+    };
+
     const ancillaryLines = useMemo(() => {
-        return enabledAncillaries.reduce((lines, service) => {
-            const selection = getSelectedService(service.code);
+        return offerContexts.reduce((lines, offer) => {
+            const services = ancillaryCatalogByOfferMap[offer.key] ?? [];
 
-            if (!selection) {
-                return lines;
-            }
+            services.forEach((service) => {
+                const selection = getSelectedService(offer.key, service.code);
 
-            const passengerCount = selection.passengers?.length > 0 ? selection.passengers.length : data.passengers.length;
-            const segmentCount = flight.segments?.length || 1;
-            const quantity = Number(selection.quantity ?? 0);
+                if (!selection) {
+                    return;
+                }
 
-            let multiplier = 1;
+                const passengerCount = selection.passengers?.length > 0 ? selection.passengers.length : data.passengers.length;
+                const segmentCount = offer.segments?.length || 1;
+                const quantity = Number(selection.quantity ?? 0);
 
-            if (service.pricing_mode === 'per_kg') {
-                multiplier = quantity;
-            } else if (service.pricing_mode === 'per_passenger') {
-                multiplier = passengerCount;
-            } else if (service.pricing_mode === 'per_segment') {
-                multiplier = segmentCount;
-            } else if (service.pricing_mode === 'per_passenger_per_segment') {
-                multiplier = passengerCount * segmentCount;
-            }
+                let multiplier = 1;
 
-            const total = Number(service.unit_price || 0) * multiplier;
+                if (service.pricing_mode === 'per_kg') {
+                    multiplier = quantity;
+                } else if (service.pricing_mode === 'per_passenger') {
+                    multiplier = passengerCount;
+                } else if (service.pricing_mode === 'per_segment') {
+                    multiplier = segmentCount;
+                } else if (service.pricing_mode === 'per_passenger_per_segment') {
+                    multiplier = passengerCount * segmentCount;
+                }
 
-            lines.push({
-                code: service.code,
-                label: service.label,
-                quantity,
-                total,
+                const total = Number(service.unit_price || 0) * multiplier;
+
+                lines.push({
+                    offer_key: offer.key,
+                    offer_label: offer.label,
+                    code: service.code,
+                    label: service.label,
+                    quantity,
+                    total,
+                });
             });
 
             return lines;
         }, []);
-    }, [data.extras.selected_services, data.passengers.length, enabledAncillaries, flight.segments]);
+    }, [ancillaryCatalogByOfferMap, data.extras.selected_services, data.passengers.length, offerContexts]);
 
     const ancillaryTotal = ancillaryLines.reduce((total, line) => total + line.total, 0);
 
     const fetchSeatMap = async () => {
         setIsSeatMapOpen(true);
 
-        if (seatMapData) {
+        const offersToLoad = offerContexts.filter((offer) => !seatMapByOffer[offer.key]);
+        if (offersToLoad.length === 0) {
             return;
         }
 
         setLoadingSeatMap(true);
 
         try {
-            const flightCode = flight.segments?.[0]?.flight_number || flight.flight_number;
-            const flightDate = flight.segments?.[0]?.departure_time || flight.departure_time;
-            const response = await axios.post(route('flights.seatmap'), {
-                provider_id,
-                flight_number: flightCode,
-                date: flightDate,
+            const responses = await Promise.all(
+                offersToLoad.map(async (offer) => {
+                    const firstSegment = offer.segments?.[0] || offer.flight;
+                    const flightCode = firstSegment?.flight_number;
+                    const flightDate = firstSegment?.departure_time || firstSegment?.date;
+
+                    if (!offer.providerId || !flightCode || !flightDate) {
+                        return { key: offer.key, data: null };
+                    }
+
+                    const response = await axios.post(route('flights.seatmap'), {
+                        provider_id: offer.providerId,
+                        flight_number: flightCode,
+                        date: flightDate,
+                    });
+
+                    return { key: offer.key, data: response.data };
+                })
+            );
+
+            setSeatMapByOffer((previous) => {
+                const next = { ...previous };
+
+                responses.forEach(({ key, data }) => {
+                    next[key] = data;
+                });
+
+                return next;
             });
-            setSeatMapData(response.data);
         } catch (error) {
             console.error('Failed to fetch seat map', error);
         } finally {
@@ -273,32 +382,26 @@ export default function PassengerInfo({ uuid, provider_id, flight, reservation_t
         }
     };
 
-    const handleSeatSelection = (seatCode) => {
+    const handleSeatSelection = (offerKey, seatCode) => {
         const nextSeats = { ...data.extras.seats };
-        const existingPaxIndex = Object.keys(nextSeats).find((index) => nextSeats[index]?.[PRIMARY_SEGMENT] === seatCode);
+        const offerSeats = { ...(nextSeats[offerKey] ?? {}) };
+        const existingPaxIndex = Object.keys(offerSeats).find((index) => offerSeats[index] === seatCode);
 
         if (existingPaxIndex !== undefined) {
             if (Number(existingPaxIndex) === activePaxIndexForSeat) {
-                const currentSeatSelection = { ...(nextSeats[activePaxIndexForSeat] ?? {}) };
-                delete currentSeatSelection[PRIMARY_SEGMENT];
-
-                if (Object.keys(currentSeatSelection).length === 0) {
-                    delete nextSeats[activePaxIndexForSeat];
-                } else {
-                    nextSeats[activePaxIndexForSeat] = currentSeatSelection;
-                }
+                delete offerSeats[activePaxIndexForSeat];
             } else {
-                delete nextSeats[existingPaxIndex];
-                nextSeats[activePaxIndexForSeat] = {
-                    ...(nextSeats[activePaxIndexForSeat] ?? {}),
-                    [PRIMARY_SEGMENT]: seatCode,
-                };
+                delete offerSeats[existingPaxIndex];
+                offerSeats[activePaxIndexForSeat] = seatCode;
             }
         } else {
-            nextSeats[activePaxIndexForSeat] = {
-                ...(nextSeats[activePaxIndexForSeat] ?? {}),
-                [PRIMARY_SEGMENT]: seatCode,
-            };
+            offerSeats[activePaxIndexForSeat] = seatCode;
+        }
+
+        if (Object.keys(offerSeats).length === 0) {
+            delete nextSeats[offerKey];
+        } else {
+            nextSeats[offerKey] = offerSeats;
         }
 
         setData('extras', {
@@ -306,12 +409,14 @@ export default function PassengerInfo({ uuid, provider_id, flight, reservation_t
             seats: nextSeats,
         });
 
-        if (activePaxIndexForSeat < data.passengers.length - 1 && !nextSeats[activePaxIndexForSeat + 1]?.[PRIMARY_SEGMENT]) {
+        if (activePaxIndexForSeat < data.passengers.length - 1 && !offerSeats[activePaxIndexForSeat + 1]) {
             setActivePaxIndexForSeat(activePaxIndexForSeat + 1);
         }
     };
 
-    const generateGrid = () => {
+    const generateGrid = (offerKey) => {
+        const seatMapData = seatMapByOffer[offerKey];
+
         if (!seatMapData || !seatMapData.grid) {
             return [];
         }
@@ -358,15 +463,70 @@ export default function PassengerInfo({ uuid, provider_id, flight, reservation_t
 
     const submitBooking = (event) => {
         event.preventDefault();
-        post(route('flights.store'));
+
+        post(route('flights.store'), {
+            transform: (formData) => {
+                const normalizedSeats = {};
+
+                offerContexts.forEach((offer, offerIndex) => {
+                    const offerSeats = formData.extras?.seats?.[offer.key] ?? {};
+                    const segmentNumber = offerIndex + 1;
+
+                    Object.entries(offerSeats).forEach(([passengerIndex, seatCode]) => {
+                        if (!seatCode) {
+                            return;
+                        }
+
+                        normalizedSeats[passengerIndex] = {
+                            ...(normalizedSeats[passengerIndex] ?? {}),
+                            [segmentNumber]: seatCode,
+                        };
+                    });
+                });
+
+                return {
+                    ...formData,
+                    extras: {
+                        ...(formData.extras ?? {}),
+                        seats: normalizedSeats,
+                    },
+                };
+            },
+        });
     };
 
     const providerPrice = Number(flight.pricing?.total || 0);
     const currency = flight.pricing?.currency || 'USD';
     const grandTotal = providerPrice + ancillaryTotal;
-    const selectedSeatLabels = Object.entries(data.extras.seats)
-        .map(([index, seats]) => seats?.[PRIMARY_SEGMENT] ? `Pax ${Number(index) + 1}: ${seats[PRIMARY_SEGMENT]}` : null)
-        .filter(Boolean);
+    const selectedSeatLabels = offerContexts.flatMap((offer) => {
+        const offerSeats = data.extras.seats?.[offer.key] ?? {};
+
+        return Object.entries(offerSeats)
+            .map(([index, seatCode]) => (seatCode ? `${offer.label} - Pax ${Number(index) + 1}: ${seatCode}` : null))
+            .filter(Boolean);
+    });
+
+    const formatSegmentDateTime = (value) => {
+        if (!value) {
+            return '--';
+        }
+
+        const parsed = new Date(value);
+        if (Number.isNaN(parsed.getTime())) {
+            return String(value);
+        }
+
+        return parsed.toLocaleString(undefined, {
+            month: 'short',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+        });
+    };
+
+    const firstSegment = offerContexts[0]?.segments?.[0] || null;
+    const lastOffer = offerContexts[offerContexts.length - 1] || null;
+    const lastSegment = lastOffer?.segments?.[lastOffer.segments.length - 1] || null;
 
     return (
         <TenantLayout>
@@ -379,7 +539,7 @@ export default function PassengerInfo({ uuid, provider_id, flight, reservation_t
                             <ChevronLeft className="mr-1 h-4 w-4" /> Back to Flights
                         </Link>
                         <h2 className="text-3xl font-black tracking-tight">Complete your Booking</h2>
-                        <p className="mt-1 font-medium text-muted-foreground">Fill the passenger details, seats, and airline services for this offer.</p>
+                        <p className="mt-1 font-medium text-muted-foreground">Fill the passenger details, seats, and airline services for your selected itinerary.</p>
                     </div>
 
                     {flash.error && (
@@ -524,113 +684,123 @@ export default function PassengerInfo({ uuid, provider_id, flight, reservation_t
                             </TabsContent>
 
                             <TabsContent value="extras" className="space-y-6">
-                                <div className="space-y-4">
+                                <div className="space-y-6">
                                     <div>
                                         <h3 className="text-lg font-bold">Airline Services</h3>
-                                        <p className="text-sm text-muted-foreground">The available services come from the selected airline account. Services without a command template are stored for pricing and support follow-up until the airline-specific code is configured.</p>
+                                        <p className="text-sm text-muted-foreground">Select services per offer, or apply a service to all offers in this booking.</p>
                                     </div>
 
-                                    {enabledAncillaries.length === 0 && (
-                                        <Card className="border-dashed">
-                                            <CardContent className="py-10 text-center text-sm text-muted-foreground">
-                                                No airline-specific extra services are configured for this provider yet.
-                                            </CardContent>
-                                        </Card>
-                                    )}
+                                    {offerContexts.map((offer) => {
+                                        const offerServices = ancillaryCatalogByOfferMap[offer.key] ?? [];
+                                        const offerAirline = offer.flight?.airline_name || 'Airline';
 
-                                    <div className="grid gap-4">
-                                        {enabledAncillaries.map((service) => {
-                                            const selection = getSelectedService(service.code);
-                                            const quantity = Number(selection?.quantity ?? service.default_quantity ?? 0);
-                                            const selectedPassengers = new Set((selection?.passengers ?? []).map((value) => Number(value)));
-                                            const isQuantityService = service.type === 'baggage_increment' || service.pricing_mode === 'per_kg';
-                                            const isBookingService = service.pricing_mode === 'per_booking';
+                                        return (
+                                            <div key={offer.key} className="space-y-4 rounded-2xl border bg-muted/5 p-4">
+                                                <div className="flex items-center justify-between gap-3">
+                                                    <div>
+                                                        <p className="text-xs font-black uppercase tracking-widest text-primary">{offer.label}</p>
+                                                        <h4 className="text-base font-bold">{offerAirline}</h4>
+                                                    </div>
+                                                    <p className="text-xs font-semibold text-muted-foreground">Provider extras</p>
+                                                </div>
 
-                                            return (
-                                                <Card key={service.code} className="border-2 shadow-sm">
-                                                    <CardContent className="space-y-4 p-6">
-                                                        <div className="flex items-start gap-4">
-                                                            <div className="rounded-full bg-primary/10 p-3">
-                                                                {isQuantityService ? <Briefcase className="h-6 w-6 text-primary" /> : <Settings2 className="h-6 w-6 text-primary" />}
-                                                            </div>
-                                                            <div className="flex-1 space-y-2">
-                                                                <div className="flex items-start justify-between gap-4">
-                                                                    <div>
-                                                                        <h4 className="text-lg font-bold">{service.label}</h4>
-                                                                        <p className="text-sm text-muted-foreground">{service.description}</p>
-                                                                    </div>
-                                                                    <div className="text-right">
-                                                                        <p className="text-sm font-semibold text-muted-foreground">Unit price</p>
-                                                                        <p className="text-lg font-black text-primary">{Number(service.unit_price || 0).toFixed(2)} {currency}</p>
-                                                                    </div>
-                                                                </div>
+                                                {offerServices.length === 0 ? (
+                                                    <Card className="border-dashed">
+                                                        <CardContent className="py-8 text-center text-sm text-muted-foreground">
+                                                            No airline-specific services were returned for this offer.
+                                                        </CardContent>
+                                                    </Card>
+                                                ) : (
+                                                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+                                                        {offerServices.map((service) => {
+                                                            const selection = getSelectedService(offer.key, service.code);
+                                                            const quantity = Number(selection?.quantity ?? service.default_quantity ?? 0);
+                                                            const selectedPassengers = new Set((selection?.passengers ?? []).map((value) => Number(value)));
+                                                            const isQuantityService = service.type === 'baggage_increment' || service.pricing_mode === 'per_kg';
+                                                            const isBookingService = service.pricing_mode === 'per_booking';
 
-                                                                {!service.command_template && (
-                                                                    <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
-                                                                        Airline command template is not configured yet. This selection will still be stored with the booking for pricing and manual handling.
-                                                                    </p>
-                                                                )}
-
-                                                                {isQuantityService && (
-                                                                    <div className="flex items-center justify-between rounded-2xl border bg-muted/20 px-4 py-3">
-                                                                        <div>
-                                                                            <p className="font-semibold">Incremental baggage</p>
-                                                                            <p className="text-xs text-muted-foreground">Sold in {service.unit_label || 'units'} and priced by quantity.</p>
+                                                            return (
+                                                                <Card key={`${offer.key}-${service.code}`} className="border-2 shadow-sm">
+                                                                    <CardContent className="space-y-4 p-5">
+                                                                        <div className="flex items-start gap-3">
+                                                                            <div className="rounded-full bg-primary/10 p-3">
+                                                                                {isQuantityService ? <Briefcase className="h-5 w-5 text-primary" /> : <Settings2 className="h-5 w-5 text-primary" />}
+                                                                            </div>
+                                                                            <div className="min-w-0 flex-1">
+                                                                                <h4 className="text-base font-bold leading-tight">{service.label}</h4>
+                                                                                <p className="mt-1 text-xs text-muted-foreground">{service.description}</p>
+                                                                                <p className="mt-2 text-xs font-semibold text-muted-foreground">Unit price</p>
+                                                                                <p className="text-lg font-black text-primary">{Number(service.unit_price || 0).toFixed(2)} {currency}</p>
+                                                                            </div>
                                                                         </div>
-                                                                        <div className="flex items-center gap-3">
-                                                                            <Button type="button" variant="outline" onClick={() => setQuantityService(service, quantity - 1)} disabled={quantity <= (service.min_quantity || 0)}>-</Button>
-                                                                            <span className="min-w-20 text-center text-lg font-black">{quantity} {service.unit_label || 'unit'}</span>
-                                                                            <Button type="button" variant="outline" onClick={() => setQuantityService(service, quantity + 1)} disabled={service.max_quantity > 0 && quantity >= service.max_quantity}>+</Button>
-                                                                        </div>
-                                                                    </div>
-                                                                )}
 
-                                                                {isBookingService && !isQuantityService && (
-                                                                    <Button
-                                                                        type="button"
-                                                                        variant={quantity > 0 ? 'default' : 'outline'}
-                                                                        className="rounded-full"
-                                                                        onClick={() => toggleBookingService(service)}
-                                                                    >
-                                                                        {quantity > 0 ? 'Selected for this booking' : 'Add to booking'}
-                                                                    </Button>
-                                                                )}
+                                                                        {isQuantityService && (
+                                                                            <div className="flex items-center justify-between rounded-xl border bg-muted/20 px-3 py-2">
+                                                                                <span className="text-sm font-semibold">{service.unit_label || 'unit'} quantity</span>
+                                                                                <div className="flex items-center gap-2">
+                                                                                    <Button type="button" variant="outline" onClick={() => setQuantityService(offer.key, service, quantity - 1)} disabled={quantity <= (service.min_quantity || 0)}>-</Button>
+                                                                                    <span className="min-w-16 text-center text-sm font-black">{quantity}</span>
+                                                                                    <Button type="button" variant="outline" onClick={() => setQuantityService(offer.key, service, quantity + 1)} disabled={service.max_quantity > 0 && quantity >= service.max_quantity}>+</Button>
+                                                                                </div>
+                                                                            </div>
+                                                                        )}
 
-                                                                {!isQuantityService && !isBookingService && (
-                                                                    <div className="space-y-2">
-                                                                        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Select passengers</p>
-                                                                        <div className="flex flex-wrap gap-2">
-                                                                            {data.passengers.map((passenger, passengerIndex) => {
-                                                                                const isSelected = selectedPassengers.has(passengerIndex);
+                                                                        {isBookingService && !isQuantityService && (
+                                                                            <Button
+                                                                                type="button"
+                                                                                variant={quantity > 0 ? 'default' : 'outline'}
+                                                                                className="w-full rounded-full"
+                                                                                onClick={() => toggleBookingService(offer.key, service)}
+                                                                            >
+                                                                                {quantity > 0 ? 'Selected for this offer' : 'Add to this offer'}
+                                                                            </Button>
+                                                                        )}
 
-                                                                                return (
-                                                                                    <Button
-                                                                                        key={`${service.code}-${passengerIndex}`}
-                                                                                        type="button"
-                                                                                        variant={isSelected ? 'default' : 'outline'}
-                                                                                        className="rounded-full"
-                                                                                        onClick={() => togglePassengerService(service, passengerIndex)}
-                                                                                    >
-                                                                                        Pax {passengerIndex + 1} ({passenger.type})
-                                                                                    </Button>
-                                                                                );
-                                                                            })}
-                                                                        </div>
-                                                                    </div>
-                                                                )}
-                                                            </div>
-                                                        </div>
-                                                    </CardContent>
-                                                </Card>
-                                            );
-                                        })}
-                                    </div>
+                                                                        {!isQuantityService && !isBookingService && (
+                                                                            <div className="space-y-2">
+                                                                                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Select passengers</p>
+                                                                                <div className="flex flex-wrap gap-2">
+                                                                                    {data.passengers.map((passenger, passengerIndex) => {
+                                                                                        const isSelected = selectedPassengers.has(passengerIndex);
+
+                                                                                        return (
+                                                                                            <Button
+                                                                                                key={`${offer.key}-${service.code}-${passengerIndex}`}
+                                                                                                type="button"
+                                                                                                variant={isSelected ? 'default' : 'outline'}
+                                                                                                className="rounded-full"
+                                                                                                onClick={() => togglePassengerService(offer.key, service, passengerIndex)}
+                                                                                            >
+                                                                                                Pax {passengerIndex + 1}
+                                                                                            </Button>
+                                                                                        );
+                                                                                    })}
+                                                                                </div>
+                                                                            </div>
+                                                                        )}
+
+                                                                        {isRoundTripBooking && (
+                                                                            <Button
+                                                                                type="button"
+                                                                                variant="ghost"
+                                                                                className="h-8 px-0 text-xs font-bold text-primary"
+                                                                                onClick={() => applyServiceToAllOffers(offer.key, service)}
+                                                                            >
+                                                                                Apply to all offers
+                                                                            </Button>
+                                                                        )}
+                                                                    </CardContent>
+                                                                </Card>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        );
+                                    })}
                                 </div>
 
                                 <Card onClick={fetchSeatMap} className="relative cursor-pointer overflow-hidden border-2 transition-all hover:border-primary/50">
-                                    <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-muted/50 opacity-0 backdrop-blur-[1px] transition-opacity hover:opacity-100">
-                                        <Button type="button" variant="secondary" className="font-bold shadow-lg">Select Seats (Opens Map)</Button>
-                                    </div>
                                     <CardContent className="flex items-start gap-4 p-6">
                                         <div className="rounded-full bg-muted p-3">
                                             <Armchair className="h-6 w-6" />
@@ -638,7 +808,7 @@ export default function PassengerInfo({ uuid, provider_id, flight, reservation_t
                                         <div>
                                             <h3 className="mb-1 text-lg font-bold">Seat Selection</h3>
                                             <p className="mb-1 text-sm text-muted-foreground">
-                                                {selectedSeatLabels.length > 0 ? `${selectedSeatLabels.length} seat(s) selected` : 'Standard auto-assignment applied.'}
+                                                {selectedSeatLabels.length > 0 ? `${selectedSeatLabels.length} seat(s) selected across offers` : 'Standard auto-assignment applied.'}
                                             </p>
                                             <div className="mt-2 flex flex-wrap gap-2">
                                                 {selectedSeatLabels.map((label) => (
@@ -702,10 +872,10 @@ export default function PassengerInfo({ uuid, provider_id, flight, reservation_t
                                                     {ancillaryLines.length > 0 || selectedSeatLabels.length > 0 ? (
                                                         <ul className="space-y-1">
                                                             {ancillaryLines.map(l => (
-                                                                <li key={l.code} className="text-sm font-medium">{l.label} ({l.quantity})</li>
+                                                                <li key={`${l.offer_key}-${l.code}`} className="text-sm font-medium">{l.offer_label}: {l.label} ({l.quantity})</li>
                                                             ))}
                                                             {selectedSeatLabels.map(s => (
-                                                                <li key={s} className="text-sm font-medium">Seat: {s.split(': ')[1]}</li>
+                                                                <li key={s} className="text-sm font-medium">Seat: {s}</li>
                                                             ))}
                                                         </ul>
                                                     ) : (
@@ -737,18 +907,16 @@ export default function PassengerInfo({ uuid, provider_id, flight, reservation_t
                             <div className="bg-primary p-6 text-primary-foreground">
                                 <h3 className="mb-1 text-xl font-black">Trip Summary</h3>
                                 <p className="text-sm font-medium text-primary-foreground/80">
-                                    {flight.departure_airport} <ChevronRight className="inline h-3 w-3" /> {flight.arrival_airport}
+                                    {firstSegment?.departure_airport || firstSegment?.origin || '--'} <ChevronRight className="inline h-3 w-3" /> {lastSegment?.arrival_airport || lastSegment?.destination || '--'}
                                 </p>
                             </div>
                             <CardContent className="p-0">
                                 <div className="space-y-4 border-b bg-muted/10 p-6">
                                     <div className="flex items-center justify-between text-sm font-bold">
-                                        <span className="text-muted-foreground">Airline</span>
-                                        <span>{flight.airline_name}</span>
-                                    </div>
-                                    <div className="flex items-center justify-between text-sm font-bold">
-                                        <span className="text-muted-foreground">Flight</span>
-                                        <span>{flight.flight_number}</span>
+                                        <span className="text-muted-foreground">Booking Type</span>
+                                        <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-black uppercase tracking-wider text-primary">
+                                            {isRoundTripBooking ? 'Round Trip' : 'One Way'}
+                                        </span>
                                     </div>
                                     <div className="flex items-center justify-between text-sm font-bold">
                                         <span className="text-muted-foreground">Reservation Type</span>
@@ -764,6 +932,23 @@ export default function PassengerInfo({ uuid, provider_id, flight, reservation_t
                                             {searchParams?.infants > 0 && <span>{searchParams.infants} Infant(s)</span>}
                                         </span>
                                     </div>
+
+                                    <div className="space-y-3 border-t pt-4">
+                                        <p className="text-xs font-black uppercase tracking-widest text-primary">Flight Itineraries</p>
+                                        {offerContexts.map((offer) => (
+                                            <div key={offer.key} className="rounded-xl border bg-background/80 p-3">
+                                                <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">{offer.label}</p>
+                                                <p className="text-sm font-black">{offer.flight?.airline_name || 'Airline'}</p>
+                                                <div className="mt-2 space-y-1">
+                                                    {offer.segments.map((segment, index) => (
+                                                        <p key={`${offer.key}-${index}`} className="text-xs font-medium text-muted-foreground">
+                                                            {segment.departure_airport || segment.origin} → {segment.arrival_airport || segment.destination} · {formatSegmentDateTime(segment.departure_time || segment.date)}
+                                                        </p>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
                                 </div>
 
                                 <div className="space-y-3 p-6">
@@ -772,8 +957,8 @@ export default function PassengerInfo({ uuid, provider_id, flight, reservation_t
                                         <span>{providerPrice.toFixed(2)} {currency}</span>
                                     </div>
                                     {ancillaryLines.map((line) => (
-                                        <div key={line.code} className="flex justify-between text-sm font-medium text-muted-foreground">
-                                            <span>{line.label}{line.quantity > 1 ? ` x${line.quantity}` : ''}</span>
+                                        <div key={`${line.offer_key}-${line.code}`} className="flex justify-between text-sm font-medium text-muted-foreground">
+                                            <span>{line.offer_label}: {line.label}{line.quantity > 1 ? ` x${line.quantity}` : ''}</span>
                                             <span>+{line.total.toFixed(2)} {currency}</span>
                                         </div>
                                     ))}
@@ -800,7 +985,7 @@ export default function PassengerInfo({ uuid, provider_id, flight, reservation_t
                 <DialogContent className="max-h-[90vh] max-w-4xl overflow-y-auto">
                     <DialogHeader>
                         <DialogTitle>Select Your Seats</DialogTitle>
-                        <DialogDescription>Select seats for each passenger on flight {flight.flight_number}.</DialogDescription>
+                        <DialogDescription>Select seats for each passenger across all selected offers.</DialogDescription>
                     </DialogHeader>
 
                     {loadingSeatMap ? (
@@ -808,104 +993,120 @@ export default function PassengerInfo({ uuid, provider_id, flight, reservation_t
                             <Loader2 className="h-10 w-10 animate-spin text-primary" />
                             <p className="font-medium text-muted-foreground">Loading interactive seat map from airline...</p>
                         </div>
-                    ) : !seatMapData ? (
+                    ) : !offerContexts.some((offer) => seatMapByOffer[offer.key]) ? (
                         <div className="py-10 text-center text-muted-foreground">Could not load seat map.</div>
                     ) : (
-                        <div className="mt-4 flex flex-col gap-8 lg:flex-row">
-                            <div className="flex flex-1 justify-center overflow-x-auto pb-8">
-                                <div className="flex flex-col gap-1 md:gap-2">
-                                    {generateGrid().map((rowArray, rowIndex) => (
-                                        <div key={`row-${rowIndex}`} className="flex min-w-max items-center justify-center gap-1 md:gap-2">
-                                            {rowArray.map((seat, colIndex) => {
-                                                if (!seat) {
-                                                    return <div key={`empty-${rowIndex}-${colIndex}`} className="h-8 w-8 opacity-0" />;
-                                                }
+                        <Tabs value={activeOfferKeyForSeat} onValueChange={setActiveOfferKeyForSeat} className="mt-4 w-full">
+                            <TabsList className={`grid w-full ${offerContexts.length > 1 ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                                {offerContexts.map((offer) => (
+                                    <TabsTrigger key={offer.key} value={offer.key}>{offer.label}</TabsTrigger>
+                                ))}
+                            </TabsList>
 
-                                                const description = seat.description || '';
-                                                const isTextHeader = description.length === 1 && /[A-Z]/.test(description);
+                            {offerContexts.map((offer) => (
+                                <TabsContent key={offer.key} value={offer.key} className="mt-4">
+                                    {!seatMapByOffer[offer.key] ? (
+                                        <div className="py-10 text-center text-muted-foreground">Could not load seat map for this offer.</div>
+                                    ) : (
+                                        <div className="flex flex-col gap-8 lg:flex-row">
+                                            <div className="flex flex-1 justify-center overflow-x-auto pb-8">
+                                                <div className="flex flex-col gap-1 md:gap-2">
+                                                    {generateGrid(offer.key).map((rowArray, rowIndex) => (
+                                                        <div key={`${offer.key}-row-${rowIndex}`} className="flex min-w-max items-center justify-center gap-1 md:gap-2">
+                                                            {rowArray.map((seat, colIndex) => {
+                                                                if (!seat) {
+                                                                    return <div key={`empty-${offer.key}-${rowIndex}-${colIndex}`} className="h-8 w-8 opacity-0" />;
+                                                                }
 
-                                                if (isTextHeader) {
-                                                    return (
-                                                        <div key={`header-${rowIndex}-${colIndex}`} className="w-10 pb-2 text-center font-bold text-slate-500 md:w-11">
-                                                            {description}
+                                                                const description = seat.description || '';
+                                                                const isTextHeader = description.length === 1 && /[A-Z]/.test(description);
+
+                                                                if (isTextHeader) {
+                                                                    return (
+                                                                        <div key={`header-${offer.key}-${rowIndex}-${colIndex}`} className="w-10 pb-2 text-center font-bold text-slate-500 md:w-11">
+                                                                            {description}
+                                                                        </div>
+                                                                    );
+                                                                }
+
+                                                                if (seat.is_aisle || description.includes('WidthMarker') || description.includes('Door') || description.includes('Wing')) {
+                                                                    return <div key={`spacer-${offer.key}-${rowIndex}-${colIndex}`} className="h-8 w-6 select-none text-transparent">.</div>;
+                                                                }
+
+                                                                const bookedCabin = offer.flight?.pricing?.cabin_type || offer.segments?.[0]?.cabin_type || 'Y';
+                                                                const isOccupied = seat.is_occupied;
+                                                                const isWrongCabin = seat.cabinType && seat.cabinType !== bookedCabin;
+                                                                const assignedSeats = Object.entries(data.extras.seats?.[offer.key] ?? {});
+                                                                const selectedAssignment = assignedSeats.find(([, assignedSeatCode]) => assignedSeatCode === seat.code);
+                                                                const paxNumberAssigned = selectedAssignment ? Number(selectedAssignment[0]) + 1 : null;
+                                                                const isSelected = Boolean(selectedAssignment);
+                                                                const activePassenger = data.passengers[activePaxIndexForSeat];
+                                                                const disableForInfant = seat.no_infant && activePassenger?.type === 'infant';
+                                                                const isDisabled = isOccupied || disableForInfant || isWrongCabin;
+
+                                                                let buttonClasses = 'bg-white border-slate-300 hover:border-primary text-slate-700 hover:shadow-sm';
+
+                                                                if (isSelected) {
+                                                                    buttonClasses = 'bg-primary border-primary text-primary-foreground shadow-md scale-105 z-10';
+                                                                } else if (isDisabled && isWrongCabin) {
+                                                                    buttonClasses = 'bg-red-50/50 border-red-200 text-red-300 cursor-not-allowed opacity-50';
+                                                                } else if (isDisabled) {
+                                                                    buttonClasses = 'bg-slate-200 border-slate-300 text-slate-400 cursor-not-allowed opacity-60';
+                                                                }
+
+                                                                return (
+                                                                    <button
+                                                                        key={`seat-${offer.key}-${rowIndex}-${colIndex}-${seat.code}`}
+                                                                        type="button"
+                                                                        disabled={isDisabled}
+                                                                        onClick={() => handleSeatSelection(offer.key, seat.code)}
+                                                                        className={`flex h-10 w-10 flex-col items-center justify-center rounded-b-sm rounded-t-lg border-2 transition-all focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-1 md:h-12 md:w-11 ${buttonClasses}`}
+                                                                        title={seat.code}
+                                                                    >
+                                                                        {isSelected && <span className="mb-0.5 text-[10px] font-black leading-none opacity-80">P{paxNumberAssigned}</span>}
+                                                                        <span className={`text-xs font-bold leading-none ${isSelected ? 'text-white' : ''}`}>{seat.code}</span>
+                                                                    </button>
+                                                                );
+                                                            })}
                                                         </div>
-                                                    );
-                                                }
-
-                                                if (seat.is_aisle || description.includes('WidthMarker') || description.includes('Door') || description.includes('Wing')) {
-                                                    return <div key={`spacer-${rowIndex}-${colIndex}`} className="h-8 w-6 select-none text-transparent">.</div>;
-                                                }
-
-                                                const bookedCabin = flight.pricing?.cabin_type || flight.segments?.[0]?.cabin_type || 'Y';
-                                                const isOccupied = seat.is_occupied;
-                                                const isWrongCabin = seat.cabinType && seat.cabinType !== bookedCabin;
-                                                const assignedSeats = Object.entries(data.extras.seats);
-                                                const selectedAssignment = assignedSeats.find(([, seats]) => seats?.[PRIMARY_SEGMENT] === seat.code);
-                                                const paxNumberAssigned = selectedAssignment ? Number(selectedAssignment[0]) + 1 : null;
-                                                const isSelected = Boolean(selectedAssignment);
-                                                const activePassenger = data.passengers[activePaxIndexForSeat];
-                                                const disableForInfant = seat.no_infant && activePassenger?.type === 'infant';
-                                                const isDisabled = isOccupied || disableForInfant || isWrongCabin;
-
-                                                let buttonClasses = 'bg-white border-slate-300 hover:border-primary text-slate-700 hover:shadow-sm';
-
-                                                if (isSelected) {
-                                                    buttonClasses = 'bg-primary border-primary text-primary-foreground shadow-md scale-105 z-10';
-                                                } else if (isDisabled && isWrongCabin) {
-                                                    buttonClasses = 'bg-red-50/50 border-red-200 text-red-300 cursor-not-allowed opacity-50';
-                                                } else if (isDisabled) {
-                                                    buttonClasses = 'bg-slate-200 border-slate-300 text-slate-400 cursor-not-allowed opacity-60';
-                                                }
-
-                                                return (
-                                                    <button
-                                                        key={`seat-${rowIndex}-${colIndex}-${seat.code}`}
-                                                        type="button"
-                                                        disabled={isDisabled}
-                                                        onClick={() => handleSeatSelection(seat.code)}
-                                                        className={`flex h-10 w-10 flex-col items-center justify-center rounded-b-sm rounded-t-lg border-2 transition-all focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-1 md:h-12 md:w-11 ${buttonClasses}`}
-                                                        title={seat.code}
-                                                    >
-                                                        {isSelected && <span className="mb-0.5 text-[10px] font-black leading-none opacity-80">P{paxNumberAssigned}</span>}
-                                                        <span className={`text-xs font-bold leading-none ${isSelected ? 'text-white' : ''}`}>{seat.code}</span>
-                                                    </button>
-                                                );
-                                            })}
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-
-                            <div className="flex w-full flex-col gap-4 lg:w-1/3">
-                                <h4 className="border-b pb-2 text-lg font-bold">Assign Passengers</h4>
-                                <div className="flex flex-col gap-2">
-                                    {data.passengers.map((passenger, index) => {
-                                        const assignedSeat = data.extras.seats[index]?.[PRIMARY_SEGMENT];
-                                        const isActive = activePaxIndexForSeat === index;
-
-                                        return (
-                                            <button
-                                                key={index}
-                                                type="button"
-                                                className={`rounded-2xl border px-4 py-3 text-left transition ${isActive ? 'border-primary bg-primary/5 shadow-sm' : 'hover:border-primary/40'}`}
-                                                onClick={() => setActivePaxIndexForSeat(index)}
-                                            >
-                                                <div className="flex items-center justify-between gap-3">
-                                                    <div>
-                                                        <p className="font-bold">Pax {index + 1}</p>
-                                                        <p className="text-sm text-muted-foreground capitalize">{passenger.type}</p>
-                                                    </div>
-                                                    <div className="text-right">
-                                                        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Seat</p>
-                                                        <p className="font-black text-primary">{assignedSeat || 'Auto'}</p>
-                                                    </div>
+                                                    ))}
                                                 </div>
-                                            </button>
-                                        );
-                                    })}
-                                </div>
-                            </div>
-                        </div>
+                                            </div>
+
+                                            <div className="flex w-full flex-col gap-4 lg:w-1/3">
+                                                <h4 className="border-b pb-2 text-lg font-bold">Assign Passengers</h4>
+                                                <div className="flex flex-col gap-2">
+                                                    {data.passengers.map((passenger, index) => {
+                                                        const assignedSeat = data.extras.seats?.[offer.key]?.[index];
+                                                        const isActive = activePaxIndexForSeat === index;
+
+                                                        return (
+                                                            <button
+                                                                key={`${offer.key}-pax-${index}`}
+                                                                type="button"
+                                                                className={`rounded-2xl border px-4 py-3 text-left transition ${isActive ? 'border-primary bg-primary/5 shadow-sm' : 'hover:border-primary/40'}`}
+                                                                onClick={() => setActivePaxIndexForSeat(index)}
+                                                            >
+                                                                <div className="flex items-center justify-between gap-3">
+                                                                    <div>
+                                                                        <p className="font-bold">Pax {index + 1}</p>
+                                                                        <p className="text-sm text-muted-foreground capitalize">{passenger.type}</p>
+                                                                    </div>
+                                                                    <div className="text-right">
+                                                                        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Seat</p>
+                                                                        <p className="font-black text-primary">{assignedSeat || 'Auto'}</p>
+                                                                    </div>
+                                                                </div>
+                                                            </button>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+                                </TabsContent>
+                            ))}
+                        </Tabs>
                     )}
                 </DialogContent>
             </Dialog>

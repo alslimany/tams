@@ -36,7 +36,7 @@ export default function Completed({ booking, order }) {
         <TenantLayout>
             <Head title={`Booking ${booking.pnr} Completed`} />
 
-            <div className="mx-auto max-w-5xl space-y-6 px-4 py-8">
+            <div className="mx-auto max-w-7xl space-y-6 px-4 py-8">
                 <Card className="border-2 border-emerald-200 bg-emerald-50/60">
                     <CardContent className="flex flex-col gap-4 py-8 sm:flex-row sm:items-center sm:justify-between">
                         <div className="flex items-start gap-3">
