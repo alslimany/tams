@@ -56,6 +56,10 @@ test('landlord can view tenants and update tenant status', function () {
         ->assertSuccessful()
         ->assertSee('North Star Travel');
 
+    $this->get(route('landlord.tenants.show', $tenant))
+        ->assertSuccessful()
+        ->assertSee('North Star Travel');
+
     $this->patch(route('landlord.tenants.status', $tenant), [
         'status' => 'frozen',
     ])->assertRedirect();

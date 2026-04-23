@@ -9,7 +9,6 @@ use App\Models\Tenant\Order;
 use App\Models\TenantProvider;
 use App\Models\User;
 use Illuminate\Http\RedirectResponse;
-use Illuminate\Support\Collection;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -76,7 +75,7 @@ class TenantManagementController extends Controller
     protected function tenantSnapshot(Tenant $tenant): array
     {
         $data = $tenant->run(function (): array {
-            $providers = TenantProvider::query()->get([
+            $providerModels = TenantProvider::query()->get([
                 'id',
                 'airline_code',
                 'airline_name',
@@ -86,10 +85,32 @@ class TenantManagementController extends Controller
                 'last_test_status',
             ]);
 
-            $admin = User::query()
+            $providers = $providerModels
+                ->map(fn (TenantProvider $provider): array => [
+                    'id' => $provider->id,
+                    'airline_code' => $provider->airline_code,
+                    'airline_name' => $provider->airline_name,
+                    'account_name' => $provider->account_name,
+                    'is_active' => (bool) $provider->is_active,
+                    'last_tested_at' => $provider->last_tested_at,
+                    'last_test_status' => $provider->last_test_status,
+                ])
+                ->values();
+
+            $adminModel = User::query()
                 ->where('role', 'admin')
                 ->orderBy('id')
                 ->first(['id', 'name', 'email', 'last_login_at', 'last_activity_at']);
+
+            $admin = $adminModel
+                ? [
+                    'id' => $adminModel->id,
+                    'name' => $adminModel->name,
+                    'email' => $adminModel->email,
+                    'last_login_at' => $adminModel->last_login_at,
+                    'last_activity_at' => $adminModel->last_activity_at,
+                ]
+                : null;
 
             $providersByAirlineCode = $providers->keyBy('airline_code');
 
@@ -107,7 +128,7 @@ class TenantManagementController extends Controller
                         'pnr' => (string) ($firstItem?->provider_reference ?: $order->payment_reference),
                         'status' => $order->status,
                         'provider' => $airlineCode !== ''
-                            ? ['airline_name' => $providersByAirlineCode->get($airlineCode)?->airline_name]
+                            ? ['airline_name' => data_get($providersByAirlineCode->get($airlineCode), 'airline_name')]
                             : null,
                         'total_price' => (float) $order->grand_total,
                         'currency' => $order->currency,
@@ -118,7 +139,16 @@ class TenantManagementController extends Controller
 
             $users = User::query()
                 ->latest()
-                ->get(['id', 'name', 'email', 'role', 'is_active', 'last_login_at']);
+                ->get(['id', 'name', 'email', 'role', 'is_active', 'last_login_at'])
+                ->map(fn (User $user): array => [
+                    'id' => $user->id,
+                    'name' => $user->name,
+                    'email' => $user->email,
+                    'role' => $user->role,
+                    'is_active' => (bool) $user->is_active,
+                    'last_login_at' => $user->last_login_at,
+                ])
+                ->values();
 
             return [
                 'stats' => [
@@ -138,9 +168,9 @@ class TenantManagementController extends Controller
         return [
             'stats' => $data['stats'],
             'admin_user' => $data['admin_user'],
-            'providers' => Collection::make($data['providers'])->values(),
-            'recent_bookings' => Collection::make($data['recent_bookings'])->values(),
-            'users' => Collection::make($data['users'])->values(),
+            'providers' => $data['providers'],
+            'recent_bookings' => $data['recent_bookings'],
+            'users' => $data['users'],
         ];
     }
 }
