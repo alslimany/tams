@@ -11,3 +11,11 @@ SITE_PATH = "/Users/abdullah/Herd/tams"
 command = "php"
 args = ["artisan", "boost:mcp"]
 cwd = "/Users/abdullah/Herd/tams"
+
+[mcpServers.laravel-telescope]
+command = "php"
+args = ["artisan", "telescope-mcp:server"]
+cwd = "/Users/abdullah/Herd/tams"
+
+[mcpServers.laravel-telescope.env]
+APP_ENV = "local"

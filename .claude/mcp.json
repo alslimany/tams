@@ -1,0 +1,15 @@
+{
+    "mcpServers": {
+        "laravel-telescope": {
+            "command": "php",
+            "args": [
+                "artisan",
+                "telescope-mcp:server"
+            ],
+            "env": {
+                "APP_ENV": "local"
+            },
+            "cwd": "/Users/abdullah/Herd/tams"
+        }
+    }
+}

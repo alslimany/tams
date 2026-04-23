@@ -2,6 +2,8 @@
 
 namespace App\Services\Airline\Videcom;
 
+use App\DTOs\Airline\RoundTripPriceRequest;
+use App\DTOs\Airline\RoundTripPriceResult;
 use App\Jobs\UpdateAirlineBalanceJob;
 use App\Models\User;
 use App\Services\Airline\AirlineProviderInterface;
@@ -141,6 +143,11 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
         }));
 
         return $options;
+    }
+
+    public function searchReturnLeg(array $params)
+    {
+        return $this->searchAvailability($params);
     }
 
     /**
@@ -291,10 +298,14 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
         // AD = Index 1, CH = Index 2, IN = Index 3
         $paxEntry = '-3PAX/A#/B#.CH10/C#.IN06';
 
-        $date = strtoupper(\Carbon\Carbon::parse($option->departure_time)->format('dM'));
+        $date = $this->normalizeDateToken($option->departure_time);
+        $flightNumber = $this->normalizeFlightNumber((string) ($option->flight_number ?? ''));
+        $classCode = $this->normalizeClassCode($class);
+        $origin = $this->normalizeAirportCode((string) ($option->departure_airport ?? ''), 'TIP');
+        $destination = $this->normalizeAirportCode((string) ($option->arrival_airport ?? ''), 'BEN');
 
         // QQ count is 2 (AD + CH) - infants are Lap children and don't take a seat
-        $flightEntry = "0{$this->getIataCode()}{$option->flight_number}{$class}{$date}{$option->departure_airport}{$option->arrival_airport}QQ2";
+        $flightEntry = "0{$this->getIataCode()}{$flightNumber}{$classCode}{$date}{$origin}{$destination}QQ2";
 
         $command = "i^{$paxEntry}^{$flightEntry}^FG^FS1^*r~x";
         $response = $this->client->runCommand($command);
@@ -339,11 +350,11 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
 
         $flightEntries = [];
         foreach ($itinerary as $segment) {
-            $fltNo = str_pad(preg_replace('/[^0-9]/', '', $segment['flt_no'] ?? '100'), 4, '0', STR_PAD_LEFT);
-            $class = substr($segment['class'] ?? 'Y', 0, 1);
-            $date = strtoupper(\Carbon\Carbon::parse($segment['date'] ?? now())->format('dM'));
-            $origin = strtoupper($segment['origin'] ?? 'TIP');
-            $dest = strtoupper($segment['dest'] ?? 'BEN');
+            $fltNo = $this->normalizeFlightNumber((string) ($segment['flt_no'] ?? ''));
+            $class = $this->normalizeClassCode((string) ($segment['class'] ?? 'Y'));
+            $date = $this->normalizeDateToken($segment['date'] ?? now());
+            $origin = $this->normalizeAirportCode((string) ($segment['origin'] ?? ''), 'TIP');
+            $dest = $this->normalizeAirportCode((string) ($segment['dest'] ?? ''), 'BEN');
             $status = 'NN'; // Quote Only
             $flightEntries[] = "0{$this->getIataCode()}{$fltNo}{$class}{$date}{$origin}{$dest}{$status}{$paxCount}";
         }
@@ -353,6 +364,70 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
         $response = $this->client->runCommand($command);
 
         return $this->parseXml($response);
+    }
+
+    public function priceRoundTrip(RoundTripPriceRequest $request)
+    {
+        $outbound = $request->outboundSegment;
+        $return = $request->returnSegment;
+
+        $origin = $this->normalizeAirportCode((string) ($outbound['origin'] ?? ''), 'TIP');
+        $destination = $this->normalizeAirportCode((string) ($outbound['destination'] ?? ''), 'BEN');
+        $outboundFlightNo = $this->normalizeFlightNumber((string) ($outbound['flight_number'] ?? ''));
+        $returnFlightNo = $this->normalizeFlightNumber((string) ($return['flight_number'] ?? ''));
+        $outboundClass = $this->normalizeClassCode((string) ($outbound['class'] ?? 'Y'));
+        $returnClass = $this->normalizeClassCode((string) ($return['class'] ?? 'Y'));
+        $outboundDate = $this->normalizeDateToken((string) ($outbound['date'] ?? now()));
+        $returnDate = $this->normalizeDateToken((string) ($return['date'] ?? now()->addDay()));
+
+        $adults = (int) ($request->passengers['adults'] ?? 1);
+        $children = (int) ($request->passengers['children'] ?? 0);
+        $infants = (int) ($request->passengers['infants'] ?? 0);
+        $seatQty = max(1, $adults + $children);
+
+        $paxInfo = $this->buildPricingPaxEntry($adults, $children, $infants);
+
+        // QQ is pricing-only and avoids holding seats.
+        $outboundEntry = "0{$this->getIataCode()}{$outboundFlightNo}{$outboundClass}{$outboundDate}{$origin}{$destination}QQ{$seatQty}";
+        $returnEntry = "0{$this->getIataCode()}{$returnFlightNo}{$returnClass}{$returnDate}{$destination}{$origin}QQ{$seatQty}";
+        $command = "i^{$paxInfo}^{$outboundEntry}^{$returnEntry}^FG^FS1^*r~x";
+
+        $response = $this->client->runCommand($command);
+        $xml = $this->parseXml($response);
+
+        if (! $xml instanceof SimpleXMLElement || ! isset($xml->FareQuote)) {
+            throw new Exception('Invalid round-trip pricing response from provider.');
+        }
+
+        $fareQuoteNodes = $xml->xpath('//FareQuote/FQItin') ?: [];
+
+        $fqItins = collect($fareQuoteNodes)->map(fn (SimpleXMLElement $entry): array => [
+            'segment' => (int) ($entry['Seg'] ?? 0),
+            'currency' => (string) ($entry['Cur'] ?? ''),
+            'total' => (float) ($entry['Total'] ?? 0),
+            'tax' => (float) ($entry['Tax1'] ?? 0) + (float) ($entry['Tax2'] ?? 0) + (float) ($entry['Tax3'] ?? 0),
+        ])->values();
+
+        $currency = (string) ($fqItins->first()['currency'] ?? strtoupper($this->getCurrency()));
+        $returnLegPrice = 0.0;
+        $totalPrice = (float) $fqItins->sum('total');
+
+        if ($fqItins->count() >= 2) {
+            $returnFare = $fqItins->firstWhere('segment', 2) ?? $fqItins->get(1);
+            $returnLegPrice = (float) ($returnFare['total'] ?? 0);
+        } elseif ($fqItins->count() === 1) {
+            $outboundPrice = (float) ($request->outboundPrice ?? 0);
+            $combined = (float) ($fqItins->first()['total'] ?? 0);
+            $returnLegPrice = max(0, $combined - $outboundPrice);
+            $totalPrice = $combined;
+        }
+
+        return new RoundTripPriceResult(
+            returnLegPrice: $returnLegPrice,
+            currency: $currency,
+            totalPrice: $totalPrice,
+            taxes: $fqItins->pluck('tax')->all(),
+        );
     }
 
     public function canBookOpenReservation(array $segment): bool
@@ -372,8 +447,8 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
             $class,
             function () use ($segment, $origin, $destination, $class): bool {
                 try {
-                    $date = strtoupper(Carbon::parse($segment['date'] ?? $segment['departure_time'] ?? now())->format('dM'));
-                    $fltNo = str_pad(preg_replace('/[^0-9]/', '', (string) ($segment['flt_no'] ?? $segment['flight_number'] ?? '100')), 4, '0', STR_PAD_LEFT);
+                    $date = $this->normalizeDateToken($segment['date'] ?? $segment['departure_time'] ?? now());
+                    $fltNo = $this->normalizeFlightNumber((string) ($segment['flt_no'] ?? $segment['flight_number'] ?? ''));
                     $paxEntry = '-1TEST/PAXMR';
                     $flightEntry = "0{$this->getIataCode()}{$fltNo}{$class}{$date}{$origin}{$destination}QQ1";
                     $command = "i^{$paxEntry}^{$flightEntry}^FG^*r~x";
@@ -727,6 +802,25 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
         return $this->buildPaxInfo($passengers);
     }
 
+    protected function buildPricingPaxEntry(int $adults, int $children, int $infants): string
+    {
+        $entries = [];
+
+        for ($index = 0; $index < max(1, $adults); $index++) {
+            $entries[] = '-1PAX/ADULTMR';
+        }
+
+        for ($index = 0; $index < $children; $index++) {
+            $entries[] = '-1PAX/CHILDMR.CH10';
+        }
+
+        for ($index = 0; $index < $infants; $index++) {
+            $entries[] = '-1PAX/INFMR.IN06';
+        }
+
+        return implode('^', $entries);
+    }
+
     /**
      * Build passenger info string.
      */
@@ -876,9 +970,9 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
                         '{SEG}' => (string) ($segmentIndex + 1),
                         '{QTY}' => (string) $quantity,
                         '{AIRLINE}' => $this->getIataCode(),
-                        '{FLTNO}' => str_pad(preg_replace('/[^0-9]/', '', $segment['flt_no'] ?? ''), 4, '0', STR_PAD_LEFT),
-                        '{ORIGIN}' => strtoupper($segment['origin'] ?? ''),
-                        '{DEST}' => strtoupper($segment['dest'] ?? ''),
+                        '{FLTNO}' => $this->normalizeFlightNumber((string) ($segment['flt_no'] ?? '')),
+                        '{ORIGIN}' => $this->normalizeAirportCode((string) ($segment['origin'] ?? ''), ''),
+                        '{DEST}' => $this->normalizeAirportCode((string) ($segment['dest'] ?? ''), ''),
                     ]);
                 }
             }
@@ -894,11 +988,11 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
     {
         $entries = [];
         foreach ($itinerary as $segment) {
-            $fltNo = str_pad(preg_replace('/[^0-9]/', '', $segment['flt_no'] ?? '100'), 4, '0', STR_PAD_LEFT);
-            $class = substr($segment['class'] ?? 'Y', 0, 1);
-            $date = \Carbon\Carbon::parse($segment['date'] ?? now())->format('dM');
-            $origin = strtoupper($segment['origin'] ?? 'TIP');
-            $dest = strtoupper($segment['dest'] ?? 'BEN');
+            $fltNo = $this->normalizeFlightNumber((string) ($segment['flt_no'] ?? ''));
+            $class = $this->normalizeClassCode((string) ($segment['class'] ?? 'Y'));
+            $date = $this->normalizeDateToken($segment['date'] ?? now());
+            $origin = $this->normalizeAirportCode((string) ($segment['origin'] ?? ''), 'TIP');
+            $dest = $this->normalizeAirportCode((string) ($segment['dest'] ?? ''), 'BEN');
 
             $entries[] = "0{$this->getIataCode()}{$fltNo}{$class}{$date}{$origin}{$dest}{$status}{$qty}";
         }
@@ -973,6 +1067,36 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
     protected function normalizeNameToken(string $value, string $fallback = 'PAX'): string
     {
         $normalized = strtoupper(preg_replace('/[^A-Za-z]/', '', trim($value)));
+
+        return $normalized !== '' ? $normalized : $fallback;
+    }
+
+    protected function normalizeFlightNumber(string $value, string $fallback = '100'): string
+    {
+        $digits = preg_replace('/\D+/', '', trim($value));
+
+        if ($digits === null || $digits === '') {
+            $digits = preg_replace('/\D+/', '', $fallback) ?: '100';
+        }
+
+        return str_pad($digits, 4, '0', STR_PAD_LEFT);
+    }
+
+    protected function normalizeClassCode(string $value, string $fallback = 'Y'): string
+    {
+        $normalized = strtoupper(substr(preg_replace('/\s+/', '', trim($value)), 0, 1));
+
+        return $normalized !== '' ? $normalized : $fallback;
+    }
+
+    protected function normalizeDateToken(mixed $value): string
+    {
+        return strtoupper(Carbon::parse($value ?? now())->format('dM'));
+    }
+
+    protected function normalizeAirportCode(string $value, string $fallback = 'TIP'): string
+    {
+        $normalized = strtoupper(preg_replace('/\s+/', '', trim($value)));
 
         return $normalized !== '' ? $normalized : $fallback;
     }

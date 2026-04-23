@@ -12,7 +12,7 @@ import { Armchair, Briefcase, CheckCircle2, ChevronLeft, ChevronRight, Loader2, 
 
 const PRIMARY_SEGMENT = 1;
 
-export default function PassengerInfo({ uuid, provider_id, flight, reservation_type, passportRequired = false, searchParams, ancillaryCatalog = [] }) {
+export default function PassengerInfo({ uuid, provider_id, flight, reservation_type, is_round_trip = false, outbound_provider_id = null, return_provider_id = null, passportRequired = false, searchParams, ancillaryCatalog = [] }) {
     const flash = usePage().props.flash ?? {};
     const issueCommandPreview = flash.issue_command_preview || '';
 
@@ -44,6 +44,9 @@ export default function PassengerInfo({ uuid, provider_id, flight, reservation_t
         provider_id,
         flight,
         reservation_type,
+        is_round_trip,
+        outbound_provider_id,
+        return_provider_id,
         customer: {
             first_name: '',
             last_name: '',

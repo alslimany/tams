@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import axios from 'axios';
-import { Head, Link } from '@inertiajs/react';
+import { Head, Link, router } from '@inertiajs/react';
 import TenantLayout from '@/Layouts/TenantLayout';
 import { Button } from "@/Components/ui/Button";
 import { Card, CardContent } from "@/Components/ui/Card";
@@ -18,11 +18,21 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { formatMoney, formatMoneyValue } from '@/lib/currency';
 
 export default function SearchResults({ providers, query, uuid, searchDisplayMode }) {
+    const isRoundTripSearch = Boolean(query?.is_return);
+    const initialReturnDate = query?.return_date || query?.date;
     const [results, setResults] = useState([]);
     const [loading, setLoading] = useState(true);
     const [providerErrors, setProviderErrors] = useState([]);
     const [openReservationAvailability, setOpenReservationAvailability] = useState({});
     const [openReservationAvailabilityLoading, setOpenReservationAvailabilityLoading] = useState({});
+    const [selectedOutboundFlight, setSelectedOutboundFlight] = useState(null);
+    const [selectedOutboundProviderId, setSelectedOutboundProviderId] = useState(null);
+    const [selectedOutboundReservationType, setSelectedOutboundReservationType] = useState('NN');
+    const [returnOptions, setReturnOptions] = useState([]);
+    const [loadingReturnOptions, setLoadingReturnOptions] = useState(false);
+    const [selectedReturnFlight, setSelectedReturnFlight] = useState(null);
+    const [selectedReturnProviderId, setSelectedReturnProviderId] = useState(null);
+    const [activeReturnDate, setActiveReturnDate] = useState(initialReturnDate);
 
     const formatDuration = (minutes) => {
         if (!minutes) return "N/A";
@@ -116,12 +126,150 @@ export default function SearchResults({ providers, query, uuid, searchDisplayMod
         });
     }, [uuid, providers]);
 
+    const activeResults = selectedOutboundFlight ? returnOptions : results;
+    const isSelectingReturnStep = Boolean(selectedOutboundFlight);
+    const activeOrigin = isSelectingReturnStep
+        ? (selectedOutboundFlight?.arrival_airport || query.origin)
+        : query.origin;
+    const activeDestination = isSelectingReturnStep
+        ? (selectedOutboundFlight?.departure_airport || query.destination)
+        : query.destination;
+    const activeDate = isSelectingReturnStep ? activeReturnDate : query.date;
+
+    const findProviderForFlight = (flight) => {
+        if (!flight) {
+            return null;
+        }
+
+        return providers.find((p) => Number(p.id) === Number(flight.provider_id))
+            || providers.find((p) => (flight.airline_name || '').includes(p.airline_name));
+    };
+
+    const buildRoundTripFlightPayload = (outboundFlight, returnFlight) => {
+        const outboundSegments = outboundFlight?.segments || [outboundFlight];
+        const returnSegments = returnFlight?.segments || [returnFlight];
+        const outboundTotal = Number(outboundFlight?.pricing?.total || 0);
+        const returnTotal = Number(returnFlight?.pricing?.total || 0);
+
+        return {
+            ...outboundFlight,
+            segments: [...outboundSegments, ...returnSegments],
+            pricing: {
+                ...(outboundFlight?.pricing || {}),
+                total: outboundTotal + returnTotal,
+                currency: outboundFlight?.pricing?.currency || returnFlight?.pricing?.currency || 'LYD',
+                method: returnFlight?.pricing_method || 'oneway',
+            },
+            round_trip: {
+                outbound_flight: outboundFlight,
+                return_flight: returnFlight,
+            },
+        };
+    };
+
+    const proceedToPassengerInfo = (flight, providerId, reservationType, extraPayload = {}) => {
+        router.post(route('flights.select'), {
+            uuid,
+            provider_id: providerId,
+            reservation_type: reservationType,
+            flight,
+            ...extraPayload,
+        });
+    };
+
+    const loadReturnOptions = async (flight, providerId, reservationType, returnDate, forceRefresh = false) => {
+        if (!flight || !providerId) {
+            setProviderErrors((prev) => [
+                ...prev,
+                {
+                    provider: 'Round-trip pricing',
+                    message: 'Could not determine the outbound flight provider for return search.',
+                },
+            ]);
+
+            return;
+        }
+
+        setReturnOptions([]);
+        setSelectedReturnFlight(null);
+        setSelectedReturnProviderId(null);
+        setLoadingReturnOptions(true);
+
+        try {
+            const response = await axios.post(route('flights.return-options'), {
+                uuid,
+                outbound_provider_id: providerId,
+                outbound_flight: flight,
+                reservation_type: reservationType,
+                return_date: returnDate,
+                force_refresh: forceRefresh,
+            });
+
+            setReturnOptions(response.data?.return_options || []);
+            setActiveReturnDate(response.data?.return_date || returnDate);
+        } catch (error) {
+            const message = error?.response?.data?.error || 'Failed to load return flights.';
+            setProviderErrors((prev) => [
+                ...prev,
+                {
+                    provider: 'Round-trip pricing',
+                    message,
+                },
+            ]);
+        } finally {
+            setLoadingReturnOptions(false);
+        }
+    };
+
+    const handleOfferSelection = async (flight, providerId, reservationType) => {
+        if (!providerId) {
+            return;
+        }
+
+        if (!isRoundTripSearch) {
+            proceedToPassengerInfo(flight, providerId, reservationType);
+
+            return;
+        }
+
+        if (!selectedOutboundFlight) {
+            setSelectedOutboundFlight(flight);
+            setSelectedOutboundProviderId(providerId);
+            setSelectedOutboundReservationType(reservationType);
+            await loadReturnOptions(flight, providerId, reservationType, activeReturnDate || initialReturnDate);
+
+            return;
+        }
+
+        setSelectedReturnFlight(flight);
+        setSelectedReturnProviderId(providerId);
+    };
+
+    const continueRoundTrip = () => {
+        if (!selectedOutboundFlight || !selectedReturnFlight || !selectedOutboundProviderId || !selectedReturnProviderId) {
+            return;
+        }
+
+        const combinedFlight = buildRoundTripFlightPayload(selectedOutboundFlight, selectedReturnFlight);
+
+        proceedToPassengerInfo(
+            combinedFlight,
+            selectedOutboundProviderId,
+            selectedOutboundReservationType,
+            {
+                is_round_trip: true,
+                outbound_provider_id: selectedOutboundProviderId,
+                return_provider_id: selectedReturnProviderId,
+            },
+        );
+    };
+
     // Grouping logic for "Per Flight" mode
     const groupedFlights = useMemo(() => {
         if (searchDisplayMode !== 'per_flight') return [];
 
         const groups = {};
-        results.forEach(flight => {
+        activeResults.forEach(flight => {
             // Uniquely identify a flight by airline, number, and times
             const key = `${flight.airline_code}-${flight.flight_number}-${flight.departure_time}`;
             if (!groups[key]) {
@@ -139,10 +287,13 @@ export default function SearchResults({ providers, query, uuid, searchDisplayMod
         });
 
         return Object.values(groups);
-    }, [results, searchDisplayMode]);
+    }, [activeResults, searchDisplayMode]);
+
+    const selectedRoundTripTotal = Number(selectedOutboundFlight?.pricing?.total || 0) + Number(selectedReturnFlight?.pricing?.total || 0);
+    const selectedRoundTripCurrency = selectedOutboundFlight?.pricing?.currency || selectedReturnFlight?.pricing?.currency || 'LYD';
 
     const renderOfferCard = (flight) => {
-        const provider = providers.find(p => flight.airline_name.includes(p.airline_name));
+        const provider = findProviderForFlight(flight);
         const isSoldOut = Number(flight.available_seats || 0) <= 0;
         const openReservationStatusKey = openReservationKey(flight, provider?.id);
         const openReservationAllowed = Boolean(openReservationAvailability[openReservationStatusKey]);
@@ -153,8 +304,8 @@ export default function SearchResults({ providers, query, uuid, searchDisplayMod
                 <CardContent className="p-0">
                     <div className="flex flex-col md:flex-row">
                         <div className="p-6 flex-1 flex flex-col md:flex-row md:items-center gap-6">
-                            <div className="flex gap-4 items-center min-w-[150px]">
-                                <div className="bg-primary/5 p-1 rounded-sm shrink-0 flex items-center justify-center min-w-[32px] min-h-[32px]">
+                            <div className="flex gap-4 items-center min-w-37.5">
+                                <div className="bg-primary/5 p-1 rounded-sm shrink-0 flex items-center justify-center min-w-8 min-h-8">
                                     {flight.airline_code ? (
                                         <img src={route('api.airlines.logo', { code: flight.airline_code, variant: 'icon', radius: 4 })} alt={flight.airline_name} className="h-6 w-6 object-contain mix-blend-multiply dark:mix-blend-normal" onError={(e) => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'block'; }} />
                                     ) : null}
@@ -334,7 +485,7 @@ export default function SearchResults({ providers, query, uuid, searchDisplayMod
                                         <div className="flex justify-between items-center bg-card border rounded-2xl p-4 shadow-sm">
                                             <div>
                                                 <p className="text-sm font-bold text-muted-foreground">Itinerary</p>
-                                                <p className="text-xl font-black">{flight.departure_airport} <ArrowRightLeft className="inline flex-shrink-0 h-4 w-4 mx-1" /> {flight.arrival_airport}</p>
+                                                <p className="text-xl font-black">{flight.departure_airport} <ArrowRightLeft className="inline shrink-0 h-4 w-4 mx-1" /> {flight.arrival_airport}</p>
                                                 <p className="text-sm font-medium">{flight.airline_name} • {flight.airline_code}{flight.flight_number}</p>
                                             </div>
                                             <div className="text-right">
@@ -363,33 +514,23 @@ export default function SearchResults({ providers, query, uuid, searchDisplayMod
                                     </div>
                                     <div className="p-6 border-t bg-muted/30 flex flex-col sm:flex-row gap-3">
                                         {openReservationAllowed ? (
-                                            <Link
-                                                href={route('flights.select', { flight: flight, uuid: uuid, provider_id: provider?.id, reservation_type: 'QQ' })}
-                                                method="post"
-                                                as="button"
-                                                className="flex-1"
-                                            >
-                                                <Button variant="outline" size="lg" className="w-full font-bold shadow-sm rounded-full px-4 text-xs">
+                                            <div className="flex-1">
+                                                <Button variant="outline" size="lg" className="w-full font-bold shadow-sm rounded-full px-4 text-xs" onClick={() => handleOfferSelection(flight, provider?.id, 'QQ')}>
                                                     Open Reservation
                                                 </Button>
-                                            </Link>
+                                            </div>
                                         ) : null}
                                         {openReservationLoadingState ? (
                                             <Button variant="outline" size="lg" className="flex-1 font-bold shadow-sm rounded-full px-4 text-xs" disabled>
                                                 Checking Open Reservation...
                                             </Button>
                                         ) : null}
-                                        <Link
-                                            href={route('flights.select', { flight: flight, uuid: uuid, provider_id: provider?.id, reservation_type: 'NN' })}
-                                            method="post"
-                                            as="button"
-                                            className="flex-1"
-                                        >
-                                            <Button size="lg" className="w-full font-bold shadow-md rounded-full px-4 text-xs">
+                                        <div className="flex-1">
+                                            <Button size="lg" className="w-full font-bold shadow-md rounded-full px-4 text-xs" onClick={() => handleOfferSelection(flight, provider?.id, 'NN')}>
                                                 Confirmed Reservation
                                                 <ChevronRight className="ml-2 h-4 w-4" />
                                             </Button>
-                                        </Link>
+                                        </div>
                                     </div>
                                 </DialogContent>
                             </Dialog>
@@ -401,13 +542,13 @@ export default function SearchResults({ providers, query, uuid, searchDisplayMod
     };
 
     const renderFlightWithOffers = (flightGroup) => {
-        const provider = providers.find(p => flightGroup.airline_name.includes(p.airline_name));
+        const provider = findProviderForFlight(flightGroup);
 
         return (
             <Card key={`${flightGroup.airline_code}-${flightGroup.flight_number}`} className="overflow-hidden shadow-md border-2 border-muted/50">
                 <div className="bg-muted/10 p-6 flex flex-col md:flex-row md:items-center justify-between gap-6 border-b">
                     <div className="flex gap-4 items-center">
-                        <div className="bg-primary/5 p-1 rounded-sm shrink-0 flex items-center justify-center min-w-[48px] min-h-[48px]">
+                        <div className="bg-primary/5 p-1 rounded-sm shrink-0 flex items-center justify-center min-w-12 min-h-12">
                             {flightGroup.airline_code ? (
                                 <img src={route('api.airlines.logo', { code: flightGroup.airline_code, variant: 'icon-transparent', radius: 8 })} alt={flightGroup.airline_name} className="h-10 w-10 object-contain mix-blend-multiply dark:mix-blend-normal" onError={(e) => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'block'; }} />
                             ) : null}
@@ -588,7 +729,7 @@ export default function SearchResults({ providers, query, uuid, searchDisplayMod
                                                 <div className="flex justify-between items-center bg-card border rounded-2xl p-4 shadow-sm">
                                                     <div>
                                                         <p className="text-sm font-bold text-muted-foreground">Itinerary & Fare</p>
-                                                        <p className="text-xl font-black">{flightGroup.departure_airport} <ArrowRightLeft className="inline flex-shrink-0 h-4 w-4 mx-1" /> {flightGroup.arrival_airport}</p>
+                                                        <p className="text-xl font-black">{flightGroup.departure_airport} <ArrowRightLeft className="inline shrink-0 h-4 w-4 mx-1" /> {flightGroup.arrival_airport}</p>
                                                         <p className="text-sm font-medium">{offer.pricing.brand_name || 'Standard'} • Class {offer.pricing.class_code}</p>
                                                     </div>
                                                     <div className="text-right">
@@ -617,33 +758,23 @@ export default function SearchResults({ providers, query, uuid, searchDisplayMod
                                             </div>
                                             <div className="p-6 border-t bg-muted/30 flex flex-col sm:flex-row gap-3">
                                                         {openReservationAllowed ? (
-                                                            <Link
-                                                                href={route('flights.select', { flight: offer, uuid: uuid, provider_id: provider?.id, reservation_type: 'QQ' })}
-                                                                method="post"
-                                                                as="button"
-                                                                className="flex-1"
-                                                            >
-                                                                <Button variant="outline" size="lg" className="w-full font-bold shadow-sm rounded-full px-4 text-xs">
+                                                            <div className="flex-1">
+                                                                <Button variant="outline" size="lg" className="w-full font-bold shadow-sm rounded-full px-4 text-xs" onClick={() => handleOfferSelection(offer, provider?.id, 'QQ')}>
                                                                     Open Reservation
                                                                 </Button>
-                                                            </Link>
+                                                            </div>
                                                         ) : null}
                                                         {openReservationLoadingState ? (
                                                             <Button variant="outline" size="lg" className="flex-1 font-bold shadow-sm rounded-full px-4 text-xs" disabled>
                                                                 Checking Open Reservation...
                                                             </Button>
                                                         ) : null}
-                                                        <Link
-                                                            href={route('flights.select', { flight: offer, uuid: uuid, provider_id: provider?.id, reservation_type: 'NN' })}
-                                                            method="post"
-                                                            as="button"
-                                                            className="flex-1"
-                                                        >
-                                                            <Button size="lg" className="w-full font-bold shadow-md rounded-full px-4 text-xs">
+                                                        <div className="flex-1">
+                                                            <Button size="lg" className="w-full font-bold shadow-md rounded-full px-4 text-xs" onClick={() => handleOfferSelection(offer, provider?.id, 'NN')}>
                                                                 Confirmed Reservation
                                                                 <ChevronRight className="ml-2 h-4 w-4" />
                                                             </Button>
-                                                        </Link>
+                                                        </div>
                                                     </div>
                                         </DialogContent>
                                     </Dialog>
@@ -659,9 +790,9 @@ export default function SearchResults({ providers, query, uuid, searchDisplayMod
 
     return (
         <TenantLayout>
-            <Head title={`Flights to ${query.destination}`} />
+            <Head title={`Flights to ${activeDestination}`} />
 
-            <div className="max-w-5xl mx-auto py-8 px-4">
+            <div className={`max-w-5xl mx-auto py-8 px-4 ${isRoundTripSearch && selectedOutboundFlight && selectedReturnFlight ? 'pb-28' : ''}`}>
                 <div className="flex flex-col md:flex-row md:items-end justify-between mb-10 gap-6">
                     <div>
                         <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary/10 text-primary text-xs font-bold uppercase tracking-wider mb-2">
@@ -669,10 +800,10 @@ export default function SearchResults({ providers, query, uuid, searchDisplayMod
                             Search Results
                         </div>
                         <h2 className="text-4xl font-black tracking-tight flex items-center gap-3">
-                            {query.origin} <ChevronRight className="h-8 w-8 text-muted-foreground/30" /> {query.destination}
+                            {activeOrigin} <ChevronRight className="h-8 w-8 text-muted-foreground/30" /> {activeDestination}
                         </h2>
                         <p className="text-muted-foreground font-medium mt-1">
-                            {new Date(query.date).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })} • {
+                            {new Date(activeDate).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })} • {
                                 [
                                     query.adults > 0 ? `${query.adults} Adult${query.adults > 1 ? 's' : ''}` : null,
                                     query.children > 0 ? `${query.children} Child${query.children > 1 ? 'ren' : ''}` : null,
@@ -683,7 +814,7 @@ export default function SearchResults({ providers, query, uuid, searchDisplayMod
                     </div>
                     <div className="flex flex-1 md:flex-none bg-card border rounded-xl shadow-sm overflow-hidden w-full md:w-auto mt-4 md:mt-0">
                         {[-3, -2, -1, 0, 1, 2, 3].map(offset => {
-                            const date = new Date(query.date);
+                            const date = new Date(activeDate);
                             date.setDate(date.getDate() + offset);
                             const isSelected = offset === 0;
                             const isPast = date < new Date(new Date().setHours(0, 0, 0, 0));
@@ -696,7 +827,7 @@ export default function SearchResults({ providers, query, uuid, searchDisplayMod
 
                             if (isPast && !isSelected) {
                                 return (
-                                    <div key={offset} className="flex-1 min-w-[60px] md:min-w-[80px] py-2 border-r last:border-r-0 text-center opacity-40 cursor-not-allowed bg-muted/20">
+                                    <div key={offset} className="flex-1 min-w-15 md:min-w-20 py-2 border-r last:border-r-0 text-center opacity-40 cursor-not-allowed bg-muted/20">
                                         <div className="text-[10px] font-bold uppercase text-muted-foreground">{dayName}</div>
                                         <div className="text-sm md:text-base font-black text-muted-foreground">{monthName} {dayNum}</div>
                                     </div>
@@ -704,21 +835,97 @@ export default function SearchResults({ providers, query, uuid, searchDisplayMod
                             }
 
                             return (
-                                <Link
-                                    key={offset}
-                                    href={route('flights.search', { ...query, date: localDateStr })}
-                                    as="a"
-                                    className={`flex-1 min-w-[60px] md:min-w-[80px] py-2 px-1 md:px-4 border-r last:border-r-0 text-center transition-colors focus:outline-none hover:bg-primary/5 ${isSelected ? 'bg-primary text-primary-foreground hover:bg-primary' : 'bg-transparent text-foreground'}`}
-                                >
-                                    <div className={`text-[10px] font-bold uppercase ${isSelected ? 'text-primary-foreground/80' : 'text-muted-foreground'}`}>{dayName}</div>
-                                    <div className="text-sm md:text-base font-black whitespace-nowrap">{monthName} {dayNum}</div>
-                                </Link>
+                                isSelectingReturnStep ? (
+                                    <button
+                                        key={offset}
+                                        type="button"
+                                        className={`flex-1 min-w-15 md:min-w-20 py-2 px-1 md:px-4 border-r last:border-r-0 text-center transition-colors focus:outline-none hover:bg-primary/5 ${isSelected ? 'bg-primary text-primary-foreground hover:bg-primary' : 'bg-transparent text-foreground'}`}
+                                        onClick={() => loadReturnOptions(selectedOutboundFlight, selectedOutboundProviderId || findProviderForFlight(selectedOutboundFlight)?.id, selectedOutboundReservationType, localDateStr, true)}
+                                    >
+                                        <div className={`text-[10px] font-bold uppercase ${isSelected ? 'text-primary-foreground/80' : 'text-muted-foreground'}`}>{dayName}</div>
+                                        <div className="text-sm md:text-base font-black whitespace-nowrap">{monthName} {dayNum}</div>
+                                    </button>
+                                ) : (
+                                    <Link
+                                        key={offset}
+                                        href={route('flights.search', { ...query, date: localDateStr })}
+                                        as="a"
+                                        className={`flex-1 min-w-15 md:min-w-20 py-2 px-1 md:px-4 border-r last:border-r-0 text-center transition-colors focus:outline-none hover:bg-primary/5 ${isSelected ? 'bg-primary text-primary-foreground hover:bg-primary' : 'bg-transparent text-foreground'}`}
+                                    >
+                                        <div className={`text-[10px] font-bold uppercase ${isSelected ? 'text-primary-foreground/80' : 'text-muted-foreground'}`}>{dayName}</div>
+                                        <div className="text-sm md:text-base font-black whitespace-nowrap">{monthName} {dayNum}</div>
+                                    </Link>
+                                )
                             );
                         })}
                     </div>
                 </div>
 
                 <div className="space-y-6">
+                    {isRoundTripSearch && (
+                        <div className="rounded-2xl border bg-muted/10 p-4">
+                            <p className="text-sm font-bold text-foreground">
+                                {selectedOutboundFlight ? 'Step 2 of 2: Select return flight' : 'Step 1 of 2: Select outbound flight'}
+                            </p>
+                            {selectedOutboundFlight ? (
+                                <div className="mt-3 space-y-3">
+                                    <div className="grid gap-3 md:grid-cols-2">
+                                        <div className="rounded-xl border bg-background/70 p-3">
+                                            <p className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">Outbound</p>
+                                            <div className="mt-2 flex items-center justify-between gap-3">
+                                                <div className="flex items-center gap-2">
+                                                    <img src={route('api.airlines.logo', { code: selectedOutboundFlight.airline_code, variant: 'icon', radius: 4 })} alt={selectedOutboundFlight.airline_name} className="h-7 w-7 object-contain" />
+                                                    <div>
+                                                        <p className="text-sm font-bold">{selectedOutboundFlight.departure_airport} → {selectedOutboundFlight.arrival_airport}</p>
+                                                        <p className="text-xs text-muted-foreground">{selectedOutboundFlight.airline_code}{selectedOutboundFlight.flight_number}</p>
+                                                    </div>
+                                                </div>
+                                                <p className="text-sm font-black text-primary">{formatMoney(selectedOutboundFlight?.pricing?.total || 0, selectedOutboundFlight?.pricing?.currency || 'LYD')}</p>
+                                            </div>
+                                        </div>
+
+                                        <div className="rounded-xl border bg-background/70 p-3">
+                                            <p className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">Return</p>
+                                            {selectedReturnFlight ? (
+                                                <div className="mt-2 flex items-center justify-between gap-3">
+                                                    <div className="flex items-center gap-2">
+                                                        <img src={route('api.airlines.logo', { code: selectedReturnFlight.airline_code, variant: 'icon', radius: 4 })} alt={selectedReturnFlight.airline_name} className="h-7 w-7 object-contain" />
+                                                        <div>
+                                                            <p className="text-sm font-bold">{selectedReturnFlight.departure_airport} → {selectedReturnFlight.arrival_airport}</p>
+                                                            <p className="text-xs text-muted-foreground">{selectedReturnFlight.airline_code}{selectedReturnFlight.flight_number}</p>
+                                                        </div>
+                                                    </div>
+                                                    <p className="text-sm font-black text-primary">{formatMoney(selectedReturnFlight?.pricing?.total || 0, selectedReturnFlight?.pricing?.currency || 'LYD')}</p>
+                                                </div>
+                                            ) : (
+                                                <p className="mt-2 text-xs text-muted-foreground">Select a return offer to complete your itinerary.</p>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    <div className="flex justify-end">
+                                        <Button
+                                            type="button"
+                                            variant="outline"
+                                            size="sm"
+                                            onClick={() => {
+                                                setSelectedOutboundFlight(null);
+                                                setSelectedOutboundProviderId(null);
+                                                setSelectedOutboundReservationType('NN');
+                                                setSelectedReturnFlight(null);
+                                                setSelectedReturnProviderId(null);
+                                                setReturnOptions([]);
+                                                setActiveReturnDate(initialReturnDate);
+                                            }}
+                                        >
+                                            Change outbound
+                                        </Button>
+                                    </div>
+                                </div>
+                            ) : null}
+                        </div>
+                    )}
+
                     {providerErrors.length > 0 && (
                         <div className="rounded-2xl border border-destructive/40 bg-destructive/5 p-4">
                             <p className="text-sm font-bold text-destructive">
@@ -730,29 +937,29 @@ export default function SearchResults({ providers, query, uuid, searchDisplayMod
                         </div>
                     )}
 
-                    {loading && results.length === 0 && (
+                    {(loading && results.length === 0) || loadingReturnOptions ? (
                         <div className="flex flex-col items-center justify-center py-24 gap-6 bg-card border rounded-3xl shadow-sm">
                             <div className="relative">
                                 <Loader2 className="h-12 w-12 animate-spin text-primary" />
                                 <Plane className="h-6 w-6 text-primary absolute inset-0 m-auto" />
                             </div>
                             <div className="text-center">
-                                <p className="text-xl font-bold">Searching all available airlines...</p>
+                                <p className="text-xl font-bold">{loadingReturnOptions ? 'Searching return flights...' : 'Searching all available airlines...'}</p>
                                 <p className="text-muted-foreground">This normally takes just a few seconds.</p>
                             </div>
                         </div>
-                    )}
+                    ) : null}
 
-                    {results.length > 0 ? (
+                    {activeResults.length > 0 ? (
                         searchDisplayMode === 'per_flight'
                             ? groupedFlights.map(renderFlightWithOffers)
-                            : results.map(renderOfferCard)
+                            : activeResults.map(renderOfferCard)
                     ) : (
-                        !loading && (
+                        !loading && !loadingReturnOptions && (
                             <div className="text-center py-24 border rounded-3xl bg-card shadow-sm">
                                 <Plane className="h-16 w-16 text-muted-foreground/20 mx-auto mb-4" />
-                                <h3 className="text-xl font-bold">No Flights Found</h3>
-                                <p className="text-muted-foreground max-w-xs mx-auto">We couldn't find any flights for your selected route and date. Try adjusting your search.</p>
+                                <h3 className="text-xl font-bold">{selectedOutboundFlight ? 'No Return Flights Found' : 'No Flights Found'}</h3>
+                                <p className="text-muted-foreground max-w-xs mx-auto">{selectedOutboundFlight ? 'No return options were found for your selected outbound flight. Change outbound flight or adjust dates.' : "We couldn't find any flights for your selected route and date. Try adjusting your search."}</p>
                                 <Link href={route('flights.index')} data={query} className="mt-6 inline-block">
                                     <Button variant="outline" className="font-bold">Modify Search</Button>
                                 </Link>
@@ -760,6 +967,29 @@ export default function SearchResults({ providers, query, uuid, searchDisplayMod
                         )
                     )}
                 </div>
+
+                {isRoundTripSearch && selectedOutboundFlight && selectedReturnFlight ? (
+                    <div className="fixed inset-x-0 bottom-0 z-40 border-t bg-background/95 backdrop-blur supports-backdrop-filter:bg-background/85">
+                        <div className="mx-auto flex max-w-5xl items-center justify-between gap-4 px-4 py-4">
+                            <div className="min-w-0">
+                                <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Selected itinerary</p>
+                                <p className="truncate text-sm font-semibold">
+                                    {selectedOutboundFlight.departure_airport} → {selectedOutboundFlight.arrival_airport} • {selectedReturnFlight.departure_airport} → {selectedReturnFlight.arrival_airport}
+                                </p>
+                            </div>
+                            <div className="flex items-center gap-4">
+                                <div className="text-right">
+                                    <p className="text-xs text-muted-foreground">Total</p>
+                                    <p className="text-xl font-black text-primary">{formatMoney(selectedRoundTripTotal, selectedRoundTripCurrency)}</p>
+                                </div>
+                                <Button type="button" size="lg" className="font-bold" onClick={continueRoundTrip}>
+                                    Continue to Passengers
+                                    <ChevronRight className="ml-2 h-4 w-4" />
+                                </Button>
+                            </div>
+                        </div>
+                    </div>
+                ) : null}
             </div>
         </TenantLayout>
     );

@@ -3,6 +3,7 @@
 use App\Services\Airline\Videcom\Airlines\GlobalAirline;
 use App\Services\Airline\Videcom\VidecomClient;
 use App\Services\Airline\Videcom\VidecomResponseParser;
+use Illuminate\Support\Facades\Cache;
 use Tests\TestCase;
 
 uses(TestCase::class);
@@ -314,6 +315,96 @@ XML;
     expect($results)
         ->toHaveCount(1)
         ->and($results[0]->departure_time)->toStartWith('2026-04-30');
+});
+
+test('consolidated pricing command strips whitespace from flight token parts', function () {
+    Cache::flush();
+    config()->set('videcom_airlines.5S.availability.classbands', false);
+
+    $client = new class extends VidecomClient
+    {
+        public array $commands = [];
+
+        public function __construct() {}
+
+        public function runCommand(string $command): string
+        {
+            $this->commands[] = $command;
+
+            if (str_starts_with($command, 'A')) {
+                return <<<'XML'
+<xml>
+    <classbands />
+    <itin line="1" dep="MJI" arr="BEN" totalduration="75">
+        <flt>
+            <dep>MJI</dep>
+            <arr>BEN</arr>
+            <time>
+                <ddaylcl>2026-04-30</ddaylcl>
+                <dtimlcl>20:00:00</dtimlcl>
+                <adaylcl>2026-04-30</adaylcl>
+                <atimlcl>21:15:00</atimlcl>
+                <duration>75</duration>
+            </time>
+            <fltdet>
+                <airid>5S</airid>
+                <fltno>0754 </fltno>
+                <eqp>ER4</eqp>
+            </fltdet>
+            <fltav>
+                <id> </id>
+                <av>5</av>
+                <cur>LYD</cur>
+                <pri>120</pri>
+                <tax>20</tax>
+            </fltav>
+        </flt>
+    </itin>
+</xml>
+XML;
+            }
+
+            return <<<'XML'
+<PNR>
+    <FareQuote>
+        <FareStore Pax="1">
+            <SegmentFS Fare="120" Tax1="20" Tax2="0" Tax3="0" />
+        </FareStore>
+        <FareStore Pax="2">
+            <SegmentFS Fare="100" Tax1="15" Tax2="0" Tax3="0" />
+        </FareStore>
+        <FareStore Pax="3">
+            <SegmentFS Fare="30" Tax1="5" Tax2="0" Tax3="0" />
+        </FareStore>
+    </FareQuote>
+</PNR>
+XML;
+        }
+    };
+
+    $provider = new class(['base_url' => 'https://booking.gair.test']) extends GlobalAirline {};
+
+    \Closure::bind(function (VidecomClient $client): void {
+        $this->client = $client;
+    }, $provider, $provider)($client);
+
+    $provider->searchAvailability([
+        'date' => '2026-04-30',
+        'origin' => 'MJI',
+        'destination' => 'BEN',
+        'adults' => 1,
+        'children' => 1,
+        'infants' => 1,
+        'qty' => 2,
+    ]);
+
+    $pricingCommand = collect($client->commands)
+        ->first(fn (string $command): bool => str_starts_with($command, 'i^'));
+
+    expect($pricingCommand)
+        ->not->toBeNull()
+        ->and($pricingCommand)->toContain('0'.'5S'.'0754'.'Y'.'30APR'.'MJI'.'BEN'.'QQ2')
+        ->and($pricingCommand)->not->toContain('0754 30APR');
 });
 
 test('search availability keeps sold out requested date when route class price can be warmed from other dates', function () {

@@ -8,6 +8,7 @@ use App\Models\Tenant\Order;
 use App\Models\Tenant\OrderItem;
 use App\Models\TenantProvider;
 use App\Services\Airline\ProviderFactory;
+use App\Services\Airline\RoundTripPriceManager;
 use App\Services\Airline\Videcom\VidecomAncillaryCatalog;
 use App\Services\Orders\OrderNumberGenerator;
 use Exception;
@@ -24,6 +25,7 @@ class BookingController extends Controller
 {
     public function __construct(
         protected OrderNumberGenerator $orderNumberGenerator,
+        protected RoundTripPriceManager $roundTripPriceManager,
     ) {}
 
     public function index(): Response
@@ -104,8 +106,7 @@ class BookingController extends Controller
                 $providerConfig = TenantProvider::findOrFail($providerId);
                 $provider = ProviderFactory::make($providerConfig);
 
-                $qty = $searchParams['adults'] + ($searchParams['children'] ?? 0);
-                $params = array_merge($searchParams, ['qty' => $qty]);
+                $params = $this->buildOneWayAvailabilityParams($searchParams);
 
                 $providerFlights = collect($provider->searchAvailability($params));
                 $providerConfig->update(['last_used_at' => now()]);
@@ -167,8 +168,7 @@ class BookingController extends Controller
             $provider = ProviderFactory::make($providerConfig);
             $providerConfig->update(['last_used_at' => now()]);
 
-            $qty = $searchParams['adults'] + ($searchParams['children'] ?? 0);
-            $params = array_merge($searchParams, ['qty' => $qty]);
+            $params = $this->buildOneWayAvailabilityParams($searchParams);
 
             $flights = collect($provider->searchAvailability($params));
 
@@ -246,6 +246,72 @@ class BookingController extends Controller
         }
     }
 
+    public function getReturnOptions(Request $request)
+    {
+        $validated = $request->validate([
+            'uuid' => 'required|string',
+            'outbound_provider_id' => 'required|exists:tenant_providers,id',
+            'outbound_flight' => 'required|array',
+            'reservation_type' => 'nullable|in:QQ,NN',
+            'return_date' => 'nullable|date_format:Y-m-d',
+            'force_refresh' => 'nullable|boolean',
+        ]);
+
+        $searchParams = Cache::get("flight_search_{$validated['uuid']}");
+        if (! $searchParams || ! filter_var($searchParams['is_return'] ?? false, FILTER_VALIDATE_BOOLEAN) || empty($searchParams['return_date'])) {
+            return response()->json([
+                'return_options' => [],
+                'error' => 'Return date not found for this search session.',
+            ], 422);
+        }
+
+        $outboundFlight = $validated['outbound_flight'];
+        $outboundProviderId = (int) $validated['outbound_provider_id'];
+
+        $effectiveReturnDate = (string) ($validated['return_date'] ?? $searchParams['return_date']);
+
+        $returnSearchParams = array_merge($this->buildOneWayAvailabilityParams($searchParams), [
+            'origin' => (string) ($outboundFlight['arrival_airport'] ?? ''),
+            'destination' => (string) ($outboundFlight['departure_airport'] ?? ''),
+            'date' => $effectiveReturnDate,
+            'force_refresh' => filter_var($validated['force_refresh'] ?? false, FILTER_VALIDATE_BOOLEAN),
+        ]);
+
+        $providers = TenantProvider::query()
+            ->where('is_active', '=', true)
+            ->where('provider_type', '=', 'videcom')
+            ->get(['id', 'airline_name', 'airline_code', 'account_name', 'provider_type', 'credentials']);
+
+        $returnOptions = [];
+
+        foreach ($providers as $providerConfig) {
+            try {
+                $provider = ProviderFactory::make($providerConfig);
+                $returnFlights = collect($provider->searchReturnLeg($returnSearchParams));
+
+                foreach ($returnFlights as $returnFlight) {
+                    $returnFlightData = is_array($returnFlight) ? $returnFlight : (array) $returnFlight;
+                    data_set($returnFlightData, 'pricing_method', 'oneway');
+
+                    data_set($returnFlightData, 'provider_id', $providerConfig->id);
+                    $returnOptions[] = $returnFlightData;
+                }
+            } catch (\Throwable $exception) {
+                report($exception);
+            }
+        }
+
+        usort($returnOptions, static function (array $left, array $right): int {
+            return ((float) data_get($left, 'pricing.total', 0)) <=> ((float) data_get($right, 'pricing.total', 0));
+        });
+
+        return response()->json([
+            'return_options' => $returnOptions,
+            'outbound_provider_id' => $outboundProviderId,
+            'return_date' => $effectiveReturnDate,
+        ]);
+    }
+
     public function select(Request $request): Response
     {
         $validated = $request->validate([
@@ -253,6 +319,9 @@ class BookingController extends Controller
             'provider_id' => 'required|exists:tenant_providers,id',
             'flight' => 'required|array',
             'reservation_type' => 'required|in:QQ,NN',
+            'is_round_trip' => 'nullable|boolean',
+            'outbound_provider_id' => 'nullable|exists:tenant_providers,id',
+            'return_provider_id' => 'nullable|exists:tenant_providers,id',
         ]);
 
         $searchParams = Cache::get("flight_search_{$validated['uuid']}");
@@ -264,6 +333,9 @@ class BookingController extends Controller
             'provider_id' => $validated['provider_id'],
             'flight' => $validated['flight'],
             'reservation_type' => $validated['reservation_type'],
+            'is_round_trip' => filter_var($validated['is_round_trip'] ?? false, FILTER_VALIDATE_BOOLEAN),
+            'outbound_provider_id' => $validated['outbound_provider_id'] ?? null,
+            'return_provider_id' => $validated['return_provider_id'] ?? null,
             'passportRequired' => $this->isInternationalFlight($validated['flight']),
             'searchParams' => $searchParams,
             'ancillaryCatalog' => $provider->getAncillaryCatalog($validated['flight'], $searchParams ?? []),
@@ -277,6 +349,9 @@ class BookingController extends Controller
             'provider_id' => 'required|exists:tenant_providers,id',
             'flight' => 'required|array',
             'reservation_type' => 'required|in:QQ,NN',
+            'is_round_trip' => 'nullable|boolean',
+            'outbound_provider_id' => 'nullable|exists:tenant_providers,id',
+            'return_provider_id' => 'nullable|exists:tenant_providers,id',
             'passengers' => 'required|array|min:1',
             'passengers.*.type' => 'required|in:adult,child,infant',
             'passengers.*.first_name' => 'required|string|alpha:ascii',
@@ -423,12 +498,14 @@ class BookingController extends Controller
 
             $order->items()->create([
                 'type' => 'flight',
-                'product_subtype' => 'oneway',
+                'product_subtype' => filter_var($validated['is_round_trip'] ?? false, FILTER_VALIDATE_BOOLEAN) ? 'roundtrip' : 'oneway',
                 'provider' => 'videcom',
                 'provider_reference' => $pnr,
                 'item_details' => [
                     'pnr' => $pnr,
                     'airline_code' => $providerConfig->airline_code,
+                    'outbound_provider_id' => $validated['outbound_provider_id'] ?? $validated['provider_id'],
+                    'return_provider_id' => $validated['return_provider_id'] ?? null,
                     'segments' => $validated['flight']['segments'] ?? [$validated['flight']],
                     'passengers' => $validated['passengers'],
                     'customer' => $validated['customer'],
@@ -562,6 +639,19 @@ class BookingController extends Controller
             'departure_airport' => (string) ($segment['departure_airport'] ?? $flight['departure_airport'] ?? ''),
             'arrival_airport' => (string) ($segment['arrival_airport'] ?? $flight['arrival_airport'] ?? ''),
             'departure_time' => (string) ($segment['departure_time'] ?? $flight['departure_time'] ?? now()->toDateTimeString()),
+        ];
+    }
+
+    protected function mapFlightToRoundTripSegment(array $flight): array
+    {
+        $segment = $flight['segments'][0] ?? $flight;
+
+        return [
+            'flight_number' => (string) ($segment['flight_number'] ?? ''),
+            'class' => (string) ($segment['class'] ?? data_get($flight, 'pricing.class_code', 'Y')),
+            'date' => (string) ($segment['departure_time'] ?? ''),
+            'origin' => strtoupper((string) ($segment['departure_airport'] ?? '')),
+            'destination' => strtoupper((string) ($segment['arrival_airport'] ?? '')),
         ];
     }
 
@@ -727,6 +817,7 @@ class BookingController extends Controller
 
     protected function shouldUseVidecomScraper(TenantProvider $providerConfig): bool
     {
+
         if ($providerConfig->provider_type !== 'videcom') {
             return false;
         }
@@ -734,6 +825,21 @@ class BookingController extends Controller
         $useScraper = data_get($providerConfig->credentials ?? [], 'use_scraper', false);
 
         return filter_var($useScraper, FILTER_VALIDATE_BOOLEAN);
+    }
+
+    /**
+     * Normalize session search params to a one-way availability lookup.
+     */
+    protected function buildOneWayAvailabilityParams(array $searchParams): array
+    {
+        $params = array_merge($searchParams, [
+            'qty' => ((int) ($searchParams['adults'] ?? 1)) + ((int) ($searchParams['children'] ?? 0)),
+            'is_return' => false,
+        ]);
+
+        unset($params['return_date']);
+
+        return $params;
     }
 
     protected function passengerHasAnyPassportDetail(array $passenger): bool

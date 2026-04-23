@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "6f88c42f84dd81d91d4db150cd9a5657",
+    "content-hash": "807baab2ba94bf019a84b03629093f1a",
     "packages": [
         {
             "name": "bacon/bacon-qr-code",
@@ -8231,6 +8231,73 @@
                 "source": "https://github.com/laravel/sail"
             },
             "time": "2026-02-06T12:16:02+00:00"
+        },
+        {
+            "name": "lucianotonet/laravel-telescope-mcp",
+            "version": "v1.1.0",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/lucianotonet/laravel-telescope-mcp.git",
+                "reference": "5fa3c1880d843a4e3036033212ed8e0372b1d5a7"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/lucianotonet/laravel-telescope-mcp/zipball/5fa3c1880d843a4e3036033212ed8e0372b1d5a7",
+                "reference": "5fa3c1880d843a4e3036033212ed8e0372b1d5a7",
+                "shasum": ""
+            },
+            "require": {
+                "laravel/framework": "^11.0|^12.0|^13.0",
+                "laravel/mcp": "^0.5.3|^0.6.0",
+                "laravel/telescope": "^5.0",
+                "php": "^8.2"
+            },
+            "require-dev": {
+                "friendsofphp/php-cs-fixer": "^3.0",
+                "mockery/mockery": "^1.6",
+                "orchestra/testbench": "^9.0|^10.0|^11.0",
+                "pestphp/pest": "^4.3"
+            },
+            "type": "library",
+            "extra": {
+                "laravel": {
+                    "providers": [
+                        "LucianoTonet\\TelescopeMcp\\TelescopeMcpServiceProvider"
+                    ]
+                }
+            },
+            "autoload": {
+                "psr-4": {
+                    "LucianoTonet\\TelescopeMcp\\": "src/"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "Luciano Tonet",
+                    "email": "tonetlds@gmail.com",
+                    "homepage": "https://github.com/lucianotonet",
+                    "role": "Developer"
+                }
+            ],
+            "description": "MCP Server extension for Laravel Telescope",
+            "keywords": [
+                "cursor",
+                "debugging",
+                "developer-tools",
+                "laravel",
+                "mcp",
+                "monitoring",
+                "telescope"
+            ],
+            "support": {
+                "issues": "https://github.com/lucianotonet/laravel-telescope-mcp/issues",
+                "source": "https://github.com/lucianotonet/laravel-telescope-mcp"
+            },
+            "time": "2026-03-28T15:52:09+00:00"
         },
         {
             "name": "mockery/mockery",

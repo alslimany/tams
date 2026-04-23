@@ -23,10 +23,15 @@ class ProviderFactory
      */
     public static function make(TenantProvider $config, array $context = []): AirlineProviderInterface
     {
-        return match ($config->provider_type) {
+        if ($config->provider_type === null) {
+            throw new Exception('Missing provider type');
+        }
+        $providerType = strtolower(trim((string) $config->provider_type));
+
+        return match ($providerType) {
             'videcom' => self::makeVidecomProvider($config, $context),
             // 'amadeus' => new AmadeusProvider($config->credentials),
-            default => throw new Exception("Unsupported provider type: {$config->provider_type}"),
+            default => throw new Exception("Unsupported provider type: {$providerType}"),
         };
     }
 

@@ -2,6 +2,8 @@
 
 namespace App\Services\Airline;
 
+use App\DTOs\Airline\RoundTripPriceRequest;
+
 interface AirlineProviderInterface
 {
     /**
@@ -12,11 +14,25 @@ interface AirlineProviderInterface
     public function searchAvailability(array $params);
 
     /**
+     * Search return leg availability independently using one-way search logic.
+     *
+     * @return mixed
+     */
+    public function searchReturnLeg(array $params);
+
+    /**
      * Get pricing for a selected itinerary.
      *
      * @return mixed
      */
     public function getPricing(array $itinerary, array $passengers);
+
+    /**
+     * Price outbound + return in one command to support round-trip fare behavior.
+     *
+     * @return mixed
+     */
+    public function priceRoundTrip(RoundTripPriceRequest $request);
 
     /**
      * Create a booking (PNR).

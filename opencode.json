@@ -20,6 +20,18 @@
             "environment": {
                 "SITE_PATH": "/Users/abdullah/Herd/tams"
             }
+        },
+        "laravel-telescope": {
+            "type": "local",
+            "enabled": true,
+            "command": [
+                "php",
+                "/Users/abdullah/Herd/tams/artisan",
+                "telescope-mcp:server"
+            ],
+            "environment": {
+                "APP_ENV": "local"
+            }
         }
     }
 }
