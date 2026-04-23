@@ -1,10 +1,16 @@
 import React from 'react';
-import { Head, Link } from '@inertiajs/react';
+import { Head, Link, useForm } from '@inertiajs/react';
 import LandlordLayout from '@/Layouts/LandlordLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/Components/ui/Card';
 import { Badge } from '@/Components/ui/Badge';
+import { Button } from '@/Components/ui/Button';
 
-export default function Dashboard({ stats, recentRegistrations }) {
+export default function Dashboard({ stats, recentRegistrations, flightCacheSettings }) {
+    const { data, setData, patch, processing } = useForm({
+        route_availability_enabled: Boolean(flightCacheSettings?.route_availability_enabled ?? true),
+        schedule_cache_enabled: Boolean(flightCacheSettings?.schedule_cache_enabled ?? true),
+    });
+
     const cards = [
         { label: 'Total agencies', value: stats.totalAgencies },
         { label: 'Active agencies', value: stats.activeAgencies },
@@ -56,6 +62,53 @@ export default function Dashboard({ stats, recentRegistrations }) {
                                 </Badge>
                             </div>
                         ))}
+                    </CardContent>
+                </Card>
+
+                <Card>
+                    <CardHeader>
+                        <CardTitle>Global Flight Cache</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                        <form
+                            className="space-y-4"
+                            onSubmit={(event) => {
+                                event.preventDefault();
+                                patch(route('landlord.settings.flight-cache.update'));
+                            }}
+                        >
+                            <label className="flex items-center justify-between rounded-lg border p-4">
+                                <div>
+                                    <p className="font-medium">Route Availability Cache</p>
+                                    <p className="text-sm text-muted-foreground">Learns no-flight routes per airline and skips providers likely to return empty results.</p>
+                                </div>
+                                <input
+                                    type="checkbox"
+                                    checked={data.route_availability_enabled}
+                                    onChange={(event) => setData('route_availability_enabled', event.target.checked)}
+                                    className="h-4 w-4"
+                                />
+                            </label>
+
+                            <label className="flex items-center justify-between rounded-lg border p-4">
+                                <div>
+                                    <p className="font-medium">Schedule Price Cache</p>
+                                    <p className="text-sm text-muted-foreground">Stores daily low fares for calendar hints and prefetch jobs.</p>
+                                </div>
+                                <input
+                                    type="checkbox"
+                                    checked={data.schedule_cache_enabled}
+                                    onChange={(event) => setData('schedule_cache_enabled', event.target.checked)}
+                                    className="h-4 w-4"
+                                />
+                            </label>
+
+                            <div className="flex justify-end">
+                                <Button type="submit" disabled={processing}>
+                                    {processing ? 'Saving...' : 'Save Cache Settings'}
+                                </Button>
+                            </div>
+                        </form>
                     </CardContent>
                 </Card>
             </div>

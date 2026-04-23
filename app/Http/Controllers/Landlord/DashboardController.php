@@ -6,12 +6,13 @@ use App\Http\Controllers\Controller;
 use App\Models\Tenant;
 use App\Models\TenantProvider;
 use App\Models\User;
+use App\Services\GlobalCache\GlobalFlightCacheSettingsService;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class DashboardController extends Controller
 {
-    public function __invoke(): Response
+    public function __invoke(GlobalFlightCacheSettingsService $settingsService): Response
     {
         $tenants = Tenant::query()->latest()->get();
 
@@ -37,6 +38,10 @@ class DashboardController extends Controller
         return Inertia::render('Landlord/Dashboard', [
             'stats' => $stats,
             'recentRegistrations' => $recentRegistrations,
+            'flightCacheSettings' => [
+                'route_availability_enabled' => $settingsService->isRouteAvailabilityEnabled(),
+                'schedule_cache_enabled' => $settingsService->isScheduleCacheEnabled(),
+            ],
         ]);
     }
 

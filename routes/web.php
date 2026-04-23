@@ -3,6 +3,7 @@
 use App\Http\Controllers\AgencyRegistrationController;
 use App\Http\Controllers\Landlord\Auth\AuthenticatedSessionController as LandlordAuthenticatedSessionController;
 use App\Http\Controllers\Landlord\DashboardController as LandlordDashboardController;
+use App\Http\Controllers\Landlord\GlobalFlightCacheSettingsController;
 use App\Http\Controllers\Landlord\TenantManagementController;
 use App\Http\Controllers\Landlord\TenantUserController;
 use Illuminate\Support\Facades\Route;
@@ -26,6 +27,7 @@ Route::prefix('admin')->name('landlord.')->group(function () {
 
     Route::middleware('landlord.auth')->group(function () {
         Route::get('dashboard', LandlordDashboardController::class)->name('dashboard');
+        Route::patch('settings/flight-cache', [GlobalFlightCacheSettingsController::class, 'update'])->name('settings.flight-cache.update');
         Route::get('tenants', [TenantManagementController::class, 'index'])->name('tenants.index');
         Route::get('tenants/{tenant}', [TenantManagementController::class, 'show'])->name('tenants.show');
         Route::patch('tenants/{tenant}/status', [TenantManagementController::class, 'updateStatus'])->name('tenants.status');

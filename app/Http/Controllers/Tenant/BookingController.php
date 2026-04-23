@@ -11,10 +11,15 @@ use App\Models\TenantProvider;
 use App\Services\Airline\ProviderFactory;
 use App\Services\Airline\RoundTripPriceManager;
 use App\Services\Airline\Videcom\VidecomAncillaryCatalog;
+use App\Services\GlobalCache\FlightScheduleCacheService;
+use App\Services\GlobalCache\GlobalFlightCacheSettingsService;
+use App\Services\GlobalCache\RouteAvailabilityService;
 use App\Services\Orders\OrderNumberGenerator;
+use Carbon\Carbon;
 use Exception;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -27,6 +32,9 @@ class BookingController extends Controller
     public function __construct(
         protected OrderNumberGenerator $orderNumberGenerator,
         protected RoundTripPriceManager $roundTripPriceManager,
+        protected RouteAvailabilityService $routeAvailabilityService,
+        protected FlightScheduleCacheService $flightScheduleCacheService,
+        protected GlobalFlightCacheSettingsService $globalFlightCacheSettingsService,
     ) {}
 
     public function index(): Response
@@ -100,6 +108,12 @@ class BookingController extends Controller
         $providers = TenantProvider::where('is_active', '=', true)
             ->get(['id', 'airline_name', 'airline_code', 'account_name']);
 
+        $filteredProviders = $this->filterProvidersByRouteAvailability(
+            $providers,
+            (string) ($searchParams['origin'] ?? ''),
+            (string) ($searchParams['destination'] ?? ''),
+        );
+
         $flights = [];
         if ($request->has('provider_id')) {
             $providerId = $request->input('provider_id');
@@ -111,6 +125,21 @@ class BookingController extends Controller
 
                 $providerFlights = collect($provider->searchAvailability($params));
                 $providerConfig->update(['last_used_at' => now()]);
+
+                $this->recordRouteAvailability(
+                    $providerConfig,
+                    (string) ($params['origin'] ?? ''),
+                    (string) ($params['destination'] ?? ''),
+                    $providerFlights,
+                );
+
+                $this->cacheFlightPricesForRoute(
+                    $providerConfig,
+                    (string) ($params['origin'] ?? ''),
+                    (string) ($params['destination'] ?? ''),
+                    (string) ($params['date'] ?? ''),
+                    $providerFlights,
+                );
 
                 if ($this->shouldUseVidecomScraper($providerConfig)) {
                     try {
@@ -145,7 +174,7 @@ class BookingController extends Controller
         return Inertia::render('Tenant/Bookings/SearchResults', [
             'uuid' => $uuid,
             'query' => $searchParams,
-            'providers' => $providers,
+            'providers' => $filteredProviders,
             'flights' => $flights,
             'searchDisplayMode' => tenant()->getInternal('search_display_mode') ?? 'per_offer',
         ]);
@@ -172,6 +201,21 @@ class BookingController extends Controller
             $params = $this->buildOneWayAvailabilityParams($searchParams);
 
             $flights = collect($provider->searchAvailability($params));
+
+            $this->recordRouteAvailability(
+                $providerConfig,
+                (string) ($params['origin'] ?? ''),
+                (string) ($params['destination'] ?? ''),
+                $flights,
+            );
+
+            $this->cacheFlightPricesForRoute(
+                $providerConfig,
+                (string) ($params['origin'] ?? ''),
+                (string) ($params['destination'] ?? ''),
+                (string) ($params['date'] ?? ''),
+                $flights,
+            );
 
             if ($this->shouldUseVidecomScraper($providerConfig)) {
                 try {
@@ -290,6 +334,21 @@ class BookingController extends Controller
                 $provider = ProviderFactory::make($providerConfig);
                 $returnFlights = collect($provider->searchReturnLeg($returnSearchParams));
 
+                $this->recordRouteAvailability(
+                    $providerConfig,
+                    (string) ($returnSearchParams['origin'] ?? ''),
+                    (string) ($returnSearchParams['destination'] ?? ''),
+                    $returnFlights,
+                );
+
+                $this->cacheFlightPricesForRoute(
+                    $providerConfig,
+                    (string) ($returnSearchParams['origin'] ?? ''),
+                    (string) ($returnSearchParams['destination'] ?? ''),
+                    (string) ($returnSearchParams['date'] ?? ''),
+                    $returnFlights,
+                );
+
                 $outboundTotal = (float) data_get($outboundFlight, 'pricing.total', 0);
                 $passengerCounts = [
                     'adults' => (int) ($searchParams['adults'] ?? 1),
@@ -341,6 +400,39 @@ class BookingController extends Controller
             'return_options' => $returnOptions,
             'outbound_provider_id' => $outboundProviderId,
             'return_date' => $effectiveReturnDate,
+        ]);
+    }
+
+    public function calendarHints(Request $request)
+    {
+        $validated = $request->validate([
+            'origin' => 'required|string|size:3',
+            'destination' => 'required|string|size:3',
+            'month' => 'required|date_format:Y-m',
+        ]);
+
+        $start = Carbon::createFromFormat('Y-m-d', $validated['month'].'-01')->startOfMonth();
+        $end = (clone $start)->endOfMonth();
+
+        $hints = [];
+        $cursor = (clone $start);
+
+        while ($cursor->lessThanOrEqualTo($end)) {
+            $date = $cursor->toDateString();
+            $hints[$date] = $this->flightScheduleCacheService->getLowestPrice(
+                (string) $validated['origin'],
+                (string) $validated['destination'],
+                $date,
+            );
+
+            $cursor->addDay();
+        }
+
+        return response()->json([
+            'origin' => strtoupper((string) $validated['origin']),
+            'destination' => strtoupper((string) $validated['destination']),
+            'month' => (string) $validated['month'],
+            'hints' => $hints,
         ]);
     }
 
@@ -872,6 +964,74 @@ class BookingController extends Controller
         unset($params['return_date']);
 
         return $params;
+    }
+
+    protected function filterProvidersByRouteAvailability(Collection $providers, string $origin, string $destination): Collection
+    {
+        if (! $this->globalFlightCacheSettingsService->isRouteAvailabilityEnabled()) {
+            return $providers;
+        }
+
+        $filtered = $providers->filter(function (TenantProvider $provider) use ($origin, $destination): bool {
+            $availability = $this->routeAvailabilityService->hasFlights(
+                (string) $provider->airline_code,
+                $origin,
+                $destination,
+            );
+
+            return $availability !== false;
+        })->values();
+
+        return $filtered->isNotEmpty() ? $filtered : $providers;
+    }
+
+    protected function recordRouteAvailability(TenantProvider $providerConfig, string $origin, string $destination, Collection $flights): void
+    {
+        if (! $this->globalFlightCacheSettingsService->isRouteAvailabilityEnabled()) {
+            return;
+        }
+
+        $this->routeAvailabilityService->recordResult(
+            (string) $providerConfig->airline_code,
+            $origin,
+            $destination,
+            $flights->isNotEmpty(),
+        );
+    }
+
+    protected function cacheFlightPricesForRoute(
+        TenantProvider $providerConfig,
+        string $origin,
+        string $destination,
+        string $date,
+        Collection $flights,
+    ): void {
+        if (! $this->globalFlightCacheSettingsService->isScheduleCacheEnabled() || trim($date) === '') {
+            return;
+        }
+
+        foreach ($flights as $flight) {
+            $flightData = is_array($flight) ? $flight : (array) $flight;
+            $segment = data_get($flightData, 'segments.0', []);
+            $price = (float) data_get($flightData, 'pricing.total', 0);
+            $currency = (string) data_get($flightData, 'pricing.currency', 'LYD');
+            $bookingClass = (string) ($segment['class'] ?? data_get($flightData, 'pricing.class_code', ''));
+
+            if ($price <= 0) {
+                continue;
+            }
+
+            $this->flightScheduleCacheService->storePrice(
+                airlineCode: (string) $providerConfig->airline_code,
+                origin: $origin,
+                destination: $destination,
+                date: $date,
+                bookingClass: $bookingClass !== '' ? $bookingClass : null,
+                price: $price,
+                currency: $currency,
+                ttlHours: 24,
+            );
+        }
     }
 
     protected function passengerHasAnyPassportDetail(array $passenger): bool

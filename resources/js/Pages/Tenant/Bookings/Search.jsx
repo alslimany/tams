@@ -16,6 +16,8 @@ import { AsyncAirportSelect } from '@/Components/ui/AsyncAirportSelect';
 
 export default function Search({ searchDisplayMode, bookings, filters, airlines, searchDefaults = {} }) {
     const [isPaxDropdownOpen, setIsPaxDropdownOpen] = useState(false);
+    const [visibleMonth, setVisibleMonth] = useState(() => (searchDefaults.date ? new Date(searchDefaults.date) : new Date()));
+    const [calendarHints, setCalendarHints] = useState({});
     const paxDropdownRef = useRef(null);
 
     const { data, setData, get, processing, errors } = useForm({
@@ -39,6 +41,55 @@ export default function Search({ searchDisplayMode, bookings, filters, airlines,
         document.addEventListener('mousedown', handleClickOutside);
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
+
+    useEffect(() => {
+        const origin = (data.origin || '').trim().toUpperCase();
+        const destination = (data.destination || '').trim().toUpperCase();
+
+        if (origin.length !== 3 || destination.length !== 3 || Number.isNaN(visibleMonth.getTime())) {
+            setCalendarHints({});
+            return;
+        }
+
+        const month = format(visibleMonth, 'yyyy-MM');
+        const url = route('flights.calendar-hints', {
+            origin,
+            destination,
+            month,
+        });
+
+        let aborted = false;
+
+        fetch(url, {
+            method: 'GET',
+            headers: {
+                Accept: 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+            },
+            credentials: 'same-origin',
+        })
+            .then(async (response) => {
+                if (!response.ok) {
+                    throw new Error('Calendar hints request failed.');
+                }
+
+                return response.json();
+            })
+            .then((payload) => {
+                if (!aborted) {
+                    setCalendarHints(payload?.hints || {});
+                }
+            })
+            .catch(() => {
+                if (!aborted) {
+                    setCalendarHints({});
+                }
+            });
+
+        return () => {
+            aborted = true;
+        };
+    }, [data.origin, data.destination, visibleMonth]);
 
     const submit = (e) => {
         e.preventDefault();
@@ -70,6 +121,23 @@ export default function Search({ searchDisplayMode, bookings, filters, airlines,
     const applyRangeDate = (selectedRange) => {
         setData('date', selectedRange?.from ? format(selectedRange.from, 'yyyy-MM-dd') : '');
         setData('return_date', selectedRange?.to ? format(selectedRange.to, 'yyyy-MM-dd') : '');
+    };
+
+    const renderDayButton = ({ day, children, ...dayButtonProps }) => {
+        const key = format(day.date, 'yyyy-MM-dd');
+        const hint = calendarHints[key];
+        const hasHint = hint && typeof hint.price === 'number';
+
+        return (
+            <button {...dayButtonProps} type="button" className={`${dayButtonProps.className || ''} h-12`}>
+                <span>{children}</span>
+                {hasHint ? (
+                    <span className="mt-0.5 block text-[10px] leading-none text-emerald-600">
+                        from {Math.round(hint.price)} {hint.currency}
+                    </span>
+                ) : null}
+            </button>
+        );
     };
 
     const filterBookings = (event) => {
@@ -192,6 +260,9 @@ export default function Search({ searchDisplayMode, bookings, filters, airlines,
                                                     mode="single"
                                                     selected={departureDate}
                                                     onSelect={applySingleDate}
+                                                    onMonthChange={setVisibleMonth}
+                                                    month={visibleMonth}
+                                                    components={{ DayButton: renderDayButton }}
                                                     initialFocus
                                                 />
                                             </PopoverContent>
@@ -217,6 +288,9 @@ export default function Search({ searchDisplayMode, bookings, filters, airlines,
                                                     mode="range"
                                                     selected={tripRange}
                                                     onSelect={applyRangeDate}
+                                                    onMonthChange={setVisibleMonth}
+                                                    month={visibleMonth}
+                                                    components={{ DayButton: renderDayButton }}
                                                     numberOfMonths={2}
                                                     initialFocus
                                                 />

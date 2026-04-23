@@ -5,8 +5,9 @@ import { DayPicker, getDefaultClassNames } from 'react-day-picker';
 import { cn } from '@/lib/utils';
 import { buttonVariants } from '@/Components/ui/Button';
 
-function Calendar({ className, classNames, showOutsideDays = true, ...props }) {
+function Calendar({ className, classNames, showOutsideDays = true, components, ...props }) {
     const defaultClassNames = getDefaultClassNames();
+    const incomingComponents = components || {};
 
     return (
         <DayPicker
@@ -46,6 +47,7 @@ function Calendar({ className, classNames, showOutsideDays = true, ...props }) {
                 ...classNames,
             }}
             components={{
+                ...incomingComponents,
                 Chevron: ({ orientation, className: chevronClassName, ...iconProps }) => {
                     if (orientation === 'left') {
                         return <ChevronLeftIcon className={cn('h-4 w-4', chevronClassName)} {...iconProps} />;
