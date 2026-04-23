@@ -55,57 +55,55 @@ class VidecomResponseParser
                     $count = count($avs);
                     for ($i = 0; $i < $count; $i++) {
                         $seatsAvailable = (int) $avs[$i];
-                        if ($seatsAvailable > 0) {
-                            $basePrice = (float) ($prices[$i] ?? 0);
-                            $taxAmount = (float) ($taxes[$i] ?? 0);
-                            $classTotal = $basePrice + $taxAmount;
+                        $basePrice = (float) ($prices[$i] ?? 0);
+                        $taxAmount = (float) ($taxes[$i] ?? 0);
+                        $classTotal = $basePrice + $taxAmount;
 
-                            if ($classTotal > 0) {
-                                $cbId = (string) ($cbs[$i] ?? '');
-                                $classCode = (string) ($ids[$i] ?? '');
-                                $bandInfo = $bands[$cbId] ?? ['name' => "Class $classCode", 'details' => ''];
+                        $cbId = (string) ($cbs[$i] ?? '');
+                        $classCode = (string) ($ids[$i] ?? '');
+                        $bandInfo = $bands[$cbId] ?? ['name' => "Class $classCode", 'details' => ''];
 
-                                $pricing = [
-                                    'currency' => (string) ($curs[$i] ?? 'LYD'),
-                                    'total' => $classTotal,
-                                    'breakdown' => [
-                                        ['label' => 'Base Fare', 'amount' => $basePrice],
-                                        ['label' => 'Taxes & Fees', 'amount' => $taxAmount],
-                                    ],
-                                    'brand_name' => $bandInfo['name'],
-                                    'brand_details' => $bandInfo['details'],
-                                    'class_code' => $classCode,
+                        $pricing = [
+                            'currency' => (string) ($curs[$i] ?? 'LYD'),
+                            'total' => $classTotal,
+                            'breakdown' => $classTotal > 0
+                                ? [
+                                    ['label' => 'Base Fare', 'amount' => $basePrice],
+                                    ['label' => 'Taxes & Fees', 'amount' => $taxAmount],
+                                ]
+                                : [],
+                            'brand_name' => $bandInfo['name'],
+                            'brand_details' => $bandInfo['details'],
+                            'class_code' => $classCode,
+                            'cabin_type' => $bandInfo['cabin'] ?? 'Y',
+                        ];
+
+                        $options[] = new FlightOption(
+                            id: $fltno.'-'.(string) $flt->dep.'-'.(string) $flt->arr.'-'.(string) $flt->time->ddaylcl.'-'.$classCode,
+                            airline_code: $airlineCode,
+                            airline_name: $airlineName.' ('.$bandInfo['name'].')',
+                            flight_number: $fltno,
+                            departure_airport: (string) $flt->dep,
+                            arrival_airport: (string) $flt->arr,
+                            departure_time: $departureTime,
+                            arrival_time: $arrivalTime,
+                            segments: [
+                                [
+                                    'flight_number' => $fltno,
+                                    'departure_airport' => (string) $flt->dep,
+                                    'arrival_airport' => (string) $flt->arr,
+                                    'departure_time' => $departureTime,
+                                    'arrival_time' => $arrivalTime,
+                                    'aircraft' => $eqp,
+                                    'class' => $classCode,
                                     'cabin_type' => $bandInfo['cabin'] ?? 'Y',
-                                ];
-
-                                $options[] = new FlightOption(
-                                    id: $fltno.'-'.(string) $flt->dep.'-'.(string) $flt->arr.'-'.(string) $flt->time->ddaylcl.'-'.$classCode,
-                                    airline_code: $airlineCode,
-                                    airline_name: $airlineName.' ('.$bandInfo['name'].')',
-                                    flight_number: $fltno,
-                                    departure_airport: (string) $flt->dep,
-                                    arrival_airport: (string) $flt->arr,
-                                    departure_time: $departureTime,
-                                    arrival_time: $arrivalTime,
-                                    segments: [
-                                        [
-                                            'flight_number' => $fltno,
-                                            'departure_airport' => (string) $flt->dep,
-                                            'arrival_airport' => (string) $flt->arr,
-                                            'departure_time' => $departureTime,
-                                            'arrival_time' => $arrivalTime,
-                                            'aircraft' => $eqp,
-                                            'class' => $classCode,
-                                            'cabin_type' => $bandInfo['cabin'] ?? 'Y',
-                                            'duration' => $duration,
-                                        ],
-                                    ],
-                                    pricing: $pricing,
-                                    available_seats: $seatsAvailable,
-                                    raw_data: (array) $flt
-                                );
-                            }
-                        }
+                                    'duration' => $duration,
+                                ],
+                            ],
+                            pricing: $pricing,
+                            available_seats: $seatsAvailable,
+                            raw_data: (array) $flt
+                        );
                     }
                 }
             }

@@ -48,3 +48,85 @@ XML);
         ->and($parsed['tickets'][0]['ticket_number'])->toBe('854 3220420747')
         ->and($parsed['tickets'][0]['hold_wt'])->toBe('25K');
 });
+
+test('it formats videcom pnr xml into structured order details json', function () {
+    $pnr = simplexml_load_string(<<<'XML'
+<PNR RLOC="AAJ6DU" PNRLocked="False" CanVoid="True" VoidCutoffTime="2026-04-21T22:00">
+    <Names>
+        <PAX GrpNo="1" GrpPaxNo="1" PaxNo="1" Title="MR" FirstName="ABDULLAH" Surname="MOHAMMED" PaxType="AD" Age="" />
+    </Names>
+    <Itinerary>
+        <Itin Line="1" AirID="5S" FltNo="0754" Class="Z" DepDate="2026-04-30" Depart="MJI" Arrive="BEN" Status="HK" PaxQty="1" DepTime="20:00:00" ArrTime="21:15:00" Stops="0" Cabin="Y" ClassBand="ECONOMY Z" ClassBandDisplayName="Z" SelectSeat="False" MMBSelectSeat="False" OpenSeating="False" MMBCheckinAllowed="False" />
+    </Itinerary>
+    <Contacts>
+        <CTC Line="1" CTCID="M" Pax="0">911388788</CTC>
+    </Contacts>
+    <FareQuote>
+        <FQItin Seg="1" Cur="LYD" FQI="SITI 1011" Total="300" Fare="190.41" Tax1="109.59" Tax2="0" Tax3="0" />
+        <FareStore FSID="FQC" Pax="1" Cur="LYD" Total="300.00">
+            <SegmentFS Seg="1" Fare="190.41" Tax1="109.59" Tax2="0" Tax3="0" />
+        </FareStore>
+        <FareTax>
+            <PaxTax Seg="1" Pax="1" Code="YR" Cur="LYD" Amnt="30.00" desc="TAX OF " />
+        </FareTax>
+    </FareQuote>
+    <Payments>
+        <FOP Line="1" FOPID="III" PayCur="LYD" PayAmt="300.00" PayRef="GLOBAL102 ABC TOURS01012" PNRCur="LYD" PNRAmt="300.00" PNRExRate="1" PayDate="21APR26" />
+    </Payments>
+    <Tickets>
+        <TKT Pax="1" TKTID="ETKT" TktNo="301 2300303215" Coupon="01" TktFltDate="30APR2026" TktFltNo="5S0754" TktDepart="MJI" TktArrive="BEN" TktBClass="Z" IssueDate="21APR2026" Status="O" SegNo="01" Title="MR" Firstname="ABDULLAH" Surname="MOHAMMED" HoldPcs="2" HoldWt="20K" HandWt="0K" WebCheckOut="False" />
+    </Tickets>
+    <Basket>
+        <Outstanding cur="LYD" amount="0" info="" />
+        <Outstandingairmiles cur="LYD" amount="-190.41" info="Outstanding Currency and Airmiles" />
+    </Basket>
+</PNR>
+XML);
+
+    $formatted = VidecomPnrParser::formatForOrderDetails($pnr);
+
+    expect($formatted['rloc'])->toBe('AAJ6DU')
+        ->and($formatted['iata'])->toBe('5S')
+        ->and(array_keys($formatted))->toBe([
+            'itineraries',
+            'passengers',
+            'contacts',
+            'payments',
+            'timelimits',
+            'tickets',
+            'remarks',
+            'basket',
+            'mps',
+            'fare_qoute',
+            'fare_store',
+            'taxes',
+            'total_fare',
+            'total_tax',
+            'total_price',
+            'currency',
+            'is_issued',
+            'is_locked',
+            'is_voidable',
+            'void_cutoff_time',
+            'rloc',
+            'iata',
+        ])
+        ->and($formatted['itineraries'][0]['from'])->toBe('MJI')
+        ->and($formatted['itineraries'][0]['class_band'])->toBe('ECONOMY Z')
+        ->and($formatted['itineraries'][0]['class_band_display_name'])->toBe('Z')
+        ->and($formatted['passengers'][0]['first_name'])->toBe('ABDULLAH')
+        ->and($formatted['passengers'][0]['last_name'])->toBe('MOHAMMED')
+        ->and($formatted['contacts'][0]['type'])->toBe('M')
+        ->and($formatted['payments'][0]['form_of_payment_id'])->toBe('III')
+        ->and($formatted['payments'][0]['date'])->toBe('2026-04-21')
+        ->and($formatted['tickets'][0]['ticket_number'])->toBe('301 2300303215')
+        ->and($formatted['tickets'][0]['hold_pices'])->toBe('2')
+        ->and($formatted['remarks'])->toBe([])
+        ->and($formatted['basket'][0]['id'])->toBe('outstanding')
+        ->and($formatted['fare_qoute'][0]['segment_id'])->toBe('1')
+        ->and($formatted['fare_store'][0]['segments'][0]['tax1'])->toBe(109.59)
+        ->and($formatted['taxes'][0]['code'])->toBe('YR')
+        ->and($formatted['total_price'])->toBe('300')
+        ->and($formatted['is_issued'])->toBeTrue()
+        ->and($formatted['void_cutoff_time'])->toBe('2026-04-21 22:00');
+});

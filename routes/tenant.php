@@ -46,18 +46,20 @@ Route::middleware([
     Route::middleware(['auth', 'tenant.status'])->group(function () {
         Route::get('dashboard', DashboardController::class)->name('dashboard');
 
-        // Flight Bookings
+        // Flight search, booking and orders
         Route::get('api/airports/search', [\App\Http\Controllers\AirportController::class, 'search'])->name('api.airports.search');
         Route::get('api/airlines/logo/{code}', [\App\Http\Controllers\AirlineLogoController::class, 'show'])->name('api.airlines.logo');
         Route::get('flights', [BookingController::class, 'index'])->name('flights.index');
-        Route::post('flights/search', [BookingController::class, 'search'])->name('flights.search');
+        Route::match(['get', 'post'], 'flights/search', [BookingController::class, 'search'])->name('flights.search');
         Route::match(['get', 'post'], 'flights/results/{uuid}', [BookingController::class, 'results'])->name('flights.results');
         Route::post('flights/fetch-flights', [BookingController::class, 'fetchFlights'])->name('flights.fetch-flights');
+        Route::post('flights/open-reservation-availability', [BookingController::class, 'openReservationAvailability'])->name('flights.open-reservation-availability');
         Route::post('flights/seatmap', [BookingController::class, 'seatmap'])->name('flights.seatmap');
         Route::post('flights/select', [BookingController::class, 'select'])->name('flights.select');
         Route::post('flights', [BookingController::class, 'store'])->name('flights.store');
         Route::get('flights/{booking}', [BookingController::class, 'show'])->name('flights.show');
         Route::get('flights/{booking}/completed', [TicketController::class, 'completed'])->name('tickets.completed');
+        Route::get('orders', [OrderController::class, 'index'])->name('orders.index');
         Route::get('orders/{order}', [OrderController::class, 'show'])->name('orders.show');
         Route::middleware('role:manager')->group(function () {
             Route::post('flights/{booking}/tickets/issue', [TicketController::class, 'issue'])->name('tickets.issue');

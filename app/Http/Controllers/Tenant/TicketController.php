@@ -2,239 +2,146 @@
 
 namespace App\Http\Controllers\Tenant;
 
-use App\Actions\Orders\CreateOrderFromVidecomResponse;
 use App\Http\Controllers\Controller;
-use App\Models\Tenant\Booking;
 use App\Models\Tenant\Order;
-use App\Models\Tenant\Ticket;
-use App\Models\User;
+use App\Models\Tenant\OrderItem;
+use App\Models\TenantProvider;
 use App\Services\Airline\ProviderFactory;
 use App\Services\Airline\Videcom\VidecomPnrParser;
-use App\Services\Videcom\VidecomOrderParser;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Str;
+use Illuminate\Support\Collection;
 use Inertia\Inertia;
 use Inertia\Response as InertiaResponse;
 use SimpleXMLElement;
 
 class TicketController extends Controller
 {
-    public function issue(Request $request, Booking $booking): RedirectResponse
+    public function issue(Request $request, Order $booking): RedirectResponse
     {
-        $provider = ProviderFactory::make($booking->provider);
-        $issuer = $request->user();
-        $paymentType = strtolower((string) $request->input('payment_type', 'airline_token'));
+        $booking->loadMissing('items');
+
+        $firstItem = $booking->items->first();
+        if (! $firstItem) {
+            return back()->with('error', 'No flight item found for this booking.');
+        }
+
+        $pnr = (string) ($firstItem->provider_reference ?: $booking->payment_reference);
+        $airlineCode = (string) data_get($firstItem->item_details, 'airline_code', '');
+
+        $providerConfig = TenantProvider::query()
+            ->where('is_active', true)
+            ->when($airlineCode !== '', fn ($query) => $query->where('airline_code', $airlineCode))
+            ->first();
+
+        if (! $providerConfig) {
+            return back()->with('error', 'No active provider found for this booking.');
+        }
+
+        $provider = ProviderFactory::make($providerConfig);
 
         try {
-            $issueResponse = $provider->issueTicket($booking->pnr, [
-                'type' => $paymentType,
-                'booking' => $booking,
-                'booking_id' => $booking->id,
-                'user' => $issuer,
-                'user_id' => $issuer?->id,
+            $provider->issueTicket($pnr, [
+                'type' => strtolower((string) $request->input('payment_type', 'airline_token')),
+                'user' => $request->user(),
             ]);
+
+            $pnrResponse = method_exists($provider, 'queryPnr')
+                ? $provider->queryPnr($pnr)
+                : $provider->retrieveBooking($pnr);
         } catch (ConnectionException $exception) {
             report($exception);
 
-            return back()->with('error', 'Airline ticket issuance timed out. Please confirm booking again and retry issuing.');
+            return back()->with('error', 'Airline ticket issuance timed out. Please try again.');
         } catch (\Throwable $exception) {
             report($exception);
 
-            return back()->with('error', 'Failed to send ticket issue command to the airline. Please try again.');
+            return back()->with('error', 'Failed to issue ticket with the airline provider.');
         }
 
-        $xmlIssueResponse = is_array($issueResponse)
-            ? ($issueResponse['xml'] ?? $issueResponse['raw'] ?? null)
-            : $issueResponse;
-
-        $issueXml = $this->toXml($xmlIssueResponse);
-
-        if (! $issueXml instanceof SimpleXMLElement) {
-            return back()->with('error', 'Ticket issuance failed: airline response was not valid XML.');
+        $pnrXml = $this->toXml($pnrResponse);
+        if (! $pnrXml) {
+            return back()->with('error', 'Ticket issuance completed, but provider returned invalid PNR payload.');
         }
 
-        $order = $this->resolveCreatedOrder($issueResponse);
+        $parsed = VidecomPnrParser::parse($pnrXml);
+        $formatted = VidecomPnrParser::formatForOrderDetails($pnrXml);
+        $ticketsByNumber = collect($parsed['tickets'] ?? [])->groupBy('ticket_number');
 
-        if (! $order && $issuer instanceof User) {
-            $order = $this->createOrderFromIssueResponse($booking, $issueXml, $issuer);
-        }
+        foreach ($booking->items as $item) {
+            $ticketNumber = (string) ($item->ticket_number ?? '');
+            $ticketRows = $ticketNumber !== '' ? $ticketsByNumber->get($ticketNumber) : null;
 
-        if (! $order) {
-            return back()->with('error', 'Ticket issuance succeeded, but order creation failed.');
-        }
+            if (! $ticketRows instanceof Collection || $ticketRows->isEmpty()) {
+                $ticketRows = $ticketsByNumber->first();
+            }
 
-        try {
-            $pnrResponse = $provider->retrieveBooking($booking->pnr);
-        } catch (ConnectionException $exception) {
-            report($exception);
+            $ticketData = $ticketRows?->first() ?? [];
+            $resolvedTicketNumber = (string) ($ticketData['ticket_number'] ?? $ticketNumber);
 
-            return back()->with('error', 'Ticket was issued, but retrieval timed out. Please refresh booking details and verify ticket status.');
-        }
+            $details = is_array($item->item_details) ? $item->item_details : [];
+            $details['pnr'] = $formatted;
+            $details['pnr_synced_at'] = now()->toIso8601String();
 
-        $parsedPnrXml = $this->toXml($pnrResponse) ?? $issueXml;
-        $parsedPnr = $parsedPnrXml instanceof SimpleXMLElement ? VidecomPnrParser::parse($parsedPnrXml) : null;
-        $parsedTickets = collect($parsedPnr['tickets'] ?? [])
-            ->filter(fn (array $ticket): bool => filled($ticket['ticket_number'] ?? null))
-            ->groupBy('ticket_number');
-
-        $ticketNumber = $parsedTickets
-            ->sortBy(fn ($entries) => $entries->contains(fn (array $ticket): bool => blank($ticket['tkt_for'] ?? null)) ? 0 : 1)
-            ->keys()
-            ->first();
-
-        if (! $ticketNumber) {
-            $ticketNumber = $this->extractTicketNumber($xmlIssueResponse) ?? strtoupper(Str::random(10));
+            $item->update([
+                'provider_reference' => (string) ($parsed['rloc'] ?? $pnr),
+                'ticket_number' => $resolvedTicketNumber !== '' ? $resolvedTicketNumber : $item->ticket_number,
+                'item_details' => $details,
+                'status' => 'issued',
+                'remaining' => 0,
+                'paid' => (float) $item->total,
+            ]);
         }
 
         $booking->update([
-            'status' => 'ticketed',
-            'ticket_number' => $ticketNumber,
-            'ticketed_at' => now(),
-            'raw_response' => [
-                'issue' => $this->normalizeResponse($xmlIssueResponse),
-                'issued_pnr' => $parsedPnr ?? $this->normalizeResponse($pnrResponse),
-                'order_id' => $order?->id,
-            ],
-        ]);
-
-        if ($parsedTickets->isNotEmpty()) {
-            foreach ($parsedTickets as $parsedTicketNumber => $entries) {
-                $booking->tickets()->updateOrCreate(
-                    ['ticket_number' => $parsedTicketNumber],
-                    [
-                        'status' => 'issued',
-                        'issued_at' => now(),
-                        'raw_response' => [
-                            'issue' => $this->normalizeResponse($xmlIssueResponse),
-                            'ticket_entries' => $entries->values()->all(),
-                        ],
-                    ]
-                );
-            }
-        } else {
-            $booking->tickets()->updateOrCreate(
-                ['ticket_number' => $ticketNumber],
-                [
-                    'status' => 'issued',
-                    'issued_at' => now(),
-                    'raw_response' => $this->normalizeResponse($xmlIssueResponse),
-                ]
-            );
-        }
-
-        $booking->provider()->update([
-            'last_used_at' => now(),
+            'status' => 'issued',
+            'issued_at' => now(),
+            'amount_paid' => (float) $booking->grand_total,
         ]);
 
         return redirect()
-            ->route('tickets.completed', ['booking' => $booking, 'order' => $order->id])
-            ->with('success', 'Ticket issued and order created successfully.');
+            ->route('tickets.completed', ['booking' => $booking->id, 'order' => $booking->id])
+            ->with('success', 'Ticket issued successfully.');
     }
 
-    public function completed(Request $request, Booking $booking): InertiaResponse
+    public function completed(Request $request, Order $booking): InertiaResponse
     {
-        $booking->load(['customer', 'passengers', 'flightSegments', 'provider', 'tickets']);
-
-        $orderId = $request->query('order');
-
-        $order = null;
-        if (is_string($orderId) && $orderId !== '') {
-            $order = Order::query()
-                ->with(['items'])
-                ->find($orderId);
-        }
-
-        if (! $order) {
-            $order = Order::query()
-                ->with(['items'])
-                ->whereHas('items', function ($query) use ($booking): void {
-                    $query->where('provider_reference', $booking->pnr);
-                })
-                ->latest('issued_at')
-                ->first();
-        }
+        $booking->loadMissing('items');
 
         return Inertia::render('Tenant/Bookings/Completed', [
-            'booking' => $booking,
-            'order' => $order,
+            'booking' => $this->formatOrderForBooking($booking),
+            'order' => $booking->loadMissing('owner', 'items'),
         ]);
     }
 
-    public function void(Booking $booking, Ticket $ticket): RedirectResponse
+    public function void(Order $booking, string $ticket): RedirectResponse
     {
-        $provider = \App\Services\Airline\ProviderFactory::make($booking->provider);
-        $response = $provider->void($booking->pnr, $ticket->ticket_number);
+        $item = $booking->items()->whereKey($ticket)->first();
+        if (! $item) {
+            return back()->with('error', 'Ticket item not found.');
+        }
 
-        $ticket->update([
-            'status' => 'voided',
-            'voided_at' => now(),
-            'raw_response' => $this->normalizeResponse($response),
-        ]);
-
-        $booking->update([
-            'status' => 'cancelled',
-            'raw_response' => $this->normalizeResponse($response),
-        ]);
+        $item->update(['status' => 'voided']);
+        $booking->update(['status' => 'voided']);
 
         return back()->with('success', 'Ticket voided successfully.');
     }
 
-    public function refund(Booking $booking, Ticket $ticket): RedirectResponse
+    public function refund(Order $booking, string $ticket): RedirectResponse
     {
-        $provider = \App\Services\Airline\ProviderFactory::make($booking->provider);
-        $response = $provider->refund($ticket->ticket_number);
+        $item = $booking->items()->whereKey($ticket)->first();
+        if (! $item) {
+            return back()->with('error', 'Ticket item not found.');
+        }
 
-        $ticket->update([
-            'status' => 'refunded',
-            'refunded_at' => now(),
-            'raw_response' => $this->normalizeResponse($response),
-        ]);
-
+        $item->update(['status' => 'refunded']);
         $booking->update([
             'status' => 'refunded',
-            'refunded_at' => now(),
-            'raw_response' => $this->normalizeResponse($response),
+            'amount_refunded' => (float) $booking->grand_total,
         ]);
 
         return back()->with('success', 'Refund recorded successfully.');
-    }
-
-    protected function extractTicketNumber(mixed $response): ?string
-    {
-        if ($response instanceof \SimpleXMLElement) {
-            $xml = $response->asXML() ?: '';
-
-            if (preg_match('/\b\d{10,14}\b/', $xml, $matches)) {
-                return $matches[0];
-            }
-        }
-
-        if (is_string($response) && preg_match('/\b\d{10,14}\b/', $response, $matches)) {
-            return $matches[0];
-        }
-
-        return null;
-    }
-
-    protected function normalizeResponse(mixed $response): array
-    {
-        if ($response instanceof \SimpleXMLElement) {
-            return [
-                'xml' => $response->asXML(),
-            ];
-        }
-
-        if (is_array($response)) {
-            return [
-                'raw' => json_encode($response),
-            ];
-        }
-
-        return [
-            'raw' => is_string($response) ? $response : json_encode($response),
-        ];
     }
 
     protected function toXml(mixed $response): ?SimpleXMLElement
@@ -256,37 +163,39 @@ class TicketController extends Controller
         }
     }
 
-    protected function resolveCreatedOrder(mixed $issueResponse): ?Order
+    protected function formatOrderForBooking(Order $order): array
     {
-        if (! is_array($issueResponse)) {
-            return null;
-        }
+        $order->loadMissing('items');
+        $firstItem = $order->items->first();
 
-        $orderId = $issueResponse['order_id'] ?? null;
+        $providerCode = (string) data_get($firstItem?->item_details, 'airline_code', '');
+        $provider = $providerCode === ''
+            ? null
+            : TenantProvider::query()->where('airline_code', $providerCode)->first(['id', 'airline_name', 'airline_code']);
 
-        if (! is_string($orderId)) {
-            return null;
-        }
+        $tickets = $order->items
+            ->filter(fn (OrderItem $item): bool => filled($item->ticket_number))
+            ->map(fn (OrderItem $item): array => [
+                'id' => $item->id,
+                'ticket_number' => $item->ticket_number,
+                'status' => $item->status,
+                'issued_at' => optional($item->updated_at)->toISOString(),
+            ])
+            ->values();
 
-        return Order::query()->find($orderId);
-    }
-
-    protected function createOrderFromIssueResponse(Booking $booking, mixed $issueResponse, User $issuer): ?Order
-    {
-        $xml = $this->toXml($issueResponse);
-
-        if (! $xml instanceof SimpleXMLElement) {
-            return null;
-        }
-
-        try {
-            $parsed = app(VidecomOrderParser::class)->parse($xml->asXML() ?: '');
-
-            return app(CreateOrderFromVidecomResponse::class)->execute($parsed, $booking, $issuer);
-        } catch (\Throwable $exception) {
-            report($exception);
-
-            return null;
-        }
+        return [
+            'id' => $order->id,
+            'pnr' => (string) ($firstItem?->provider_reference ?: $order->payment_reference),
+            'status' => $order->status,
+            'total_price' => (float) $order->grand_total,
+            'currency' => $order->currency,
+            'provider' => $provider,
+            'customer' => [
+                'first_name' => (string) data_get($order->contact, 'first_name', ''),
+                'last_name' => (string) data_get($order->contact, 'last_name', ''),
+                'email' => (string) data_get($order->contact, 'email', ''),
+            ],
+            'tickets' => $tickets,
+        ];
     }
 }

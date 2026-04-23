@@ -9,6 +9,7 @@ import {
     PlaneTakeoffIcon,
     SettingsIcon,
     ShieldCheckIcon,
+    ShoppingCartIcon,
     UserIcon,
     UsersIcon,
 } from 'lucide-react';
@@ -58,6 +59,7 @@ export default function TenantLayout({ children }) {
     const mainLinks = [
         { name: 'Dashboard', route: 'dashboard', icon: LayoutDashboardIcon },
         { name: 'Flights', route: 'flights.index', icon: BookOpenCheckIcon },
+        { name: 'Orders', route: 'orders.index', icon: ShoppingCartIcon },
     ].filter((item) => hasRoute(item.route));
 
     const adminLinks = [

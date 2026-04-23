@@ -3,7 +3,6 @@
 namespace App\Actions\Orders;
 
 use App\Models\Tenant\AirlineAccount;
-use App\Models\Tenant\Booking;
 use App\Models\Tenant\Order;
 use App\Models\Tenant\OrderItem;
 use App\Models\TenantProvider;
@@ -13,16 +12,19 @@ use Illuminate\Support\Facades\DB;
 
 class ProcessFinancialTransactions
 {
-    public function execute(Order $order, Booking $booking, User $issuer): void
+    public function execute(Order $order, ?TenantProvider $bookingProvider, User $issuer): void
     {
         $order->loadMissing('items');
 
-        DB::transaction(function () use ($order, $booking, $issuer): void {
+        DB::transaction(function () use ($order, $bookingProvider, $issuer): void {
             $resolvedPaymentMethod = null;
-            $bookingProvider = $booking->provider;
 
             foreach ($order->items as $item) {
-                $airlineCode = $item->item_details['airline_code'] ?? $booking->provider?->airline_code;
+                if ($item->wallet_transaction_id || $item->airline_transaction_id) {
+                    continue;
+                }
+
+                $airlineCode = $item->item_details['airline_code'] ?? $bookingProvider?->airline_code;
                 $provider = $this->resolveProviderForItem($bookingProvider, $airlineCode, (string) $item->currency);
 
                 $usesOwnCredentials = tenant()?->usesOwnAirlineCredentials($airlineCode);
@@ -71,7 +73,6 @@ class ProcessFinancialTransactions
 
         $item->update(['airline_transaction_id' => $transaction->id]);
     }
-
 
     protected function createWalletTransactions(Order $order, OrderItem $item, User $issuer): void
     {

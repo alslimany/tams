@@ -1,0 +1,359 @@
+<?php
+
+use App\Services\Airline\Videcom\Airlines\GlobalAirline;
+use App\Services\Airline\Videcom\VidecomClient;
+use App\Services\Airline\Videcom\VidecomResponseParser;
+use Tests\TestCase;
+
+uses(TestCase::class);
+
+test('global air availability command uses classbands false from config', function () {
+    config()->set('videcom_airlines.5S.availability.classbands', false);
+
+    $client = new class extends VidecomClient
+    {
+        public string $lastCommand = '';
+
+        public function __construct() {}
+
+        public function runCommand(string $command): string
+        {
+            $this->lastCommand = $command;
+
+            return <<<'XML'
+<xml>
+    <classbands />
+    <itin line="1" dep="MJI" arr="BEN" totalduration="75">
+        <flt>
+            <dep>MJI</dep>
+            <arr>BEN</arr>
+            <time>
+                <ddaylcl>2026-04-30</ddaylcl>
+                <dtimlcl>20:00:00</dtimlcl>
+                <adaylcl>2026-04-30</adaylcl>
+                <atimlcl>21:15:00</atimlcl>
+                <duration>75</duration>
+            </time>
+            <fltdet>
+                <airid>5S</airid>
+                <fltno>0754</fltno>
+                <eqp>ER4</eqp>
+            </fltdet>
+            <fltav>
+                <id>Z</id>
+                <av>5</av>
+                <cur>LYD</cur>
+                <pri>120</pri>
+                <tax>20</tax>
+            </fltav>
+        </flt>
+    </itin>
+</xml>
+XML;
+        }
+    };
+
+    $provider = new class(['base_url' => 'https://booking.gair.test']) extends GlobalAirline
+    {
+        protected function applyAccuratePricing($option, int $adults, int $children, int $infants): void {}
+    };
+
+    \Closure::bind(function (VidecomClient $client): void {
+        $this->client = $client;
+    }, $provider, $provider)($client);
+
+    $results = $provider->searchAvailability([
+        'date' => '2026-04-30',
+        'origin' => 'MJI',
+        'destination' => 'BEN',
+        'adults' => 1,
+        'children' => 0,
+        'infants' => 0,
+        'qty' => 1,
+    ]);
+
+    expect($client->lastCommand)
+        ->toContain('ClassBands=false')
+        ->and($results)->toHaveCount(1)
+        ->and($results[0]->available_seats)->toBe(5)
+        ->and($results[0]->segments[0]['class'])->toBe('Z');
+});
+
+test('parser keeps seat available flights even when fare fields are empty', function () {
+    $xml = simplexml_load_string(<<<'XML'
+<xml>
+    <classbands />
+    <itin line="1" dep="MJI" arr="BEN" totalduration="75">
+        <flt>
+            <dep>MJI</dep>
+            <arr>BEN</arr>
+            <time>
+                <ddaylcl>2026-04-30</ddaylcl>
+                <dtimlcl>20:00:00</dtimlcl>
+                <adaylcl>2026-04-30</adaylcl>
+                <atimlcl>21:15:00</atimlcl>
+                <duration>75</duration>
+            </time>
+            <fltdet>
+                <airid>5S</airid>
+                <fltno>0754</fltno>
+                <eqp>ER4</eqp>
+            </fltdet>
+            <fltav>
+                <id>Z</id>
+                <av>5</av>
+                <cur>LYD</cur>
+                <pri></pri>
+                <tax></tax>
+            </fltav>
+        </flt>
+    </itin>
+</xml>
+XML);
+
+    $options = VidecomResponseParser::parseAvailability($xml, '5S', 'Global Air');
+
+    expect($options)
+        ->toHaveCount(1)
+        ->and($options[0]->pricing['total'])->toBe(0.0)
+        ->and($options[0]->pricing['currency'])->toBe('LYD')
+        ->and($options[0]->segments[0]['class'])->toBe('Z')
+        ->and($options[0]->available_seats)->toBe(5);
+});
+
+test('parser keeps flights even when available seats are zero', function () {
+    $xml = simplexml_load_string(<<<'XML'
+<xml>
+    <classbands />
+    <itin line="1" dep="MJI" arr="BEN" totalduration="75">
+        <flt>
+            <dep>MJI</dep>
+            <arr>BEN</arr>
+            <time>
+                <ddaylcl>2026-04-30</ddaylcl>
+                <dtimlcl>20:00:00</dtimlcl>
+                <adaylcl>2026-04-30</adaylcl>
+                <atimlcl>21:15:00</atimlcl>
+                <duration>75</duration>
+            </time>
+            <fltdet>
+                <airid>5S</airid>
+                <fltno>0754</fltno>
+                <eqp>ER4</eqp>
+            </fltdet>
+            <fltav>
+                <id>Z</id>
+                <av>0</av>
+                <cur>LYD</cur>
+                <pri>120</pri>
+                <tax>20</tax>
+            </fltav>
+        </flt>
+    </itin>
+</xml>
+XML);
+
+    $options = VidecomResponseParser::parseAvailability($xml, '5S', 'Global Air');
+
+    expect($options)
+        ->toHaveCount(1)
+        ->and($options[0]->available_seats)->toBe(0)
+        ->and($options[0]->pricing['total'])->toBe(140.0);
+});
+
+test('search availability hides offers with zero final price', function () {
+    config()->set('videcom_airlines.5S.availability.classbands', false);
+
+    $client = new class extends VidecomClient
+    {
+        public function __construct() {}
+
+        public function runCommand(string $command): string
+        {
+            return <<<'XML'
+<xml>
+    <classbands />
+    <itin line="1" dep="MJI" arr="BEN" totalduration="75">
+        <flt>
+            <dep>MJI</dep>
+            <arr>BEN</arr>
+            <time>
+                <ddaylcl>2026-04-30</ddaylcl>
+                <dtimlcl>20:00:00</dtimlcl>
+                <adaylcl>2026-04-30</adaylcl>
+                <atimlcl>21:15:00</atimlcl>
+                <duration>75</duration>
+            </time>
+            <fltdet>
+                <airid>5S</airid>
+                <fltno>0754</fltno>
+                <eqp>ER4</eqp>
+            </fltdet>
+            <fltav>
+                <id>Z</id>
+                <av>5</av>
+                <cur>LYD</cur>
+                <pri></pri>
+                <tax></tax>
+            </fltav>
+        </flt>
+    </itin>
+</xml>
+XML;
+        }
+    };
+
+    $provider = new class(['base_url' => 'https://booking.gair.test']) extends GlobalAirline
+    {
+        protected function applyAccuratePricing($option, int $adults, int $children, int $infants): void {}
+    };
+
+    \Closure::bind(function (VidecomClient $client): void {
+        $this->client = $client;
+    }, $provider, $provider)($client);
+
+    $results = $provider->searchAvailability([
+        'date' => '2026-04-30',
+        'origin' => 'MJI',
+        'destination' => 'BEN',
+        'adults' => 1,
+        'children' => 0,
+        'infants' => 0,
+        'qty' => 1,
+    ]);
+
+    expect($results)->toHaveCount(0);
+});
+
+test('search availability returns only requested date when provider response includes multiple dates', function () {
+    config()->set('videcom_airlines.5S.availability.classbands', false);
+
+    $client = new class extends VidecomClient
+    {
+        public function __construct() {}
+
+        public function runCommand(string $command): string
+        {
+            return <<<'XML'
+<xml>
+    <classbands />
+    <itin line="1" dep="MJI" arr="BEN" totalduration="75">
+        <flt>
+            <dep>MJI</dep>
+            <arr>BEN</arr>
+            <time>
+                <ddaylcl>2026-04-30</ddaylcl>
+                <dtimlcl>20:00:00</dtimlcl>
+                <adaylcl>2026-04-30</adaylcl>
+                <atimlcl>21:15:00</atimlcl>
+                <duration>75</duration>
+            </time>
+            <fltdet>
+                <airid>5S</airid>
+                <fltno>0754</fltno>
+                <eqp>ER4</eqp>
+            </fltdet>
+            <fltav>
+                <id>Z</id>
+                <av>5</av>
+                <cur>LYD</cur>
+                <pri>120</pri>
+                <tax>20</tax>
+            </fltav>
+        </flt>
+    </itin>
+    <itin line="2" dep="MJI" arr="BEN" totalduration="75">
+        <flt>
+            <dep>MJI</dep>
+            <arr>BEN</arr>
+            <time>
+                <ddaylcl>2026-05-02</ddaylcl>
+                <dtimlcl>14:30:00</dtimlcl>
+                <adaylcl>2026-05-02</adaylcl>
+                <atimlcl>15:45:00</atimlcl>
+                <duration>75</duration>
+            </time>
+            <fltdet>
+                <airid>5S</airid>
+                <fltno>0754</fltno>
+                <eqp>ER4</eqp>
+            </fltdet>
+            <fltav>
+                <id>Z</id>
+                <av>5</av>
+                <cur>LYD</cur>
+                <pri>120</pri>
+                <tax>20</tax>
+            </fltav>
+        </flt>
+    </itin>
+</xml>
+XML;
+        }
+    };
+
+    $provider = new class(['base_url' => 'https://booking.gair.test']) extends GlobalAirline
+    {
+        protected function applyAccuratePricing($option, int $adults, int $children, int $infants): void {}
+    };
+
+    \Closure::bind(function (VidecomClient $client): void {
+        $this->client = $client;
+    }, $provider, $provider)($client);
+
+    $results = $provider->searchAvailability([
+        'date' => '2026-04-30',
+        'origin' => 'MJI',
+        'destination' => 'BEN',
+        'adults' => 1,
+        'children' => 0,
+        'infants' => 0,
+        'qty' => 1,
+    ]);
+
+    expect($results)
+        ->toHaveCount(1)
+        ->and($results[0]->departure_time)->toStartWith('2026-04-30');
+});
+
+test('open reservation availability is cached by airline route and class', function () {
+    $client = new class extends VidecomClient
+    {
+        public int $calls = 0;
+
+        public function __construct() {}
+
+        public function runCommand(string $command): string
+        {
+            $this->calls++;
+
+            return <<<'XML'
+<PNR>
+    <FareQuote>
+        <FareStore Pax="1" Cur="LYD" Total="120.00">
+            <SegmentFS Seg="1" Fare="100.00" Tax1="20.00" Tax2="0" Tax3="0" />
+        </FareStore>
+    </FareQuote>
+</PNR>
+XML;
+        }
+    };
+
+    $provider = new class(['base_url' => 'https://booking.gair.test']) extends GlobalAirline {};
+
+    \Closure::bind(function (VidecomClient $client): void {
+        $this->client = $client;
+    }, $provider, $provider)($client);
+
+    $segment = [
+        'flight_number' => '5S0754',
+        'class' => 'H',
+        'departure_time' => '2026-04-30 20:00:00',
+        'departure_airport' => 'MJI',
+        'arrival_airport' => 'BEN',
+    ];
+
+    expect($provider->canBookOpenReservation($segment))->toBeTrue()
+        ->and($provider->canBookOpenReservation($segment))->toBeTrue()
+        ->and($client->calls)->toBe(1);
+});

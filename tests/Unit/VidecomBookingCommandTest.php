@@ -238,3 +238,52 @@ test('pricing command starts with session initializer i', function () {
         ->toStartWith('i^')
         ->toContain('-1ISHTIWY/ABDULLAHMR');
 });
+
+test('query pnr command uses uppercase X suffix', function () {
+    $client = new class([]) extends VidecomClient
+    {
+        public string $lastCommand = '';
+
+        public function __construct(array $config) {}
+
+        public function runCommand(string $command): string
+        {
+            $this->lastCommand = $command;
+
+            return '<PNR RLOC="AAJ6DU"></PNR>';
+        }
+    };
+
+    $provider = new class(['base_url' => 'http://test']) extends BaseVidecomAirline
+    {
+        public function getIataCode(): string
+        {
+            return 'YI';
+        }
+
+        public function getName(): string
+        {
+            return 'Oya';
+        }
+
+        public function getVidecomCode(): string
+        {
+            return 'OYA';
+        }
+
+        public function getAncillaryCatalog(array $flight = [], array $searchParams = []): array
+        {
+            return [];
+        }
+
+        public function setClient(VidecomClient $client): void
+        {
+            $this->client = $client;
+        }
+    };
+
+    $provider->setClient($client);
+    $provider->queryPnr('AAJ6DU');
+
+    expect($client->lastCommand)->toBe('*AAJ6DU~X');
+});

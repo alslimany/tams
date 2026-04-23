@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Landlord;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Landlord\UpdateTenantStatusRequest;
 use App\Models\Tenant;
+use App\Models\Tenant\Order;
 use App\Models\TenantProvider;
 use App\Models\User;
 use Illuminate\Http\RedirectResponse;
@@ -90,11 +91,30 @@ class TenantManagementController extends Controller
                 ->orderBy('id')
                 ->first(['id', 'name', 'email', 'last_login_at', 'last_activity_at']);
 
-            $recentBookings = \App\Models\Tenant\Booking::query()
-                ->with('provider:id,airline_name')
+            $providersByAirlineCode = $providers->keyBy('airline_code');
+
+            $recentBookings = Order::query()
+                ->with('items:id,order_id,provider_reference,item_details')
                 ->latest()
                 ->limit(5)
-                ->get(['id', 'pnr', 'status', 'tenant_provider_id', 'total_price', 'currency', 'created_at']);
+                ->get(['id', 'status', 'grand_total', 'currency', 'payment_reference', 'created_at'])
+                ->map(function (Order $order) use ($providersByAirlineCode): array {
+                    $firstItem = $order->items->first();
+                    $airlineCode = (string) data_get($firstItem?->item_details, 'airline_code', '');
+
+                    return [
+                        'id' => $order->id,
+                        'pnr' => (string) ($firstItem?->provider_reference ?: $order->payment_reference),
+                        'status' => $order->status,
+                        'provider' => $airlineCode !== ''
+                            ? ['airline_name' => $providersByAirlineCode->get($airlineCode)?->airline_name]
+                            : null,
+                        'total_price' => (float) $order->grand_total,
+                        'currency' => $order->currency,
+                        'created_at' => $order->created_at,
+                    ];
+                })
+                ->values();
 
             $users = User::query()
                 ->latest()
@@ -106,7 +126,7 @@ class TenantManagementController extends Controller
                     'active_users' => User::where('is_active', true)->count(),
                     'providers' => $providers->count(),
                     'active_providers' => $providers->where('is_active', true)->count(),
-                    'bookings' => \App\Models\Tenant\Booking::count(),
+                    'bookings' => Order::count(),
                 ],
                 'admin_user' => $admin,
                 'providers' => $providers,

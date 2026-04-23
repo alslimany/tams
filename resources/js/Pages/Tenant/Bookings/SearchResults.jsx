@@ -21,12 +21,51 @@ export default function SearchResults({ providers, query, uuid, searchDisplayMod
     const [results, setResults] = useState([]);
     const [loading, setLoading] = useState(true);
     const [providerErrors, setProviderErrors] = useState([]);
+    const [openReservationAvailability, setOpenReservationAvailability] = useState({});
+    const [openReservationAvailabilityLoading, setOpenReservationAvailabilityLoading] = useState({});
 
     const formatDuration = (minutes) => {
         if (!minutes) return "N/A";
         const h = Math.floor(minutes / 60);
         const m = minutes % 60;
         return `${h > 0 ? `${h}h ` : ""}${m}m`;
+    };
+
+    const openReservationKey = (flight, providerId) => {
+        const classCode = flight?.pricing?.class_code || flight?.segments?.[0]?.class || flight?.class || 'Y';
+        const origin = flight?.departure_airport || flight?.segments?.[0]?.departure_airport || '';
+        const destination = flight?.arrival_airport || flight?.segments?.[0]?.arrival_airport || '';
+
+        return [providerId || 'unknown', origin, destination, classCode].join(':');
+    };
+
+    const checkOpenReservationAvailability = async (flight, providerId) => {
+        const key = openReservationKey(flight, providerId);
+
+        if (!providerId || openReservationAvailability[key] !== undefined || openReservationAvailabilityLoading[key]) {
+            return;
+        }
+
+        setOpenReservationAvailabilityLoading((prev) => ({ ...prev, [key]: true }));
+
+        try {
+            const response = await axios.post(route('flights.open-reservation-availability'), {
+                provider_id: providerId,
+                flight,
+            });
+
+            setOpenReservationAvailability((prev) => ({
+                ...prev,
+                [key]: Boolean(response.data?.allowed),
+            }));
+        } catch (error) {
+            setOpenReservationAvailability((prev) => ({
+                ...prev,
+                [key]: false,
+            }));
+        } finally {
+            setOpenReservationAvailabilityLoading((prev) => ({ ...prev, [key]: false }));
+        }
     };
 
     useEffect(() => {
@@ -104,6 +143,10 @@ export default function SearchResults({ providers, query, uuid, searchDisplayMod
 
     const renderOfferCard = (flight) => {
         const provider = providers.find(p => flight.airline_name.includes(p.airline_name));
+        const isSoldOut = Number(flight.available_seats || 0) <= 0;
+        const openReservationStatusKey = openReservationKey(flight, provider?.id);
+        const openReservationAllowed = Boolean(openReservationAvailability[openReservationStatusKey]);
+        const openReservationLoadingState = Boolean(openReservationAvailabilityLoading[openReservationStatusKey]);
 
         return (
             <Card key={flight.id} className="overflow-hidden hover:border-primary/50 transition-colors shadow-sm hover:shadow-md">
@@ -271,11 +314,15 @@ export default function SearchResults({ providers, query, uuid, searchDisplayMod
                                     </DialogContent>
                                 </Dialog>
                             </div>
-                            <Dialog>
+                            <Dialog onOpenChange={(open) => {
+                                if (open) {
+                                    checkOpenReservationAvailability(flight, provider?.id);
+                                }
+                            }}>
                                 <DialogTrigger asChild>
-                                    <Button className="w-full font-bold shadow-sm" size="lg">
-                                        Select Flight
-                                        <ChevronRight className="ml-2 h-4 w-4" />
+                                    <Button className="w-full font-bold shadow-sm" size="lg" disabled={isSoldOut}>
+                                        {isSoldOut ? 'Sold Out' : 'Select Flight'}
+                                        {!isSoldOut && <ChevronRight className="ml-2 h-4 w-4" />}
                                     </Button>
                                 </DialogTrigger>
                                 <DialogContent className="max-w-2xl sm:rounded-3xl p-0 overflow-hidden">
@@ -315,16 +362,23 @@ export default function SearchResults({ providers, query, uuid, searchDisplayMod
                                         </div>
                                     </div>
                                     <div className="p-6 border-t bg-muted/30 flex flex-col sm:flex-row gap-3">
-                                        <Link
-                                            href={route('flights.select', { flight: flight, uuid: uuid, provider_id: provider?.id, reservation_type: 'QQ' })}
-                                            method="post"
-                                            as="button"
-                                            className="flex-1"
-                                        >
-                                            <Button variant="outline" size="lg" className="w-full font-bold shadow-sm rounded-full px-4 text-xs">
-                                                Open Reservation
+                                        {openReservationAllowed ? (
+                                            <Link
+                                                href={route('flights.select', { flight: flight, uuid: uuid, provider_id: provider?.id, reservation_type: 'QQ' })}
+                                                method="post"
+                                                as="button"
+                                                className="flex-1"
+                                            >
+                                                <Button variant="outline" size="lg" className="w-full font-bold shadow-sm rounded-full px-4 text-xs">
+                                                    Open Reservation
+                                                </Button>
+                                            </Link>
+                                        ) : null}
+                                        {openReservationLoadingState ? (
+                                            <Button variant="outline" size="lg" className="flex-1 font-bold shadow-sm rounded-full px-4 text-xs" disabled>
+                                                Checking Open Reservation...
                                             </Button>
-                                        </Link>
+                                        ) : null}
                                         <Link
                                             href={route('flights.select', { flight: flight, uuid: uuid, provider_id: provider?.id, reservation_type: 'NN' })}
                                             method="post"
@@ -430,13 +484,21 @@ export default function SearchResults({ providers, query, uuid, searchDisplayMod
 
                 <CardContent className="p-0">
                     <div className="divide-y">
-                        {flightGroup.offers.map((offer) => (
+                        {flightGroup.offers.map((offer) => {
+                            const isSoldOut = Number(offer.available_seats || 0) <= 0;
+                            const openReservationStatusKey = openReservationKey(offer, provider?.id);
+                            const openReservationAllowed = Boolean(openReservationAvailability[openReservationStatusKey]);
+                            const openReservationLoadingState = Boolean(openReservationAvailabilityLoading[openReservationStatusKey]);
+
+                            return (
                             <div key={offer.id} className="p-4 flex items-center justify-between hover:bg-muted/20 transition-colors">
                                 <div className="flex items-center gap-3">
                                     <Badge variant="outline" className="px-3 py-1 font-bold bg-background shadow-sm">
                                         {offer.pricing.brand_name || 'Standard'}
                                     </Badge>
-                                    <span className="text-xs text-muted-foreground font-medium">Class {offer.pricing.class_code} • {offer.available_seats} seats left</span>
+                                    <span className="text-xs text-muted-foreground font-medium">
+                                        Class {offer.pricing.class_code} • {isSoldOut ? 'Sold out' : `${offer.available_seats} seats left`}
+                                    </span>
                                 </div>
                                 <div className="flex items-center gap-6">
                                     <div className="text-right">
@@ -507,10 +569,14 @@ export default function SearchResults({ providers, query, uuid, searchDisplayMod
                                             </DialogContent>
                                         </Dialog>
                                     </div>
-                                    <Dialog>
+                                    <Dialog onOpenChange={(open) => {
+                                        if (open) {
+                                            checkOpenReservationAvailability(offer, provider?.id);
+                                        }
+                                    }}>
                                         <DialogTrigger asChild>
-                                            <Button size="sm" variant="secondary" className="font-bold border shadow-sm px-6">
-                                                Select
+                                            <Button size="sm" variant="secondary" className="font-bold border shadow-sm px-6" disabled={isSoldOut}>
+                                                {isSoldOut ? 'Sold Out' : 'Select'}
                                             </Button>
                                         </DialogTrigger>
                                         <DialogContent className="max-w-2xl sm:rounded-3xl p-0 overflow-hidden">
@@ -550,16 +616,23 @@ export default function SearchResults({ providers, query, uuid, searchDisplayMod
                                                 </div>
                                             </div>
                                             <div className="p-6 border-t bg-muted/30 flex flex-col sm:flex-row gap-3">
-                                                        <Link
-                                                            href={route('flights.select', { flight: offer, uuid: uuid, provider_id: provider?.id, reservation_type: 'QQ' })}
-                                                            method="post"
-                                                            as="button"
-                                                            className="flex-1"
-                                                        >
-                                                            <Button variant="outline" size="lg" className="w-full font-bold shadow-sm rounded-full px-4 text-xs">
-                                                                Open Reservation
+                                                        {openReservationAllowed ? (
+                                                            <Link
+                                                                href={route('flights.select', { flight: offer, uuid: uuid, provider_id: provider?.id, reservation_type: 'QQ' })}
+                                                                method="post"
+                                                                as="button"
+                                                                className="flex-1"
+                                                            >
+                                                                <Button variant="outline" size="lg" className="w-full font-bold shadow-sm rounded-full px-4 text-xs">
+                                                                    Open Reservation
+                                                                </Button>
+                                                            </Link>
+                                                        ) : null}
+                                                        {openReservationLoadingState ? (
+                                                            <Button variant="outline" size="lg" className="flex-1 font-bold shadow-sm rounded-full px-4 text-xs" disabled>
+                                                                Checking Open Reservation...
                                                             </Button>
-                                                        </Link>
+                                                        ) : null}
                                                         <Link
                                                             href={route('flights.select', { flight: offer, uuid: uuid, provider_id: provider?.id, reservation_type: 'NN' })}
                                                             method="post"
@@ -576,7 +649,8 @@ export default function SearchResults({ providers, query, uuid, searchDisplayMod
                                     </Dialog>
                                 </div>
                             </div>
-                        ))}
+                            );
+                        })}
                     </div>
                 </CardContent>
             </Card>
@@ -632,10 +706,8 @@ export default function SearchResults({ providers, query, uuid, searchDisplayMod
                             return (
                                 <Link
                                     key={offset}
-                                    href={route('flights.search')}
-                                    method="post"
-                                    data={{ ...query, date: localDateStr }}
-                                    as="button"
+                                    href={route('flights.search', { ...query, date: localDateStr })}
+                                    as="a"
                                     className={`flex-1 min-w-[60px] md:min-w-[80px] py-2 px-1 md:px-4 border-r last:border-r-0 text-center transition-colors focus:outline-none hover:bg-primary/5 ${isSelected ? 'bg-primary text-primary-foreground hover:bg-primary' : 'bg-transparent text-foreground'}`}
                                 >
                                     <div className={`text-[10px] font-bold uppercase ${isSelected ? 'text-primary-foreground/80' : 'text-muted-foreground'}`}>{dayName}</div>

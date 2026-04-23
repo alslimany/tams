@@ -2,13 +2,12 @@
 
 namespace App\Services\Airline\Videcom;
 
-use App\Actions\Orders\CreateOrderFromVidecomResponse;
-use App\Models\Tenant\Booking;
 use App\Models\User;
 use App\Services\Airline\AirlineProviderInterface;
 use App\Services\Videcom\VidecomOrderParser;
 use Carbon\Carbon;
 use Exception;
+use Illuminate\Container\Container;
 use SimpleXMLElement;
 
 abstract class BaseVidecomAirline implements AirlineProviderInterface
@@ -100,7 +99,9 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
             throw new Exception("Route {$origin}-{$destination} is not allowed for this airline account.");
         }
 
-        $command = "A{$date}{$origin}{$destination}[SalesCity={$origin},VARS=True,ClassBands=True,StartCity={$origin},SingleSeg=".($isReturn ? 'r' : 's').",FGNoAv=True,qtyseats={$qty}";
+        $classBands = $this->shouldUseClassBandsInAvailability() ? 'True' : 'false';
+
+        $command = "A{$date}{$origin}{$destination}[SalesCity={$origin},VARS=True,ClassBands={$classBands},StartCity={$origin},SingleSeg=".($isReturn ? 'r' : 's').",FGNoAv=True,qtyseats={$qty}";
 
         if ($isReturn && $returnDate) {
             $command .= ",RetDate={$returnDate}";
@@ -117,10 +118,21 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
 
         $options = VidecomResponseParser::parseAvailability($xml, $this->getIataCode(), $this->getName());
 
+        $requestedDate = Carbon::parse($rawDate)->toDateString();
+        $options = array_values(array_filter($options, function ($option) use ($requestedDate) {
+            $departureDate = Carbon::parse($option->departure_time)->toDateString();
+
+            return $departureDate === $requestedDate;
+        }));
+
         // Update pricing based on passenger types and cache
         foreach ($options as $option) {
             $this->applyAccuratePricing($option, $adults, $children, $infants);
         }
+
+        $options = array_values(array_filter($options, function ($option) {
+            return (float) ($option->pricing['total'] ?? 0) > 0;
+        }));
 
         return $options;
     }
@@ -295,6 +307,49 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
         return $this->parseXml($response);
     }
 
+    public function canBookOpenReservation(array $segment): bool
+    {
+        $origin = strtoupper((string) ($segment['origin'] ?? $segment['departure_airport'] ?? ''));
+        $destination = strtoupper((string) ($segment['dest'] ?? $segment['arrival_airport'] ?? ''));
+        $class = strtoupper(substr((string) ($segment['class'] ?? 'Y'), 0, 1));
+
+        if ($origin === '' || $destination === '' || $class === '') {
+            return false;
+        }
+
+        return OpenReservationCacheService::remember(
+            $this->getIataCode(),
+            $origin,
+            $destination,
+            $class,
+            function () use ($segment, $origin, $destination, $class): bool {
+                try {
+                    $date = strtoupper(Carbon::parse($segment['date'] ?? $segment['departure_time'] ?? now())->format('dM'));
+                    $fltNo = str_pad(preg_replace('/[^0-9]/', '', (string) ($segment['flt_no'] ?? $segment['flight_number'] ?? '100')), 4, '0', STR_PAD_LEFT);
+                    $paxEntry = '-1TEST/PAXMR';
+                    $flightEntry = "0{$this->getIataCode()}{$fltNo}{$class}{$date}{$origin}{$destination}QQ1";
+                    $command = "i^{$paxEntry}^{$flightEntry}^FG^*r~x";
+                    $response = $this->client->runCommand($command);
+                    $xml = $this->parseXml($response);
+
+                    if (! ($xml instanceof SimpleXMLElement) || ! isset($xml->FareQuote)) {
+                        return false;
+                    }
+
+                    $fareStore = $xml->FareQuote->FareStore[0] ?? null;
+                    $fareQuote = $xml->FareQuote->FQItin[0] ?? null;
+                    $total = (float) ($fareStore['Total'] ?? $fareQuote['Total'] ?? 0);
+
+                    return $total > 0;
+                } catch (\Throwable $exception) {
+                    report($exception);
+
+                    return false;
+                }
+            }
+        );
+    }
+
     /**
      * Create a booking (PNR).
      */
@@ -368,7 +423,12 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
 
     public function retrieveBooking(string $rloc)
     {
-        $response = $this->client->runCommand("*{$rloc}~x");
+        return $this->queryPnr($rloc);
+    }
+
+    public function queryPnr(string $pnr)
+    {
+        $response = $this->client->runCommand("*{$pnr}~X");
 
         return $this->parseXml($response);
     }
@@ -402,14 +462,6 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
             }
 
             $result['parsed'] = $parsed->toArray();
-
-            $booking = $this->resolveBookingContext($paymentInfo);
-            $issuer = $this->resolveIssuerContext($paymentInfo);
-
-            if ($booking && $issuer) {
-                $order = app(CreateOrderFromVidecomResponse::class)->execute($parsed, $booking, $issuer);
-                $result['order_id'] = $order->id;
-            }
         } catch (\Throwable $exception) {
             report($exception);
         }
@@ -461,21 +513,6 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
             'currency' => strtoupper((string) ($first['cur'] ?? ($preferredCurrency ?: $this->getCurrency()))),
             'balance' => (float) ($first['limit'] ?? 0),
         ];
-    }
-
-    protected function resolveBookingContext(array $paymentInfo): ?Booking
-    {
-        $booking = $paymentInfo['booking'] ?? null;
-        if ($booking instanceof Booking) {
-            return $booking;
-        }
-
-        $bookingId = $paymentInfo['booking_id'] ?? null;
-        if (is_numeric($bookingId)) {
-            return Booking::query()->find((int) $bookingId);
-        }
-
-        return null;
     }
 
     protected function resolveIssuerContext(array $paymentInfo): ?User
@@ -819,6 +856,33 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
         $days = (int) ($this->config['manual_time_limit_days'] ?? 2);
 
         return '8/'.str_pad((string) $hours, 2, '0', STR_PAD_LEFT).'00/'.now()->addDays($days)->format('dM');
+    }
+
+    protected function shouldUseClassBandsInAvailability(): bool
+    {
+        $override = data_get($this->config, 'availability.classbands');
+        if (is_bool($override)) {
+            return $override;
+        }
+
+        $airlineKeys = [
+            strtoupper($this->getIataCode()),
+            $this->getVidecomCode(),
+        ];
+
+        foreach ($airlineKeys as $key) {
+            $container = Container::getInstance();
+            if (! $container || ! $container->bound('config')) {
+                continue;
+            }
+
+            $configured = config("videcom_airlines.{$key}.availability.classbands");
+            if (is_bool($configured)) {
+                return $configured;
+            }
+        }
+
+        return true;
     }
 
     /**

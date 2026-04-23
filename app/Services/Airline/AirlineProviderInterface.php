@@ -38,6 +38,13 @@ interface AirlineProviderInterface
     public function retrieveBooking(string $rloc);
 
     /**
+     * Query a PNR snapshot from provider.
+     *
+     * @return mixed
+     */
+    public function queryPnr(string $pnr);
+
+    /**
      * Issue tickets for a booking.
      *
      * @return mixed
