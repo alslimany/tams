@@ -2,6 +2,7 @@
 
 namespace App\Services\Airline\Videcom;
 
+use App\Jobs\UpdateAirlineBalanceJob;
 use App\Models\User;
 use App\Services\Airline\AirlineProviderInterface;
 use App\Services\Videcom\VidecomOrderParser;
@@ -118,6 +119,11 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
 
         $options = VidecomResponseParser::parseAvailability($xml, $this->getIataCode(), $this->getName());
 
+        // Warm route/class cache from all returned dates first.
+        // Pricing cache key is intentionally date-agnostic, so a priced date can seed
+        // a sold-out date of the same airline+route+class.
+        $this->warmRouteClassPriceCache($options);
+
         $requestedDate = Carbon::parse($rawDate)->toDateString();
         $options = array_values(array_filter($options, function ($option) use ($requestedDate) {
             $departureDate = Carbon::parse($option->departure_time)->toDateString();
@@ -135,6 +141,48 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
         }));
 
         return $options;
+    }
+
+    /**
+     * Warm price cache for unique airline+route+class combinations using the best candidate.
+     */
+    protected function warmRouteClassPriceCache(array $options): void
+    {
+        $candidates = [];
+
+        foreach ($options as $option) {
+            $class = $option->segments[0]['class'] ?? null;
+            if (! $class) {
+                continue;
+            }
+
+            $key = implode(':', [
+                $this->getIataCode(),
+                strtoupper((string) $option->departure_airport),
+                strtoupper((string) $option->arrival_airport),
+                strtoupper((string) $class),
+            ]);
+
+            if (! isset($candidates[$key])) {
+                $candidates[$key] = $option;
+
+                continue;
+            }
+
+            // Prefer an option that has seats, as pricing probes are more reliable there.
+            if (($candidates[$key]->available_seats ?? 0) <= 0 && ($option->available_seats ?? 0) > 0) {
+                $candidates[$key] = $option;
+            }
+        }
+
+        foreach ($candidates as $candidate) {
+            $class = $candidate->segments[0]['class'] ?? null;
+            if (! $class) {
+                continue;
+            }
+
+            $this->prefetchPrices($candidate, $class);
+        }
     }
 
     /**
@@ -618,7 +666,7 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
      */
     public function void(string $rloc, ?string $ticketNo = null)
     {
-        $command = $ticketNo ? "TV{$ticketNo}" : "*{$rloc}^X1^E*R~x";
+        $command = $ticketNo ? "TV{$ticketNo}" : "*{$rloc}^EZV*R^*R~x";
         $response = $this->client->runCommand($command);
 
         return $response;
@@ -642,8 +690,20 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
     {
         $command = "*{$rloc}^X1^E*R~x";
         $response = $this->client->runCommand($command);
+        $this->dispatchDelayedAirlineBalanceUpdate();
 
         return $response;
+    }
+
+    protected function dispatchDelayedAirlineBalanceUpdate(): void
+    {
+        $tenantProviderId = (int) ($this->config['tenant_provider_id'] ?? 0);
+        if ($tenantProviderId <= 0) {
+            return;
+        }
+
+        UpdateAirlineBalanceJob::dispatch($tenantProviderId)
+            ->delay(now()->addMinutes(10));
     }
 
     /**

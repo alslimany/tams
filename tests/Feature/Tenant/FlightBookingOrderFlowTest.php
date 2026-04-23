@@ -111,12 +111,17 @@ test('flight pages are available and booking data is stored in orders', function
     expect($order)->not->toBeNull();
     expect(OrderItem::query()->count())->toBe(1);
 
-    $response->assertRedirect(route('flights.show', ['booking' => $order->id], false));
+    $response->assertRedirect(route('tickets.completed', ['booking' => $order->id], false));
 
     $orderItem = OrderItem::query()->first();
 
     expect($orderItem->provider_reference)->toBe('ABC123')
-        ->and(data_get($orderItem->item_details, 'airline_code'))->toBe('YI');
+        ->and(data_get($orderItem->item_details, 'airline_code'))->toBe('YI')
+        ->and($orderItem->status)->toBe('confirmed')
+        ->and((float) $orderItem->paid)->toBe(500.0)
+        ->and((float) $orderItem->remaining)->toBe(0.0)
+        ->and($order->status)->toBe('confirmed')
+        ->and((float) $order->amount_paid)->toBe(500.0);
 });
 
 test('flight search route accepts get requests for results date switching', function () {

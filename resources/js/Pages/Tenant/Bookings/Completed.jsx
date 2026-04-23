@@ -4,7 +4,7 @@ import TenantLayout from '@/Layouts/TenantLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/Components/ui/Card';
 import { Badge } from '@/Components/ui/Badge';
 import { Button } from '@/Components/ui/Button';
-import { CheckCircle2, Printer, ReceiptText, Plane } from 'lucide-react';
+import { CheckCircle2, Printer, ReceiptText, Plane, CalendarDays, Users } from 'lucide-react';
 import { formatMoney } from '@/lib/currency';
 
 export default function Completed({ booking, order }) {
@@ -14,6 +14,23 @@ export default function Completed({ booking, order }) {
 
     const amount = order?.grand_total ?? booking?.total_price ?? 0;
     const currency = order?.currency ?? booking?.currency ?? 'USD';
+    const segments = booking?.flight_segments ?? [];
+    const passengers = booking?.passengers ?? [];
+
+    const formatDate = (value) => {
+        if (!value) {
+            return '-';
+        }
+
+        return new Date(value).toLocaleString('en-US', {
+            weekday: 'short',
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+        });
+    };
 
     return (
         <TenantLayout>
@@ -80,20 +97,56 @@ export default function Completed({ booking, order }) {
                                 <Printer className="mr-2 h-4 w-4" /> Print Summary
                             </Button>
 
-                            {order ? (
-                                <Button asChild variant="outline" className="w-full">
-                                    <Link href={route('orders.show', { order: order.id })}>
-                                        <ReceiptText className="mr-2 h-4 w-4" /> Show Order
-                                    </Link>
-                                </Button>
-                            ) : null}
-
-                            <Button asChild variant="ghost" className="w-full">
-                                <Link href={route('flights.show', { booking: booking.id })}>Back to Booking</Link>
+                            <Button asChild variant="outline" className="w-full">
+                                <Link href={route('orders.index')}>
+                                    <ReceiptText className="mr-2 h-4 w-4" /> Go to Orders
+                                </Link>
                             </Button>
                         </CardContent>
                     </Card>
                 </div>
+
+                <Card>
+                    <CardHeader>
+                        <CardTitle className="flex items-center gap-2">
+                            <CalendarDays className="h-5 w-5 text-primary" /> Itinerary & Date
+                        </CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                        {segments.length === 0 ? (
+                            <p className="text-sm text-muted-foreground">No itinerary details available.</p>
+                        ) : (
+                            segments.map((segment) => (
+                                <div key={segment.id} className="rounded-lg border p-4">
+                                    <p className="font-semibold">{segment.origin_airport} → {segment.destination_airport}</p>
+                                    <p className="text-sm text-muted-foreground">Flight {segment.flight_number || '-'}</p>
+                                    <p className="mt-1 text-sm">Departure: {formatDate(segment.departure_time)}</p>
+                                    <p className="text-sm">Arrival: {formatDate(segment.arrival_time)}</p>
+                                </div>
+                            ))
+                        )}
+                    </CardContent>
+                </Card>
+
+                <Card>
+                    <CardHeader>
+                        <CardTitle className="flex items-center gap-2">
+                            <Users className="h-5 w-5 text-primary" /> Passengers
+                        </CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-2">
+                        {passengers.length === 0 ? (
+                            <p className="text-sm text-muted-foreground">No passenger details available.</p>
+                        ) : (
+                            passengers.map((passenger) => (
+                                <div key={passenger.id} className="flex items-center justify-between rounded-lg border p-3">
+                                    <p className="font-medium">{passenger.first_name} {passenger.last_name}</p>
+                                    <Badge variant="outline" className="capitalize">{passenger.type}</Badge>
+                                </div>
+                            ))
+                        )}
+                    </CardContent>
+                </Card>
             </div>
         </TenantLayout>
     );

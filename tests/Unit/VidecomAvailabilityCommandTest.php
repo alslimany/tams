@@ -12,13 +12,13 @@ test('global air availability command uses classbands false from config', functi
 
     $client = new class extends VidecomClient
     {
-        public string $lastCommand = '';
+        public array $commands = [];
 
         public function __construct() {}
 
         public function runCommand(string $command): string
         {
-            $this->lastCommand = $command;
+            $this->commands[] = $command;
 
             return <<<'XML'
 <xml>
@@ -72,7 +72,7 @@ XML;
         'qty' => 1,
     ]);
 
-    expect($client->lastCommand)
+    expect($client->commands[0] ?? null)
         ->toContain('ClassBands=false')
         ->and($results)->toHaveCount(1)
         ->and($results[0]->available_seats)->toBe(5)
@@ -314,6 +314,109 @@ XML;
     expect($results)
         ->toHaveCount(1)
         ->and($results[0]->departure_time)->toStartWith('2026-04-30');
+});
+
+test('search availability keeps sold out requested date when route class price can be warmed from other dates', function () {
+    config()->set('videcom_airlines.5S.availability.classbands', false);
+
+    $client = new class extends VidecomClient
+    {
+        public function __construct() {}
+
+        public function runCommand(string $command): string
+        {
+            return <<<'XML'
+<xml>
+    <classbands />
+    <itin line="1" dep="MJI" arr="BEN" totalduration="75">
+        <flt>
+            <dep>MJI</dep>
+            <arr>BEN</arr>
+            <time>
+                <ddaylcl>2026-04-24</ddaylcl>
+                <dtimlcl>09:00:00</dtimlcl>
+                <adaylcl>2026-04-24</adaylcl>
+                <atimlcl>10:15:00</atimlcl>
+                <duration>75</duration>
+            </time>
+            <fltdet>
+                <airid>5S</airid>
+                <fltno>0002</fltno>
+                <eqp>320</eqp>
+            </fltdet>
+            <fltav>
+                <id>H</id>
+                <av>0</av>
+                <cur>LYD</cur>
+                <pri></pri>
+                <tax></tax>
+            </fltav>
+        </flt>
+    </itin>
+    <itin line="2" dep="MJI" arr="BEN" totalduration="75">
+        <flt>
+            <dep>MJI</dep>
+            <arr>BEN</arr>
+            <time>
+                <ddaylcl>2026-04-25</ddaylcl>
+                <dtimlcl>17:00:00</dtimlcl>
+                <adaylcl>2026-04-25</adaylcl>
+                <atimlcl>18:15:00</atimlcl>
+                <duration>75</duration>
+            </time>
+            <fltdet>
+                <airid>5S</airid>
+                <fltno>0002</fltno>
+                <eqp>320</eqp>
+            </fltdet>
+            <fltav>
+                <id>H</id>
+                <av>81</av>
+                <cur>LYD</cur>
+                <pri>120</pri>
+                <tax>20</tax>
+            </fltav>
+        </flt>
+    </itin>
+</xml>
+XML;
+        }
+    };
+
+    $provider = new class(['base_url' => 'https://booking.gair.test']) extends GlobalAirline
+    {
+        protected function fetchAllPaxPricesFromVrs($option, string $class): array
+        {
+            if (($option->available_seats ?? 0) <= 0) {
+                throw new Exception('Cannot price sold-out flight date');
+            }
+
+            return [
+                'AD' => ['fare' => 100.0, 'tax' => 20.0],
+                'CH' => ['fare' => 0.0, 'tax' => 0.0],
+                'IN' => ['fare' => 0.0, 'tax' => 0.0],
+            ];
+        }
+    };
+
+    \Closure::bind(function (VidecomClient $client): void {
+        $this->client = $client;
+    }, $provider, $provider)($client);
+
+    $results = $provider->searchAvailability([
+        'date' => '2026-04-24',
+        'origin' => 'MJI',
+        'destination' => 'BEN',
+        'adults' => 1,
+        'children' => 0,
+        'infants' => 0,
+        'qty' => 1,
+    ]);
+
+    expect($results)
+        ->toHaveCount(1)
+        ->and($results[0]->available_seats)->toBe(0)
+        ->and((float) $results[0]->pricing['total'])->toBe(120.0);
 });
 
 test('open reservation availability is cached by airline route and class', function () {

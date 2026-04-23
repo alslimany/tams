@@ -18,7 +18,7 @@ export default function Search({ searchDisplayMode, bookings, filters, airlines,
     const [isPaxDropdownOpen, setIsPaxDropdownOpen] = useState(false);
     const paxDropdownRef = useRef(null);
 
-    const { data, setData, post, processing, errors } = useForm({
+    const { data, setData, get, processing, errors } = useForm({
         origin: searchDefaults.origin || '',
         destination: searchDefaults.destination || '',
         date: searchDefaults.date || '',
@@ -42,7 +42,7 @@ export default function Search({ searchDisplayMode, bookings, filters, airlines,
 
     const submit = (e) => {
         e.preventDefault();
-        post(route('flights.search'));
+        get(route('flights.search'));
     };
 
     const updatePax = (type, delta) => {

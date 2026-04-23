@@ -7,6 +7,7 @@ use App\Models\Tenant\AirlineTransaction;
 use App\Models\Tenant\Order;
 use App\Models\Tenant\OrderItem;
 use App\Models\TenantProvider;
+use App\Models\User;
 use App\Services\Airline\ProviderFactory;
 use App\Services\Airline\Videcom\VidecomPnrParser;
 use Bavix\Wallet\Models\Transaction as WalletTransaction;
@@ -19,7 +20,10 @@ class OrderController extends Controller
     public function index(): Response
     {
         $orders = Order::query()
-            ->with(['items:id,order_id,provider_reference,ticket_number,total,currency,status'])
+            ->with([
+                'owner',
+                'items:id,order_id,type,product_subtype,provider,provider_reference,ticket_number,total,currency,status,item_details',
+            ])
             ->withCount('items')
             ->latest('issued_at')
             ->latest('created_at')
@@ -65,9 +69,15 @@ class OrderController extends Controller
             ];
         })->values();
 
+        $voidRefundAccount = User::query()
+            ->whereIn('role', ['admin', 'manager'])
+            ->orderBy('id')
+            ->first(['id', 'name', 'email', 'role']);
+
         return Inertia::render('Orders/Show', [
             'order' => $order,
             'itemTransactions' => $itemTransactions,
+            'voidRefundAccount' => $voidRefundAccount,
         ]);
     }
 
@@ -76,12 +86,12 @@ class OrderController extends Controller
         $order->loadMissing('items');
 
         $pnrGroups = $order->items
-            ->filter(fn (OrderItem $item): bool => filled($item->provider_reference))
+            ->filter(fn (OrderItem $item): bool => filled($item->provider_reference) && ! in_array($item->status, ['voided', 'refunded'], true))
             ->groupBy('provider_reference');
 
         foreach ($pnrGroups as $pnr => $items) {
             try {
-                $airlineCode = (string) ($items->first()?->item_details['airline_code'] ?? '');
+                $airlineCode = (string) ($items->first()?->item_details['airline_code'] ?? $items->first()?->item_details['iata'] ?? '');
                 if ($airlineCode === '') {
                     continue;
                 }
@@ -106,27 +116,19 @@ class OrderController extends Controller
                 $parsed = VidecomPnrParser::parse($pnrXml);
                 $formattedPnr = VidecomPnrParser::formatForOrderDetails($pnrXml);
                 $ticketsByNumber = collect($parsed['tickets'] ?? [])->groupBy('ticket_number');
+                $fallbackTicket = collect($parsed['tickets'] ?? [])->first() ?? [];
 
                 foreach ($items as $item) {
                     $ticketNumber = (string) ($item->ticket_number ?? '');
-                    if ($ticketNumber === '' || ! $ticketsByNumber->has($ticketNumber)) {
-                        continue;
-                    }
+                    $ticketRows = $ticketNumber !== '' ? $ticketsByNumber->get($ticketNumber) : null;
+                    $firstTicket = $ticketRows?->first() ?? $fallbackTicket;
 
-                    $ticketRows = $ticketsByNumber->get($ticketNumber);
-                    $firstTicket = $ticketRows->first() ?? [];
-
-                    $details = is_array($item->item_details) ? $item->item_details : [];
-                    $details['pnr'] = $formattedPnr;
+                    $details = $formattedPnr;
                     $details['pnr_synced_at'] = now()->toIso8601String();
-                    $details['pnr_snapshot'] = [
-                        'pnr' => (string) ($parsed['rloc'] ?? $pnr),
-                        'synced_at' => now()->toIso8601String(),
-                        'ticket' => $firstTicket,
-                    ];
 
                     $item->update([
                         'provider_reference' => (string) ($parsed['rloc'] ?? $pnr),
+                        'ticket_number' => (string) ($firstTicket['ticket_number'] ?? $item->ticket_number),
                         'item_details' => $details,
                         'status' => $this->mapTicketStatus((string) ($firstTicket['status'] ?? $item->status)),
                     ]);

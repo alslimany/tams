@@ -70,7 +70,7 @@ class VidecomPnrParser
             ->map(fn (SimpleXMLElement $contact): array => [
                 'line' => (int) ($contact['Line'] ?? 0),
                 'type' => (string) ($contact['CTCID'] ?? ''),
-                'pax_id' => (int) ($contact['Pax'] ?? 0),
+                'pax_id' => max(((int) ($contact['Pax'] ?? 0)) - 1, 0),
                 'value' => trim((string) $contact),
             ])
             ->values()

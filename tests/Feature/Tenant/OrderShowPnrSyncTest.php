@@ -110,7 +110,7 @@ afterEach(function () {
     \Mockery::close();
 });
 
-test('order show queries pnr and updates ticket item snapshot', function () {
+test('order show queries pnr and updates item details with normalized pnr json', function () {
     global $state;
 
     $this->actingAs($state['user']);
@@ -123,9 +123,11 @@ test('order show queries pnr and updates ticket item snapshot', function () {
     $item = $state['item']->fresh();
 
     expect($item->status)->toBe('voided')
-        ->and(data_get($item->item_details, 'pnr.itineraries.0.from'))->toBe('MJI')
-        ->and(data_get($item->item_details, 'pnr.payments.0.reference'))->toBe('SYNC ABC TOURS01012')
-        ->and(data_get($item->item_details, 'pnr_snapshot.pnr'))->toBe('AAJ6DU')
-        ->and(data_get($item->item_details, 'pnr.tickets.0.ticket_number'))->toBe('854 3220420747')
-        ->and(data_get($item->item_details, 'pnr.is_issued'))->toBeTrue();
+        ->and(data_get($item->item_details, 'rloc'))->toBe('AAJ6DU')
+        ->and(data_get($item->item_details, 'iata'))->toBe('YI')
+        ->and(data_get($item->item_details, 'itineraries.0.from'))->toBe('MJI')
+        ->and(data_get($item->item_details, 'payments.0.reference'))->toBe('SYNC ABC TOURS01012')
+        ->and(data_get($item->item_details, 'tickets.0.ticket_number'))->toBe('854 3220420747')
+        ->and(data_get($item->item_details, 'is_issued'))->toBeTrue()
+        ->and(data_get($item->item_details, 'pnr_synced_at'))->not->toBeNull();
 });

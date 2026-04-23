@@ -35,7 +35,11 @@ class ProviderFactory
      */
     protected static function makeVidecomProvider(TenantProvider $config, array $context): AirlineProviderInterface
     {
-        $credentials = $config->credentials;
+        $credentials = array_merge($config->credentials ?? [], [
+            'tenant_provider_id' => $config->id,
+            'account_name' => $config->account_name,
+            'airline_code' => $config->airline_code,
+        ]);
 
         // Merge context into credentials if needed (e.g. selecting specific account from multi-account config)
         // For now, we assume each TenantProvider record represents ONE account.

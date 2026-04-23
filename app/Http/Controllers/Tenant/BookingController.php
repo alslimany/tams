@@ -409,13 +409,14 @@ class BookingController extends Controller
                 'owner_type' => get_class(request()->user()),
                 'owner_id' => request()->user()?->id,
                 'number' => $this->orderNumberGenerator->generate(),
-                'status' => $validated['reservation_type'] === 'NN' ? 'confirmed' : 'pending',
+                'status' => 'confirmed',
+                'issued_at' => now(),
                 'subtotal' => $totalPrice,
                 'tax_total' => 0,
                 'grand_total' => $totalPrice,
-                'amount_paid' => 0,
+                'amount_paid' => $totalPrice,
                 'currency' => strtoupper($currency),
-                'payment_method' => 'pending',
+                'payment_method' => 'airline_token',
                 'payment_reference' => $pnr,
                 'contact' => $validated['customer'],
             ]);
@@ -441,15 +442,15 @@ class BookingController extends Controller
                 'taxes' => 0,
                 'total' => $totalPrice,
                 'currency' => strtoupper($currency),
-                'status' => $validated['reservation_type'] === 'NN' ? 'confirmed' : 'pending',
-                'paid' => 0,
-                'remaining' => $totalPrice,
+                'status' => 'confirmed',
+                'paid' => $totalPrice,
+                'remaining' => 0,
             ]);
 
             return $order;
         });
 
-        return redirect()->route('flights.show', ['booking' => $order->id])->with('success', 'Booking created successfully!');
+        return redirect()->route('tickets.completed', ['booking' => $order->id])->with('success', 'Booking created successfully.');
     }
 
     public function show(Order $booking): Response

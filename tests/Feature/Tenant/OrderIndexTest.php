@@ -93,5 +93,7 @@ test('manager can view orders index list', function () {
         ->assertInertia(fn ($page) => $page
             ->component('Orders/Index')
             ->where('orders.data.0.number', 'AAA0001BB')
+            ->where('orders.data.0.owner.name', $state['user']->name)
+            ->where('orders.data.0.items.0.item_details.airline_code', 'YI')
         );
 });
