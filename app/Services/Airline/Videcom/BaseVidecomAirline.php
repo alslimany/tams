@@ -399,34 +399,84 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
             throw new Exception('Invalid round-trip pricing response from provider.');
         }
 
-        $fareQuoteNodes = $xml->xpath('//FareQuote/FQItin') ?: [];
-
-        $fqItins = collect($fareQuoteNodes)->map(fn (SimpleXMLElement $entry): array => [
-            'segment' => (int) ($entry['Seg'] ?? 0),
-            'currency' => (string) ($entry['Cur'] ?? ''),
-            'total' => (float) ($entry['Total'] ?? 0),
-            'tax' => (float) ($entry['Tax1'] ?? 0) + (float) ($entry['Tax2'] ?? 0) + (float) ($entry['Tax3'] ?? 0),
-        ])->values();
-
-        $currency = (string) ($fqItins->first()['currency'] ?? strtoupper($this->getCurrency()));
+        $currency = strtoupper($this->getCurrency());
         $returnLegPrice = 0.0;
-        $totalPrice = (float) $fqItins->sum('total');
+        $totalPrice = 0.0;
+        $taxes = [];
 
-        if ($fqItins->count() >= 2) {
-            $returnFare = $fqItins->firstWhere('segment', 2) ?? $fqItins->get(1);
-            $returnLegPrice = (float) ($returnFare['total'] ?? 0);
-        } elseif ($fqItins->count() === 1) {
-            $outboundPrice = (float) ($request->outboundPrice ?? 0);
-            $combined = (float) ($fqItins->first()['total'] ?? 0);
-            $returnLegPrice = max(0, $combined - $outboundPrice);
-            $totalPrice = $combined;
+        $segmentTotals = [];
+        $fareStores = $xml->xpath('//FareQuote/FareStore') ?: [];
+
+        foreach ($fareStores as $fareStore) {
+            $paxCode = trim((string) ($fareStore['Pax'] ?? ''));
+            if ($paxCode === '') {
+                continue;
+            }
+
+            $storeCurrency = trim((string) ($fareStore['Cur'] ?? ''));
+            if ($storeCurrency !== '') {
+                $currency = $storeCurrency;
+            }
+
+            $segmentNodes = $fareStore->SegmentFS ?? [];
+            foreach ($segmentNodes as $segmentNode) {
+                $segmentNumber = (int) ($segmentNode['Seg'] ?? 0);
+                if ($segmentNumber <= 0) {
+                    continue;
+                }
+
+                $fare = (float) ($segmentNode['Fare'] ?? 0);
+                $tax = (float) ($segmentNode['Tax1'] ?? 0) + (float) ($segmentNode['Tax2'] ?? 0) + (float) ($segmentNode['Tax3'] ?? 0);
+                $segmentTotal = $fare + $tax;
+
+                if (! isset($segmentTotals[$segmentNumber])) {
+                    $segmentTotals[$segmentNumber] = ['total' => 0.0, 'tax' => 0.0];
+                }
+
+                $segmentTotals[$segmentNumber]['total'] += $segmentTotal;
+                $segmentTotals[$segmentNumber]['tax'] += $tax;
+            }
+        }
+
+        if ($segmentTotals !== []) {
+            ksort($segmentTotals);
+            $orderedSegments = array_values($segmentTotals);
+            $totalPrice = (float) collect($orderedSegments)->sum('total');
+
+            $returnSegment = $segmentTotals[2] ?? ($orderedSegments[1] ?? null);
+            $returnLegPrice = (float) ($returnSegment['total'] ?? 0);
+            $taxes = collect($orderedSegments)->pluck('tax')->all();
+        } else {
+            $fareQuoteNodes = $xml->xpath('//FareQuote/FQItin') ?: [];
+
+            $fqItins = collect($fareQuoteNodes)->map(fn (SimpleXMLElement $entry): array => [
+                'segment' => (int) ($entry['Seg'] ?? 0),
+                'currency' => (string) ($entry['Cur'] ?? ''),
+                'total' => (float) ($entry['Total'] ?? 0),
+                'tax' => (float) ($entry['Tax1'] ?? 0) + (float) ($entry['Tax2'] ?? 0) + (float) ($entry['Tax3'] ?? 0),
+            ])->values();
+
+            $currency = (string) ($fqItins->first()['currency'] ?? $currency);
+            $totalPrice = (float) $fqItins->sum('total');
+
+            if ($fqItins->count() >= 2) {
+                $returnFare = $fqItins->firstWhere('segment', 2) ?? $fqItins->get(1);
+                $returnLegPrice = (float) ($returnFare['total'] ?? 0);
+            } elseif ($fqItins->count() === 1) {
+                $outboundPrice = (float) ($request->outboundPrice ?? 0);
+                $combined = (float) ($fqItins->first()['total'] ?? 0);
+                $returnLegPrice = max(0, $combined - $outboundPrice);
+                $totalPrice = $combined;
+            }
+
+            $taxes = $fqItins->pluck('tax')->all();
         }
 
         return new RoundTripPriceResult(
             returnLegPrice: $returnLegPrice,
             currency: $currency,
             totalPrice: $totalPrice,
-            taxes: $fqItins->pluck('tax')->all(),
+            taxes: $taxes,
         );
     }
 

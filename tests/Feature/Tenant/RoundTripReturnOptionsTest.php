@@ -1,5 +1,6 @@
 <?php
 
+use App\DTOs\Airline\RoundTripPriceResult;
 use App\Models\Tenant;
 use App\Models\TenantProvider;
 use App\Models\User;
@@ -87,6 +88,7 @@ beforeEach(function () {
             'pricing' => ['total' => 999, 'currency' => 'LYD'],
         ],
     ]);
+    $providerYI->shouldReceive('priceRoundTrip')->once()->andReturn(new RoundTripPriceResult(150, 'LYD', 350));
     $provider5S = \Mockery::mock(AirlineProviderInterface::class);
     $provider5S->shouldReceive('searchReturnLeg')->once()->withArgs(function (array $params): bool {
         return ($params['origin'] ?? null) === 'IST'
@@ -131,7 +133,7 @@ afterEach(function () {
     \Mockery::close();
 });
 
-test('return options use one-way pricing for all providers', function () {
+test('return options use round-trip pricing for same provider and one-way pricing for others', function () {
     global $state;
 
     $this->actingAs($state['user']);
@@ -169,8 +171,9 @@ test('return options use one-way pricing for all providers', function () {
     $yiAirline = $options->firstWhere('airline_code', 'YI');
     $otherAirline = $options->firstWhere('airline_code', '5S');
 
-    expect($yiAirline['pricing_method'])->toBe('oneway')
-        ->and((float) $yiAirline['pricing']['total'])->toBe(999.0)
+    expect($yiAirline['pricing_method'])->toBe('roundtrip')
+        ->and((float) $yiAirline['pricing']['total'])->toBe(150.0)
+        ->and((float) $yiAirline['pricing_total_roundtrip'])->toBe(350.0)
         ->and($otherAirline['pricing_method'])->toBe('oneway')
         ->and((float) $otherAirline['pricing']['total'])->toBe(210.0);
 });

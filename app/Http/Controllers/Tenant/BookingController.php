@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Tenant;
 
+use App\DTOs\Airline\RoundTripPriceRequest;
 use App\Http\Controllers\Controller;
 use App\Models\Airport;
 use App\Models\Tenant\Order;
@@ -289,9 +290,40 @@ class BookingController extends Controller
                 $provider = ProviderFactory::make($providerConfig);
                 $returnFlights = collect($provider->searchReturnLeg($returnSearchParams));
 
+                $outboundTotal = (float) data_get($outboundFlight, 'pricing.total', 0);
+                $passengerCounts = [
+                    'adults' => (int) ($searchParams['adults'] ?? 1),
+                    'children' => (int) ($searchParams['children'] ?? 0),
+                    'infants' => (int) ($searchParams['infants'] ?? 0),
+                ];
+
                 foreach ($returnFlights as $returnFlight) {
                     $returnFlightData = is_array($returnFlight) ? $returnFlight : (array) $returnFlight;
-                    data_set($returnFlightData, 'pricing_method', 'oneway');
+
+                    if ((int) $providerConfig->id === $outboundProviderId) {
+                        try {
+                            $pricing = $this->roundTripPriceManager->priceWithCaching(
+                                $provider,
+                                $providerConfig->airline_code,
+                                new RoundTripPriceRequest(
+                                    outboundSegment: $this->mapFlightToRoundTripSegment($outboundFlight),
+                                    returnSegment: $this->mapFlightToRoundTripSegment($returnFlightData),
+                                    passengers: $passengerCounts,
+                                    outboundPrice: $outboundTotal,
+                                )
+                            );
+
+                            data_set($returnFlightData, 'pricing.total', $pricing->returnLegPrice);
+                            data_set($returnFlightData, 'pricing.currency', $pricing->currency);
+                            data_set($returnFlightData, 'pricing_method', 'roundtrip');
+                            data_set($returnFlightData, 'pricing_total_roundtrip', $pricing->totalPrice);
+                        } catch (\Throwable $pricingException) {
+                            report($pricingException);
+                            data_set($returnFlightData, 'pricing_method', 'oneway');
+                        }
+                    } else {
+                        data_set($returnFlightData, 'pricing_method', 'oneway');
+                    }
 
                     data_set($returnFlightData, 'provider_id', $providerConfig->id);
                     $returnOptions[] = $returnFlightData;

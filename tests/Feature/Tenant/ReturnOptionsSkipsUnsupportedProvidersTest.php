@@ -1,5 +1,6 @@
 <?php
 
+use App\DTOs\Airline\RoundTripPriceResult;
 use App\Models\Tenant;
 use App\Models\TenantProvider;
 use App\Models\User;
@@ -82,6 +83,7 @@ beforeEach(function () {
             'pricing' => ['total' => 180, 'currency' => 'LYD'],
         ],
     ]);
+    $providerMock->shouldReceive('priceRoundTrip')->once()->andReturn(new RoundTripPriceResult(160, 'LYD', 360));
     \Mockery::mock('alias:App\\Services\\Airline\\ProviderFactory')
         ->shouldReceive('make')
         ->once()
@@ -129,6 +131,7 @@ test('return options ignores active providers with unsupported type', function (
     $response->assertOk()
         ->assertJsonCount(1, 'return_options')
         ->assertJsonPath('return_options.0.airline_code', 'YI')
-        ->assertJsonPath('return_options.0.pricing_method', 'oneway')
-        ->assertJsonPath('return_options.0.pricing.total', 180);
+        ->assertJsonPath('return_options.0.pricing_method', 'roundtrip')
+        ->assertJsonPath('return_options.0.pricing.total', 160)
+        ->assertJsonPath('return_options.0.pricing_total_roundtrip', 360);
 });
