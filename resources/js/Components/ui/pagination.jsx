@@ -1,7 +1,7 @@
 import * as React from "react"
 
 import { cn } from "@/Components/lib/utils"
-import { Button } from "@/Components/ui/button"
+import { Button } from "@/Components/ui/Button"
 import { ChevronLeftIcon, ChevronRightIcon, MoreHorizontalIcon } from "lucide-react"
 
 function Pagination({
