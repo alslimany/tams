@@ -192,7 +192,7 @@ export default function Show({ order, itemTransactions, voidRefundAccount }) {
         <TenantLayout>
             <Head title={`Order ${order.number}`} />
 
-            <div className="mx-auto max-w-6xl space-y-6 px-4 py-8">
+            <div className="mx-auto max-w-7xl space-y-6 px-4 py-8">
                 <Card className="overflow-hidden border-0 shadow-xl shadow-slate-200/60 ring-1 ring-slate-200/70">
                     <CardContent className="space-y-6 bg-[linear-gradient(180deg,rgba(248,250,252,0.95),rgba(255,255,255,1))] p-0">
                         <div className="flex flex-col gap-4 border-b border-slate-200/80 px-6 py-6 md:flex-row md:items-start md:justify-between">

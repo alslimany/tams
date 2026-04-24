@@ -1,17 +1,13 @@
 <?php
 
 use App\Actions\Finance\CreateOrderFromBookingData;
-use App\Actions\Finance\DetermineFinancialSource;
 use App\DTOs\Videcom\OrderItemData;
 use App\DTOs\Videcom\ParsedBookingData;
 use App\Models\Tenant;
-use App\Models\Tenant\AirlineAccount;
-use App\Models\Tenant\AirlineTransaction;
 use App\Models\Tenant\Order;
 use App\Models\Tenant\OrderItem;
 use App\Models\TenantProvider;
 use App\Models\User;
-use App\Services\Finance\CommissionCalculator;
 use App\Services\Orders\OrderNumberGenerator;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -167,7 +163,7 @@ test('it rolls back the transaction when creating a segment item fails', functio
         ],
     );
 
-    $action = new class(app(OrderNumberGenerator::class), app(DetermineFinancialSource::class), app(CommissionCalculator::class)) extends CreateOrderFromBookingData
+    $action = new class(app(OrderNumberGenerator::class)) extends CreateOrderFromBookingData
     {
         protected function buildProductDetails(OrderItemData $item, array $segment): array
         {
@@ -182,7 +178,7 @@ test('it rolls back the transaction when creating a segment item fails', functio
         ->and(OrderItem::query()->count())->toBe(0);
 });
 
-test('it calculates commission using CommissionCalculator when a provider is found', function () {
+test('it leaves commission fields untouched during initial order creation', function () {
     $connection = config('tenancy.database.central_connection', config('database.default', 'sqlite'));
 
     DB::connection($connection)->table('airport_countries')->insert([
@@ -237,12 +233,12 @@ test('it calculates commission using CommissionCalculator when a provider is fou
 
     $item = $order->items->first();
 
-    expect((float) $item->commission_percent)->toBe(10.0)
-        ->and((float) $item->commission_amount)->toBe(10.0)
-        ->and((float) $item->net_after_commission)->toBe(90.0);
+    expect((float) $item->commission_percent)->toBe(0.0)
+        ->and((float) $item->commission_amount)->toBe(0.0)
+        ->and((float) $item->net_after_commission)->toBe(100.0);
 });
 
-test('it creates an airline account transaction for own credentials', function () {
+test('it does not create airline account transactions during initial order creation', function () {
     TenantProvider::query()->create([
         'airline_code' => 'YI',
         'airline_name' => 'Yemenia',
@@ -288,23 +284,12 @@ test('it creates an airline account transaction for own credentials', function (
 
     $order = app(CreateOrderFromBookingData::class)->execute($bookingData);
 
-    expect(AirlineTransaction::query()->count())->toBe(1)
-        ->and(AirlineAccount::query()->count())->toBe(1);
-
-    $account = AirlineAccount::query()->first();
-
-    expect((float) $account->balance)->toBe(-100.0);
-
-    $transaction = AirlineTransaction::query()->first();
-
-    expect($transaction->type)->toBe('ticket_cost')
-        ->and((float) $transaction->amount)->toBe(-100.0)
-        ->and((float) $transaction->balance_after)->toBe(-100.0)
-        ->and($transaction->external_reference)->toBe('AIRL001');
+    expect(\App\Models\Tenant\AirlineTransaction::query()->count())->toBe(0)
+        ->and(\App\Models\Tenant\AirlineAccount::query()->count())->toBe(0);
 
     $item = $order->items->first();
 
-    expect($item->airline_transaction_id)->toBe($transaction->id);
+    expect($item->airline_transaction_id)->toBeNull();
 });
 
 test('it does not create airline account transaction when no provider is configured', function () {
@@ -342,6 +327,6 @@ test('it does not create airline account transaction when no provider is configu
 
     app(CreateOrderFromBookingData::class)->execute($bookingData);
 
-    expect(AirlineTransaction::query()->count())->toBe(0)
-        ->and(AirlineAccount::query()->count())->toBe(0);
+    expect(\App\Models\Tenant\AirlineTransaction::query()->count())->toBe(0)
+        ->and(\App\Models\Tenant\AirlineAccount::query()->count())->toBe(0);
 });

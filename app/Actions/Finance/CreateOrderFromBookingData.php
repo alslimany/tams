@@ -4,12 +4,8 @@ namespace App\Actions\Finance;
 
 use App\DTOs\Videcom\OrderItemData;
 use App\DTOs\Videcom\ParsedBookingData;
-use App\Models\Tenant\AirlineAccount;
 use App\Models\Tenant\Order;
-use App\Models\Tenant\OrderItem;
-use App\Models\TenantProvider;
 use App\Models\User;
-use App\Services\Finance\CommissionCalculator;
 use App\Services\Orders\OrderNumberGenerator;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -19,8 +15,6 @@ class CreateOrderFromBookingData
 {
     public function __construct(
         protected OrderNumberGenerator $orderNumberGenerator,
-        protected DetermineFinancialSource $determineFinancialSource,
-        protected CommissionCalculator $commissionCalculator,
     ) {}
 
     public function execute(ParsedBookingData $bookingData): Order
@@ -58,27 +52,12 @@ class CreateOrderFromBookingData
                 $taxParts = $this->splitAmount($item->taxes, $segmentCount);
                 $totalParts = $this->splitAmount($item->total, $segmentCount);
 
-                $financialSource = $this->determineFinancialSource->execute(
-                    (string) $item->airlineCode,
-                    $bookingData->currency,
-                );
-
                 foreach (array_values($item->segments ?: [[]]) as $index => $segment) {
                     $fare = $fareParts[$index] ?? 0.0;
                     $tax = $taxParts[$index] ?? 0.0;
                     $total = $totalParts[$index] ?? 0.0;
 
-                    $origin = (string) ($segment['departure_airport'] ?? '');
-                    $destination = (string) ($segment['arrival_airport'] ?? '');
-
-                    $commissionData = $this->commissionCalculator->calculate(
-                        $financialSource->provider ?? [],
-                        $origin,
-                        $destination,
-                        $fare,
-                    );
-
-                    $orderItem = $order->items()->create([
+                    $order->items()->create([
                         'type' => 'flight',
                         'product_type' => 'ticket',
                         'product_subtype' => 'segment',
@@ -103,17 +82,14 @@ class CreateOrderFromBookingData
                         'exchange_rate' => 1,
                         'status' => 'issued',
                         'transaction_type' => 'issue',
-                        'commission_percent' => $commissionData['percent'],
-                        'commission_amount' => $commissionData['amount'],
-                        'net_after_commission' => $commissionData['net_after_commission'],
-                        'agent_commission' => $commissionData['amount'],
+                        'commission_percent' => 0,
+                        'commission_amount' => 0,
+                        'net_after_commission' => $fare,
+                        'agent_commission' => 0,
+                        'net_commission' => 0,
                         'paid' => $total,
                         'remaining' => 0,
                     ]);
-
-                    if ($financialSource->usesOwnCredentials() && $financialSource->provider !== null) {
-                        $this->createAirlineAccountTransaction($orderItem, $financialSource->provider, $bookingData->pnr);
-                    }
 
                     $subtotal += $fare;
                     $taxTotal += $tax;
@@ -130,31 +106,6 @@ class CreateOrderFromBookingData
 
             return $order->fresh('items');
         });
-    }
-
-    protected function createAirlineAccountTransaction(OrderItem $item, TenantProvider $provider, string $pnr): void
-    {
-        $account = AirlineAccount::query()->firstOrCreate([
-            'tenant_provider_id' => $provider->id,
-            'currency' => $item->currency,
-        ]);
-
-        $currentBalance = (float) $account->balance;
-        $itemTotal = (float) $item->total;
-        $newBalance = $currentBalance - $itemTotal;
-
-        $transaction = $account->transactions()->create([
-            'type' => 'ticket_cost',
-            'amount' => -$itemTotal,
-            'balance_after' => $newBalance,
-            'order_item_id' => $item->id,
-            'external_reference' => $pnr,
-            'description' => 'Ticket for '.($item->item_details['passenger_name'] ?? 'Passenger'),
-        ]);
-
-        $account->update(['balance' => $newBalance]);
-
-        $item->update(['airline_transaction_id' => $transaction->id]);
     }
 
     protected function generateUniqueOrderNumber(): string

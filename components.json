@@ -1,11 +1,11 @@
 {
   "$schema": "https://ui.shadcn.com/schema.json",
-  "style": "nova",
+  "style": "radix-vega",
   "rsc": false,
   "tsx": false,
   "tailwind": {
     "css": "resources/css/app.css",
-    "baseColor": "mist",
+    "baseColor": "zinc",
     "cssVariables": true,
     "prefix": ""
   },
@@ -17,7 +17,7 @@
     "ui": "@/Components/ui",
     "hooks": "@/hooks"
   },
-  "menuColor": "default-translucent",
+  "menuColor": "default",
   "menuAccent": "subtle",
   "registries": {}
 }

@@ -8,6 +8,7 @@ use App\Actions\Finance\DetermineFinancialSource;
 use App\Actions\Finance\InitializeTenantLedger;
 use App\Actions\Finance\PostToLedger;
 use App\Actions\Finance\ProcessWalletTransactions;
+use App\DTOs\Videcom\OrderItemData;
 use App\DTOs\Videcom\ParsedBookingData;
 use App\Http\Controllers\Controller;
 use App\Jobs\UpdateAirlineBalanceJob;
@@ -62,30 +63,32 @@ class TicketController extends Controller
             return back()->with('error', 'An authenticated user is required to issue a ticket.');
         }
 
+        $paymentType = strtolower((string) $request->input('payment_type', 'airline_token'));
+
         try {
-            $provider->issueTicket($pnr, [
-                'type' => strtolower((string) $request->input('payment_type', 'airline_token')),
-                'user' => $issuer,
-            ]);
+            $issuedOrder = DB::transaction(function () use ($booking, $provider, $pnr, $paymentType, $issuer): Order {
+                $issueResult = $provider->issueTicket($pnr, [
+                    'type' => $paymentType,
+                    'user' => $issuer,
+                ]);
 
-            $pnrResponse = method_exists($provider, 'queryPnr')
-                ? $provider->queryPnr($pnr)
-                : $provider->retrieveBooking($pnr);
+                $pnrResponse = method_exists($provider, 'queryPnr')
+                    ? $provider->queryPnr($pnr)
+                    : $provider->retrieveBooking($pnr);
 
-            $pnrXml = $this->toXml($pnrResponse);
-            if (! $pnrXml) {
-                throw new \RuntimeException('Ticket issuance completed, but provider returned invalid PNR payload.');
-            }
+                $pnrXml = $this->toXml($pnrResponse) ?? $this->extractIssueXml($issueResult);
+                if (! $pnrXml) {
+                    throw new \RuntimeException('Ticket issuance completed, but provider returned invalid PNR payload.');
+                }
 
-            $parsedPnr = VidecomPnrParser::parse($pnrXml);
-            $formattedPnr = VidecomPnrParser::formatForOrderDetails($pnrXml);
+                $parsedPnr = VidecomPnrParser::parse($pnrXml);
+                $formattedPnr = VidecomPnrParser::formatForOrderDetails($pnrXml);
 
-            /** @var ParsedBookingData $parsedBookingData */
-            $parsedBookingData = app(VidecomOrderParser::class)->parse($pnrXml->asXML() ?: (string) $pnrResponse);
-            $parsedBookingData->paymentMethod = strtolower((string) $request->input('payment_type', 'airline_token'));
-            $parsedBookingData->paymentReference = $parsedBookingData->paymentReference ?: $pnr;
+                /** @var ParsedBookingData $parsedBookingData */
+                $parsedBookingData = $this->extractParsedBookingData($issueResult, $pnrXml, $pnrResponse);
+                $parsedBookingData->paymentMethod = $paymentType;
+                $parsedBookingData->paymentReference = $parsedBookingData->paymentReference ?: $pnr;
 
-            $issuedOrder = DB::transaction(function () use ($booking, $parsedBookingData, $parsedPnr, $formattedPnr, $issuer): Order {
                 $order = app(CreateOrderFromBookingData::class)->execute($parsedBookingData);
                 $order->update([
                     'parent_id' => $booking->id,
@@ -139,6 +142,54 @@ class TicketController extends Controller
 
             return back()->with('error', 'Failed to issue ticket and post financial transactions. The PNR void command was attempted.');
         }
+    }
+
+    protected function extractIssueXml(mixed $issueResult): ?SimpleXMLElement
+    {
+        if ($issueResult instanceof SimpleXMLElement) {
+            return $issueResult;
+        }
+
+        if (is_array($issueResult)) {
+            return $this->toXml($issueResult['xml'] ?? null);
+        }
+
+        return $this->toXml($issueResult);
+    }
+
+    protected function extractParsedBookingData(
+        mixed $issueResult,
+        SimpleXMLElement $pnrXml,
+        mixed $pnrResponse,
+    ): ParsedBookingData {
+        if (is_array($issueResult) && is_array($issueResult['parsed'] ?? null)) {
+            $parsed = $issueResult['parsed'];
+            $items = array_map(
+                fn (array $item): OrderItemData => new OrderItemData(
+                    passengerName: (string) data_get($item, 'passenger_name', 'Passenger'),
+                    segments: array_values((array) data_get($item, 'segments', [])),
+                    fare: (float) data_get($item, 'fare', 0),
+                    taxes: (float) data_get($item, 'taxes', 0),
+                    total: (float) data_get($item, 'total', 0),
+                    ticketNumber: data_get($item, 'ticket_number'),
+                    commission: (float) data_get($item, 'commission', 0),
+                    airlineCode: data_get($item, 'airline_code'),
+                    currency: (string) data_get($item, 'currency', data_get($parsed, 'currency', 'USD')),
+                ),
+                array_values((array) data_get($parsed, 'items', [])),
+            );
+
+            return new ParsedBookingData(
+                pnr: (string) data_get($parsed, 'pnr', ''),
+                grandTotal: (float) data_get($parsed, 'grand_total', 0),
+                currency: (string) data_get($parsed, 'currency', 'USD'),
+                paymentMethod: (string) data_get($parsed, 'payment_method', 'invoice'),
+                paymentReference: data_get($parsed, 'payment_reference'),
+                items: $items,
+            );
+        }
+
+        return app(VidecomOrderParser::class)->parse($pnrXml->asXML() ?: (string) $pnrResponse);
     }
 
     public function completed(Request $request, Order $booking): InertiaResponse
@@ -473,7 +524,7 @@ class TicketController extends Controller
 
     protected function voidProviderPnrSafely(mixed $provider, string $pnr): void
     {
-        if (! is_object($provider) || ! method_exists($provider, 'void')) {
+        if (! is_object($provider) || ! is_callable([$provider, 'void'])) {
             return;
         }
 

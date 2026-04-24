@@ -130,9 +130,11 @@ export default function Index({ airlines }) {
                                         {/* <CardDescription>IATA Code: {airline.id}</CardDescription> */}
                                     </div>
                                 </div>
-                                <Badge variant="outline" className="capitalize">
-                                    {airline.provider_type}
-                                </Badge>
+                                {false && ( // Future feature: show overall connection status based on recent test results
+                                    <Badge variant="outline" className="capitalize">
+                                        {airline.provider_type}
+                                    </Badge>
+                                )}
                             </div>
                         </CardHeader>
                         <CardContent>
@@ -153,14 +155,11 @@ export default function Index({ airlines }) {
                                                 </div>
                                                 {airline.provider_type === 'videcom' && (
                                                     <div className="mt-1 text-xs text-muted-foreground">
-                                                        Commission: Domestic <span className="font-medium text-foreground">{account.domestic_commission_rate || '0.00'}%</span> · International <span className="font-medium text-foreground">{account.international_commission_rate || '0.00'}%</span>
+                                                        Domestic Commission <span className="font-medium text-foreground">{account.domestic_commission_rate || '0.00'}%</span> 
+                                                        <br />
+                                                        International Commission <span className="font-medium text-foreground">{account.international_commission_rate || '0.00'}%</span>
                                                     </div>
                                                 )}
-                                                {/* <div className="mt-2 flex items-center gap-2 text-xs">
-                                                    <Badge variant={account.last_test_status === 'passed' ? 'success' : account.last_test_status === 'failed' ? 'destructive' : 'outline'}>
-                                                        {account.last_test_status || 'untested'}
-                                                    </Badge>
-                                                </div> */}
                                             </div>
                                         </div>
                                         <div className="flex items-center gap-2">

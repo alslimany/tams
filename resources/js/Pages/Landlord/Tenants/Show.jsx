@@ -75,7 +75,7 @@ export default function Show({ tenantRecord }) {
         <LandlordLayout>
             <Head title={tenantRecord.company_name || tenantRecord.id} />
 
-            <div className="mx-auto max-w-6xl p-6 space-y-8">
+            <div className="mx-auto max-w-7xl p-6 space-y-8">
                 <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
                     <div>
                         <div className="flex items-center gap-3">

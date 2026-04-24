@@ -18,7 +18,7 @@ export default function Dashboard({ stats, recentRegistrations, flightCacheSetti
         <LandlordLayout>
             <Head title="Landlord Dashboard" />
 
-            <div className="mx-auto max-w-6xl p-6 space-y-8">
+            <div className="mx-auto max-w-7xl p-6 space-y-8">
                 <div>
                     <h1 className="text-3xl font-bold tracking-tight">Landlord Dashboard</h1>
                     <p className="text-muted-foreground">Central visibility across agencies and platform operations.</p>

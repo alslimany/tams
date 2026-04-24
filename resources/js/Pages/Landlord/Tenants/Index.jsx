@@ -10,7 +10,7 @@ export default function Index({ tenants }) {
         <LandlordLayout>
             <Head title="Agencies" />
 
-            <div className="mx-auto max-w-6xl p-6 space-y-6">
+            <div className="mx-auto max-w-7xl p-6 space-y-6">
                 <div>
                     <h1 className="text-3xl font-bold tracking-tight">Agencies</h1>
                     <p className="text-muted-foreground">Review agency status, tenant health, and provider footprint.</p>

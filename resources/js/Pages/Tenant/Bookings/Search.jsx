@@ -5,7 +5,7 @@ import TenantSidebarLayout from '@/Layouts/TenantSidebarLayout';
 import { Button } from '@/Components/ui/Button';
 import { Input } from '@/Components/ui/Input';
 import { Label } from '@/Components/ui/Label';
-import { Select } from '@/Components/ui/Select';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/Components/ui/Select';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/Components/ui/Card';
 import { Badge } from '@/Components/ui/Badge';
 import { CalendarIcon, Plane, Users, Minus, Plus, ChevronDown, ArrowRightLeft, ArrowRight } from 'lucide-react';
@@ -152,7 +152,7 @@ export default function Search({ searchDisplayMode, bookings, filters, airlines,
         <TenantSidebarLayout>
             <Head title="Search Flights" />
 
-            <div className="mx-auto max-w-6xl space-y-6 py-6">
+            <div className="mx-auto max-w-7xl space-y-6 py-6">
                 <div>
                     <div>
                         <h2 className="text-2xl font-semibold tracking-tight">Search Flights</h2>
@@ -232,14 +232,18 @@ export default function Search({ searchDisplayMode, bookings, filters, airlines,
                                 <div className="space-y-2 md:col-span-3">
                                     <Label htmlFor="cabin_class">Class</Label>
                                     <Select
-                                        id="cabin_class"
                                         value={data.cabin_class}
-                                        onChange={(event) => setData('cabin_class', event.target.value)}
+                                        onValueChange={(value) => setData('cabin_class', value)}
                                     >
-                                        <option value="economy">Economy</option>
-                                        <option value="premium_economy">Premium Economy</option>
-                                        <option value="business">Business</option>
-                                        <option value="first">First Class</option>
+                                        <SelectTrigger id="cabin_class" className="w-full rounded-md border-input bg-background">
+                                            <SelectValue placeholder="Select class" />
+                                        </SelectTrigger>
+                                        <SelectContent className="rounded-md" align="start">
+                                            <SelectItem value="economy">Economy</SelectItem>
+                                            <SelectItem value="premium_economy">Premium Economy</SelectItem>
+                                            <SelectItem value="business">Business</SelectItem>
+                                            <SelectItem value="first">First Class</SelectItem>
+                                        </SelectContent>
                                     </Select>
                                 </div>
                             </div>
