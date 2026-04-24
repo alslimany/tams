@@ -13,12 +13,19 @@ class OrderItem extends Model
     {
         return [
             'item_details' => 'array',
+            'product_details' => 'array',
+            'net_fare' => 'decimal:2',
             'price' => 'decimal:2',
-            'taxes' => 'decimal:2',
+            'taxes' => 'array',
+            'total_tax' => 'decimal:2',
             'total' => 'decimal:2',
+            'total_amount' => 'decimal:2',
             'exchange_rate' => 'decimal:6',
             'net_commission' => 'decimal:2',
             'agent_commission' => 'decimal:2',
+            'commission_percent' => 'decimal:2',
+            'commission_amount' => 'decimal:2',
+            'net_after_commission' => 'decimal:2',
             'paid' => 'decimal:2',
             'remaining' => 'decimal:2',
         ];

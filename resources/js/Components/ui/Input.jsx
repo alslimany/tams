@@ -2,14 +2,13 @@ import * as React from "react"
 
 import { cn } from "@/Components/lib/utils"
 
-const Input = React.forwardRef(function Input({
+function Input({
   className,
   type,
   ...props
-}, ref) {
+}) {
   return (
     <input
-      ref={ref}
       type={type}
       data-slot="input"
       className={cn(
@@ -18,6 +17,6 @@ const Input = React.forwardRef(function Input({
       )}
       {...props} />
   );
-})
+}
 
 export { Input }

@@ -2,6 +2,13 @@
 
 namespace App\Http\Controllers\Tenant;
 
+use App\Actions\Finance\CreateAirlineTransactions;
+use App\Actions\Finance\CreateOrderFromBookingData;
+use App\Actions\Finance\DetermineFinancialSource;
+use App\Actions\Finance\InitializeTenantLedger;
+use App\Actions\Finance\PostToLedger;
+use App\Actions\Finance\ProcessWalletTransactions;
+use App\DTOs\Videcom\ParsedBookingData;
 use App\Http\Controllers\Controller;
 use App\Jobs\UpdateAirlineBalanceJob;
 use App\Models\Tenant\Order;
@@ -11,6 +18,8 @@ use App\Models\User;
 use App\Services\Airline\ProviderFactory;
 use App\Services\Airline\Videcom\VidecomPnrParser;
 use App\Services\Commission\TenantProviderCommissionCalculator;
+use App\Services\Finance\CommissionCalculator;
+use App\Services\Videcom\VidecomOrderParser;
 use Carbon\Carbon;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\RedirectResponse;
@@ -48,79 +57,88 @@ class TicketController extends Controller
 
         $provider = ProviderFactory::make($providerConfig);
 
+        $issuer = $request->user();
+        if (! $issuer instanceof User) {
+            return back()->with('error', 'An authenticated user is required to issue a ticket.');
+        }
+
         try {
             $provider->issueTicket($pnr, [
                 'type' => strtolower((string) $request->input('payment_type', 'airline_token')),
-                'user' => $request->user(),
+                'user' => $issuer,
             ]);
-
-            $this->dispatchDelayedAirlineBalanceUpdate($providerConfig);
 
             $pnrResponse = method_exists($provider, 'queryPnr')
                 ? $provider->queryPnr($pnr)
                 : $provider->retrieveBooking($pnr);
+
+            $pnrXml = $this->toXml($pnrResponse);
+            if (! $pnrXml) {
+                throw new \RuntimeException('Ticket issuance completed, but provider returned invalid PNR payload.');
+            }
+
+            $parsedPnr = VidecomPnrParser::parse($pnrXml);
+            $formattedPnr = VidecomPnrParser::formatForOrderDetails($pnrXml);
+
+            /** @var ParsedBookingData $parsedBookingData */
+            $parsedBookingData = app(VidecomOrderParser::class)->parse($pnrXml->asXML() ?: (string) $pnrResponse);
+            $parsedBookingData->paymentMethod = strtolower((string) $request->input('payment_type', 'airline_token'));
+            $parsedBookingData->paymentReference = $parsedBookingData->paymentReference ?: $pnr;
+
+            $issuedOrder = DB::transaction(function () use ($booking, $parsedBookingData, $parsedPnr, $formattedPnr, $issuer): Order {
+                $order = app(CreateOrderFromBookingData::class)->execute($parsedBookingData);
+                $order->update([
+                    'parent_id' => $booking->id,
+                ]);
+
+                $this->applyFinancialSourceAndCommission($order);
+
+                $financialSources = $order->items
+                    ->pluck('item_details.financial_source')
+                    ->filter(fn ($value): bool => is_string($value) && $value !== '')
+                    ->unique();
+
+                if ($financialSources->contains('master_agency_supply')) {
+                    app(ProcessWalletTransactions::class)->execute($order, $issuer);
+                }
+
+                if ($financialSources->contains('own_credentials')) {
+                    app(CreateAirlineTransactions::class)->execute($order);
+                }
+
+                app(InitializeTenantLedger::class)->execute((string) $order->currency);
+                app(PostToLedger::class)->execute($order, includeOwnCredentials: true);
+
+                $this->syncBookingIssueSnapshot($booking, $order, $parsedPnr, $formattedPnr);
+
+                $order->statusLogs()->create([
+                    'old_status' => (string) $booking->status,
+                    'new_status' => 'issued',
+                    'user_id' => $issuer->id,
+                    'comment' => "Ticket issued and financials posted for PNR {$parsedBookingData->pnr}.",
+                ]);
+
+                return $order->fresh('items');
+            });
+
+            $this->dispatchDelayedAirlineBalanceUpdate($providerConfig);
+
+            return redirect()
+                ->route('tickets.completed', ['booking' => $issuedOrder->id, 'order' => $issuedOrder->id])
+                ->with('success', 'Ticket issued successfully.');
         } catch (ConnectionException $exception) {
             report($exception);
+
+            $this->voidProviderPnrSafely($provider, $pnr);
 
             return back()->with('error', 'Airline ticket issuance timed out. Please try again.');
         } catch (\Throwable $exception) {
             report($exception);
 
-            return back()->with('error', 'Failed to issue ticket with the airline provider.');
+            $this->voidProviderPnrSafely($provider, $pnr);
+
+            return back()->with('error', 'Failed to issue ticket and post financial transactions. The PNR void command was attempted.');
         }
-
-        $pnrXml = $this->toXml($pnrResponse);
-        if (! $pnrXml) {
-            return back()->with('error', 'Ticket issuance completed, but provider returned invalid PNR payload.');
-        }
-
-        $parsed = VidecomPnrParser::parse($pnrXml);
-        $formatted = VidecomPnrParser::formatForOrderDetails($pnrXml);
-        $ticketsByNumber = collect($parsed['tickets'] ?? [])->groupBy('ticket_number');
-        $agentCommission = $this->tenantProviderCommissionCalculator->calculateForFormattedOrderDetails($providerConfig, $formatted);
-        $flightType = $this->tenantProviderCommissionCalculator->resolveFlightTypeFromOrderDetails($formatted);
-        $commissionAllocations = $this->allocateCommissionAcrossItems($booking->items, $agentCommission);
-
-        foreach ($booking->items->values() as $index => $item) {
-            $ticketNumber = (string) ($item->ticket_number ?? '');
-            $ticketRows = $ticketNumber !== '' ? $ticketsByNumber->get($ticketNumber) : null;
-
-            if (! $ticketRows instanceof Collection || $ticketRows->isEmpty()) {
-                $ticketRows = $ticketsByNumber->first();
-            }
-
-            $ticketData = $ticketRows?->first() ?? [];
-            $resolvedTicketNumber = (string) ($ticketData['ticket_number'] ?? $ticketNumber);
-
-            $details = $formatted;
-            $details['pnr_synced_at'] = now()->toIso8601String();
-            $details['commission'] = [
-                'flight_type' => $flightType,
-                'fare_total' => (float) data_get($formatted, 'total_fare', 0),
-                'agent_commission' => $commissionAllocations[$index] ?? 0.0,
-            ];
-
-            $item->update([
-                'provider_reference' => (string) ($parsed['rloc'] ?? $pnr),
-                'ticket_number' => $resolvedTicketNumber !== '' ? $resolvedTicketNumber : $item->ticket_number,
-                'item_details' => $details,
-                'status' => 'issued',
-                'remaining' => 0,
-                'paid' => (float) $item->total,
-                'agent_commission' => $commissionAllocations[$index] ?? 0.0,
-                'net_commission' => $commissionAllocations[$index] ?? 0.0,
-            ]);
-        }
-
-        $booking->update([
-            'status' => 'confirmed',
-            'issued_at' => now(),
-            'amount_paid' => (float) $booking->grand_total,
-        ]);
-
-        return redirect()
-            ->route('tickets.completed', ['booking' => $booking->id, 'order' => $booking->id])
-            ->with('success', 'Ticket issued successfully.');
     }
 
     public function completed(Request $request, Order $booking): InertiaResponse
@@ -415,6 +433,107 @@ class TicketController extends Controller
     {
         UpdateAirlineBalanceJob::dispatch($provider->id)
             ->delay(now()->addMinutes(10));
+    }
+
+    protected function applyFinancialSourceAndCommission(Order $order): void
+    {
+        $order->loadMissing('items');
+
+        $financialSourceAction = app(DetermineFinancialSource::class);
+        $commissionCalculator = app(CommissionCalculator::class);
+
+        foreach ($order->items as $item) {
+            $segment = (array) data_get($item->item_details, 'segment', data_get($item->product_details, 'segment', []));
+            $origin = (string) ($segment['departure_airport'] ?? '');
+            $destination = (string) ($segment['arrival_airport'] ?? '');
+            $airlineCode = (string) data_get($item->item_details, 'airline_code', data_get($item->product_details, 'airline_code', ''));
+
+            $source = $financialSourceAction->execute($airlineCode, (string) $item->currency);
+            $commission = $commissionCalculator->calculate(
+                $source->provider ?? [],
+                $origin,
+                $destination,
+                (float) $item->net_fare,
+            );
+
+            $details = (array) $item->item_details;
+            $details['financial_source'] = $source->usesOwnCredentials() ? 'own_credentials' : 'master_agency_supply';
+            $details['financial_provider_id'] = $source->provider?->id;
+
+            $item->fill([
+                'commission_percent' => $commission['percent'],
+                'commission_amount' => $commission['amount'],
+                'net_after_commission' => $commission['net_after_commission'],
+                'agent_commission' => $commission['amount'],
+                'net_commission' => $commission['amount'],
+                'item_details' => $details,
+            ])->save();
+        }
+    }
+
+    protected function voidProviderPnrSafely(mixed $provider, string $pnr): void
+    {
+        if (! is_object($provider) || ! method_exists($provider, 'void')) {
+            return;
+        }
+
+        try {
+            $provider->void($pnr);
+        } catch (\Throwable $exception) {
+            report($exception);
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $parsedPnr
+     * @param  array<string, mixed>  $formattedPnr
+     */
+    protected function syncBookingIssueSnapshot(Order $booking, Order $issuedOrder, array $parsedPnr, array $formattedPnr): void
+    {
+        $booking->loadMissing('items');
+
+        $ticketsByNumber = collect($parsedPnr['tickets'] ?? [])->groupBy('ticket_number');
+        $commissionAllocations = $this->allocateCommissionAcrossItems(
+            $booking->items,
+            (float) $issuedOrder->items->sum(fn (OrderItem $item): float => (float) $item->agent_commission),
+        );
+
+        foreach ($booking->items->values() as $index => $item) {
+            $ticketNumber = (string) ($item->ticket_number ?? '');
+            $ticketRows = $ticketNumber !== '' ? $ticketsByNumber->get($ticketNumber) : null;
+
+            if (! $ticketRows instanceof Collection || $ticketRows->isEmpty()) {
+                $ticketRows = $ticketsByNumber->first();
+            }
+
+            $ticketData = $ticketRows?->first() ?? [];
+            $resolvedTicketNumber = (string) ($ticketData['ticket_number'] ?? $ticketNumber);
+
+            $details = $formattedPnr;
+            $details['pnr_synced_at'] = now()->toIso8601String();
+            $details['commission'] = [
+                'flight_type' => (string) data_get($formattedPnr, 'flight_type', ''),
+                'fare_total' => (float) data_get($formattedPnr, 'total_fare', 0),
+                'agent_commission' => $commissionAllocations[$index] ?? 0.0,
+            ];
+
+            $item->update([
+                'provider_reference' => (string) ($parsedPnr['rloc'] ?? $item->provider_reference),
+                'ticket_number' => $resolvedTicketNumber !== '' ? $resolvedTicketNumber : $item->ticket_number,
+                'item_details' => $details,
+                'status' => 'issued',
+                'remaining' => 0,
+                'paid' => (float) $item->total,
+                'agent_commission' => $commissionAllocations[$index] ?? 0.0,
+                'net_commission' => $commissionAllocations[$index] ?? 0.0,
+            ]);
+        }
+
+        $booking->update([
+            'status' => 'confirmed',
+            'issued_at' => now(),
+            'amount_paid' => (float) $booking->grand_total,
+        ]);
     }
 
     /**

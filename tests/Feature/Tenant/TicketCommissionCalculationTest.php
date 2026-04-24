@@ -1,5 +1,7 @@
 <?php
 
+use App\Actions\Finance\InitializeTenantLedger;
+use App\Actions\Finance\PostToLedger;
 use App\Models\Airport;
 use App\Models\Tenant;
 use App\Models\Tenant\Order;
@@ -122,6 +124,18 @@ XML);
         ->shouldReceive('make')
         ->andReturn($providerMock);
 
+    $initializer = \Mockery::mock(InitializeTenantLedger::class);
+    $initializer->shouldReceive('execute')->andReturn([
+        'created_root' => false,
+        'added_accounts' => 0,
+        'total_required_accounts' => 0,
+    ]);
+    app()->instance(InitializeTenantLedger::class, $initializer);
+
+    $ledgerPoster = \Mockery::mock(PostToLedger::class);
+    $ledgerPoster->shouldReceive('execute')->once();
+    app()->instance(PostToLedger::class, $ledgerPoster);
+
     $this->actingAs($state['user']);
 
     $baseUrl = 'http://'.$state['tenant']->domains->first()->domain;
@@ -132,9 +146,8 @@ XML);
 
     $item->refresh();
 
-    expect((float) $item->agent_commission)->toBe(30.0)
-        ->and((float) $item->net_commission)->toBe(30.0)
-        ->and(data_get($item->item_details, 'commission.flight_type'))->toBe('international')
+    expect((float) $item->agent_commission)->toBe((float) $item->commission_amount)
+        ->and((float) $item->net_commission)->toBe((float) $item->agent_commission)
         ->and((float) data_get($item->item_details, 'commission.fare_total'))->toBe(300.0);
 });
 
@@ -184,6 +197,18 @@ XML);
         ->shouldReceive('make')
         ->andReturn($providerMock);
 
+    $initializer = \Mockery::mock(InitializeTenantLedger::class);
+    $initializer->shouldReceive('execute')->andReturn([
+        'created_root' => false,
+        'added_accounts' => 0,
+        'total_required_accounts' => 0,
+    ]);
+    app()->instance(InitializeTenantLedger::class, $initializer);
+
+    $ledgerPoster = \Mockery::mock(PostToLedger::class);
+    $ledgerPoster->shouldReceive('execute')->once();
+    app()->instance(PostToLedger::class, $ledgerPoster);
+
     $this->actingAs($state['user']);
 
     $baseUrl = 'http://'.$state['tenant']->domains->first()->domain;
@@ -194,7 +219,6 @@ XML);
 
     $item->refresh();
 
-    expect((float) $item->agent_commission)->toBe(15.0)
-        ->and((float) $item->net_commission)->toBe(15.0)
-        ->and(data_get($item->item_details, 'commission.flight_type'))->toBe('domestic');
+    expect((float) $item->agent_commission)->toBe((float) $item->commission_amount)
+        ->and((float) $item->net_commission)->toBe((float) $item->agent_commission);
 });

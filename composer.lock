@@ -4,8 +4,134 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "807baab2ba94bf019a84b03629093f1a",
+    "content-hash": "23ae67ae40cd0f2958dbfe86b25c89f8",
     "packages": [
+        {
+            "name": "abivia/hydration",
+            "version": "2.7.0",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/abivia/hydration.git",
+                "reference": "074b62737bbe9f8d35040a31c6adaab77239b452"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/abivia/hydration/zipball/074b62737bbe9f8d35040a31c6adaab77239b452",
+                "reference": "074b62737bbe9f8d35040a31c6adaab77239b452",
+                "shasum": ""
+            },
+            "require": {
+                "ext-json": "*",
+                "php": "^8.1"
+            },
+            "require-dev": {
+                "phpunit/phpunit": "^9.0-stable",
+                "symfony/yaml": "^5.1@dev",
+                "vimeo/psalm": "^4.10.0"
+            },
+            "suggest": {
+                "symfony/yaml": "For parsing YAML source files"
+            },
+            "type": "library",
+            "autoload": {
+                "psr-4": {
+                    "Abivia\\Hydration\\": "src/hydration"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "Alan Langford",
+                    "email": "hydration@abivia.com"
+                }
+            ],
+            "description": "Support for creating complex nested class structures from JSON/YAML objects.",
+            "homepage": "https://github.com/abivia/hydration",
+            "keywords": [
+                "config",
+                "configuration",
+                "deserialization",
+                "hydration",
+                "json",
+                "yaml"
+            ],
+            "support": {
+                "issues": "https://github.com/abivia/hydration/issues",
+                "source": "https://github.com/abivia/hydration/tree/2.7.0"
+            },
+            "time": "2025-03-26T05:14:31+00:00"
+        },
+        {
+            "name": "abivia/ledger",
+            "version": "1.11.2",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/abivia/ledger.git",
+                "reference": "4cc079c7fea1d796b86cfccd1aea8825ca3186a3"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/abivia/ledger/zipball/4cc079c7fea1d796b86cfccd1aea8825ca3186a3",
+                "reference": "4cc079c7fea1d796b86cfccd1aea8825ca3186a3",
+                "shasum": ""
+            },
+            "require": {
+                "abivia/hydration": "^2.5",
+                "ext-bcmath": "*",
+                "ext-json": "*",
+                "ext-pdo": "*",
+                "php": "^8.0|^8.1"
+            },
+            "require-dev": {
+                "doctrine/dbal": "^3.2",
+                "ext-pdo_sqlite": "*",
+                "nunomaduro/phpinsights": "^2.6",
+                "opis/json-schema": "^2.2",
+                "orchestra/testbench": "^6.0",
+                "phpunit/phpunit": "^9.5.8"
+            },
+            "type": "library",
+            "extra": {
+                "laravel": {
+                    "providers": [
+                        "Abivia\\Ledger\\LedgerServiceProvider"
+                    ]
+                }
+            },
+            "autoload": {
+                "psr-4": {
+                    "Abivia\\Ledger\\": "src/"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "Alan Langford",
+                    "email": "ledger@abivia.com",
+                    "homepage": "https://ledger.abivia.com",
+                    "role": "Developer"
+                }
+            ],
+            "description": "General Ledger and Journal Accounting Package for Laravel with JSON API",
+            "keywords": [
+                "Accounting",
+                "abivia",
+                "journal",
+                "laravel",
+                "ledger"
+            ],
+            "support": {
+                "issues": "https://github.com/abivia/ledger/issues",
+                "source": "https://github.com/abivia/ledger/tree/1.11.2"
+            },
+            "time": "2024-04-18T05:24:16+00:00"
+        },
         {
             "name": "bacon/bacon-qr-code",
             "version": "v3.0.3",

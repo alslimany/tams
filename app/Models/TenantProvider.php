@@ -19,6 +19,8 @@ class TenantProvider extends Model
         'last_used_at',
         'domestic_commission_rate',
         'international_commission_rate',
+        'commission_domestic',
+        'commission_international',
     ];
 
     protected $casts = [
@@ -28,5 +30,7 @@ class TenantProvider extends Model
         'last_used_at' => 'datetime',
         'domestic_commission_rate' => 'decimal:2',
         'international_commission_rate' => 'decimal:2',
+        'commission_domestic' => 'decimal:2',
+        'commission_international' => 'decimal:2',
     ];
 }
