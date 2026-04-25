@@ -5,7 +5,7 @@ import TenantNavbarLayout from '@/Layouts/TenantNavbarLayout';
 import { Button } from "@/Components/ui/Button";
 import { Card, CardContent } from "@/Components/ui/Card";
 import { Badge } from "@/Components/ui/Badge";
-import { Plane, Loader2, ChevronRight, Info, Clock, Briefcase, User, ReceiptText, ArrowRightLeft } from "lucide-react";
+import { Plane, Loader2, ChevronRight, Info, Clock, Briefcase, User, ReceiptText, ArrowRightLeft, ChevronDown, ChevronUp } from "lucide-react";
 import {
     Dialog,
     DialogContent,
@@ -15,7 +15,9 @@ import {
     DialogTrigger,
 } from "@/Components/ui/Dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/Components/ui/Table";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/Components/ui/Tabs";
 import { formatMoney, formatMoneyValue } from '@/lib/currency';
+import FlightGroupCard from '@/Components/FlightGroupCard';
 
 export default function SearchResults({ providers, query, uuid, searchDisplayMode }) {
     const isRoundTripSearch = Boolean(query?.is_return);
@@ -669,146 +671,6 @@ export default function SearchResults({ providers, query, uuid, searchDisplayMod
         );
     };
 
-    const renderFlightWithOffers = (flightGroup) => {
-        const provider = findProviderForFlight(flightGroup);
-
-        return (
-            <Card key={`${flightGroup.airline_code}-${flightGroup.flight_number}`} className="overflow-hidden shadow-md border-2 border-muted/50">
-                <div className="bg-muted/10 p-6 flex flex-col md:flex-row md:items-center justify-between gap-6 border-b">
-                    <div className="flex gap-4 items-center">
-                        <div className="bg-primary/5 p-1 rounded-sm shrink-0 flex items-center justify-center min-w-12 min-h-12">
-                            {flightGroup.airline_code ? (
-                                <img src={route('api.airlines.logo', { code: flightGroup.airline_code, variant: 'icon-transparent', radius: 8 })} alt={flightGroup.airline_name} className="h-10 w-10 object-contain mix-blend-multiply dark:mix-blend-normal" onError={(e) => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'block'; }} />
-                            ) : null}
-                            <Plane className="h-6 w-6 text-primary" style={{ display: flightGroup.airline_code ? 'none' : 'block' }} />
-                        </div>
-                        <div>
-                            <p className="text-xl font-bold">{flightGroup.airline_name.split(' (')[0]}</p>
-                            <p className="text-xs text-muted-foreground font-bold uppercase tracking-widest">{flightGroup.airline_code}{flightGroup.flight_number}</p>
-                        </div>
-                    </div>
-
-                    {renderFlightDetailsDialog(flightGroup, 'Flight Details')}
-
-                    <div className="flex-1 max-w-md grid grid-cols-2 gap-12">
-                        <div className="text-left">
-                            <p className="text-3xl font-black">{flightGroup.departure_time.split(' ')[1].substring(0, 5)}</p>
-                            <p className="text-sm font-bold text-muted-foreground">{flightGroup.departure_airport}</p>
-                        </div>
-                        <div className="text-right">
-                            <p className="text-3xl font-black">{flightGroup.arrival_time.split(' ')[1].substring(0, 5)}</p>
-                            <p className="text-sm font-bold text-muted-foreground">{flightGroup.arrival_airport}</p>
-                        </div>
-                    </div>
-                </div>
-
-                <CardContent className="p-0">
-                    <div className="divide-y">
-                        {flightGroup.offers.map((offer) => {
-                            const isSoldOut = Number(offer.available_seats || 0) <= 0;
-                            const openReservationStatusKey = openReservationKey(offer, provider?.id);
-                            const openReservationAllowed = Boolean(openReservationAvailability[openReservationStatusKey]);
-                            const openReservationLoadingState = Boolean(openReservationAvailabilityLoading[openReservationStatusKey]);
-
-                            return (
-                            <div key={offer.id} className="p-4 flex items-center justify-between hover:bg-muted/20 transition-colors">
-                                <div className="flex items-center gap-3">
-                                    <Badge variant="outline" className="px-3 py-1 font-bold bg-background shadow-sm">
-                                        {offer.pricing.brand_name || 'Standard'}
-                                    </Badge>
-                                    <span className="text-xs text-muted-foreground font-medium">
-                                        Class {offer.pricing.class_code} • {isSoldOut ? 'Sold out' : `${offer.available_seats} seats left`}
-                                    </span>
-                                </div>
-                                <div className="flex items-center gap-6">
-                                    <div className="text-right">
-                                        <p className="text-lg font-bold">
-                                            {formatMoneyValue(offer.pricing.total)} <span className="text-xs text-muted-foreground">{offer.pricing.currency}</span>
-                                        </p>
-                                        {renderPriceDetailsDialog(offer, 'Price Details')}
-                                    </div>
-                                    <Dialog
-                                        open={openOfferSummaryKey === offerSummaryKey(offer, provider?.id)}
-                                        onOpenChange={(open) => {
-                                            setOpenOfferSummaryKey(open ? offerSummaryKey(offer, provider?.id) : null);
-
-                                        if (open) {
-                                            checkOpenReservationAvailability(offer, provider?.id);
-                                        }
-                                    }}>
-                                        <DialogTrigger asChild>
-                                            <Button size="sm" variant="secondary" className="font-bold border shadow-sm px-6" disabled={isSoldOut}>
-                                                {isSoldOut ? 'Sold Out' : 'Select'}
-                                            </Button>
-                                        </DialogTrigger>
-                                        <DialogContent className="max-w-2xl sm:rounded-3xl p-0 overflow-hidden">
-                                            <div className="bg-primary/5 p-6 border-b">
-                                                <h2 className="text-2xl font-black">Offer Summary</h2>
-                                                <p className="text-muted-foreground font-medium text-sm">Review your selected class before proceeding</p>
-                                            </div>
-                                            <div className="p-6 space-y-6 max-h-[60vh] overflow-y-auto">
-                                                <div className="flex justify-between items-center bg-card border rounded-2xl p-4 shadow-sm">
-                                                    <div>
-                                                        <p className="text-sm font-bold text-muted-foreground">Itinerary & Fare</p>
-                                                        <p className="text-xl font-black">{flightGroup.departure_airport} <ArrowRightLeft className="inline shrink-0 h-4 w-4 mx-1" /> {flightGroup.arrival_airport}</p>
-                                                        <p className="text-sm font-medium">{offer.pricing.brand_name || 'Standard'} • Class {offer.pricing.class_code}</p>
-                                                    </div>
-                                                    <div className="text-right">
-                                                        <p className="text-sm font-bold text-muted-foreground">Grand Total</p>
-                                                        <p className="text-2xl font-black text-primary">{formatMoneyValue(offer.pricing.total)} <span className="text-sm">{offer.pricing.currency}</span></p>
-                                                    </div>
-                                                </div>
-
-                                                <div>
-                                                    <p className="font-bold mb-3 uppercase tracking-widest text-xs text-muted-foreground">Flight Segments</p>
-                                                    <div className="space-y-3">
-                                                        {flightGroup.segments.map((seg, i) => (
-                                                            <div key={i} className="flex gap-4 p-4 border rounded-xl bg-muted/10 items-center">
-                                                                <Plane className="h-5 w-5 text-primary" />
-                                                                <div className="flex-1">
-                                                                    <div className="flex justify-between font-black text-sm">
-                                                                        <span>{seg.departure_airport} ({seg.departure_time.split(' ')[1].substring(0, 5)})</span>
-                                                                        <span>{seg.arrival_airport} ({seg.arrival_time.split(' ')[1].substring(0, 5)})</span>
-                                                                    </div>
-                                                                    <p className="text-xs text-muted-foreground font-medium mt-1">Duration: {formatDuration(seg.duration)} • {seg.aircraft || 'Standard'} • Class {offer.pricing.class_code}</p>
-                                                                </div>
-                                                            </div>
-                                                        ))}
-                                                    </div>
-                                                </div>
-                                            </div>
-                                            <div className="p-6 border-t bg-muted/30 flex flex-col sm:flex-row gap-3">
-                                                        {openReservationAllowed ? (
-                                                            <div className="flex-1">
-                                                                <Button variant="outline" size="lg" className="w-full font-bold shadow-sm rounded-full px-4 text-xs" onClick={() => handleOfferSelection(offer, provider?.id, 'QQ')}>
-                                                                    Open Reservation
-                                                                </Button>
-                                                            </div>
-                                                        ) : null}
-                                                        {openReservationLoadingState ? (
-                                                            <Button variant="outline" size="lg" className="flex-1 font-bold shadow-sm rounded-full px-4 text-xs" disabled>
-                                                                Checking Open Reservation...
-                                                            </Button>
-                                                        ) : null}
-                                                        <div className="flex-1">
-                                                            <Button size="lg" className="w-full font-bold shadow-md rounded-full px-4 text-xs" onClick={() => handleOfferSelection(offer, provider?.id, 'NN')}>
-                                                                Confirmed Reservation
-                                                                <ChevronRight className="ml-2 h-4 w-4" />
-                                                            </Button>
-                                                        </div>
-                                                    </div>
-                                        </DialogContent>
-                                    </Dialog>
-                                </div>
-                            </div>
-                            );
-                        })}
-                    </div>
-                </CardContent>
-            </Card>
-        );
-    };
-
     return (
         <TenantNavbarLayout>
             <Head title={`Flights to ${activeDestination}`} />
@@ -983,7 +845,19 @@ export default function SearchResults({ providers, query, uuid, searchDisplayMod
 
                     {!isRoundTripSearch && selectedOneWayFlight ? null : activeResults.length > 0 ? (
                         searchDisplayMode === 'per_flight'
-                            ? groupedFlights.map(renderFlightWithOffers)
+                            ? groupedFlights.map((flightGroup) => (
+                                <FlightGroupCard
+                                    key={`${flightGroup.airline_code}-${flightGroup.flight_number}`}
+                                    flightGroup={flightGroup}
+                                    providers={providers}
+                                    openReservationAvailability={openReservationAvailability}
+                                    openReservationAvailabilityLoading={openReservationAvailabilityLoading}
+                                    openOfferSummaryKey={openOfferSummaryKey}
+                                    setOpenOfferSummaryKey={setOpenOfferSummaryKey}
+                                    checkOpenReservationAvailability={checkOpenReservationAvailability}
+                                    handleOfferSelection={handleOfferSelection}
+                                />
+                            ))
                             : activeResults.map(renderOfferCard)
                     ) : (
                         !loading && !loadingReturnOptions && (
