@@ -1,6 +1,6 @@
 import React from 'react';
 import { Head, Link } from '@inertiajs/react';
-import TenantLayout from '@/Layouts/TenantLayout';
+import TenantNavbarLayout from '@/Layouts/TenantNavbarLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/Components/ui/Card';
 import { Badge } from '@/Components/ui/Badge';
 import { Button } from '@/Components/ui/Button';
@@ -33,7 +33,7 @@ export default function Completed({ booking, order }) {
     };
 
     return (
-        <TenantLayout>
+        <TenantNavbarLayout>
             <Head title={`Booking ${booking.pnr} Completed`} />
 
             <div className="mx-auto max-w-7xl space-y-6 px-4 py-8">
@@ -148,6 +148,6 @@ export default function Completed({ booking, order }) {
                     </CardContent>
                 </Card>
             </div>
-        </TenantLayout>
+        </TenantNavbarLayout>
     );
 }

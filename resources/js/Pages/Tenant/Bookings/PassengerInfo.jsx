@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Head, Link, useForm, usePage } from '@inertiajs/react';
 import axios from 'axios';
-import TenantLayout from '@/Layouts/TenantLayout';
+import TenantNavbarLayout from '@/Layouts/TenantNavbarLayout';
 import { Button } from '@/Components/ui/Button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/Components/ui/Card';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/Components/ui/Dialog';
@@ -529,7 +529,7 @@ export default function PassengerInfo({ uuid, provider_id, flight, reservation_t
     const lastSegment = lastOffer?.segments?.[lastOffer.segments.length - 1] || null;
 
     return (
-        <TenantLayout>
+        <TenantNavbarLayout>
             <Head title="Passenger Details" />
 
             <div className="mx-auto grid max-w-7xl grid-cols-1 gap-8 px-4 py-8 lg:grid-cols-3">
@@ -1110,6 +1110,6 @@ export default function PassengerInfo({ uuid, provider_id, flight, reservation_t
                     )}
                 </DialogContent>
             </Dialog>
-        </TenantLayout>
+        </TenantNavbarLayout>
     );
 }

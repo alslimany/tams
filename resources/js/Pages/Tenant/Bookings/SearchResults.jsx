@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import axios from 'axios';
 import { Head, Link, router } from '@inertiajs/react';
-import TenantLayout from '@/Layouts/TenantLayout';
+import TenantNavbarLayout from '@/Layouts/TenantNavbarLayout';
 import { Button } from "@/Components/ui/Button";
 import { Card, CardContent } from "@/Components/ui/Card";
 import { Badge } from "@/Components/ui/Badge";
@@ -810,7 +810,7 @@ export default function SearchResults({ providers, query, uuid, searchDisplayMod
     };
 
     return (
-        <TenantLayout>
+        <TenantNavbarLayout>
             <Head title={`Flights to ${activeDestination}`} />
 
             <div className={`max-w-7xl mx-auto py-8 px-4 ${((isRoundTripSearch && selectedOutboundFlight && selectedReturnFlight) || (!isRoundTripSearch && selectedOneWayFlight)) ? 'pb-28' : ''}`}>
@@ -1048,6 +1048,6 @@ export default function SearchResults({ providers, query, uuid, searchDisplayMod
                     </div>
                 ) : null}
             </div>
-        </TenantLayout>
+        </TenantNavbarLayout>
     );
 }

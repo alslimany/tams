@@ -1,14 +1,14 @@
 import React from 'react';
 import { Head } from '@inertiajs/react';
-import TenantLayout from '@/Layouts/TenantLayout';
+import TenantNavbarLayout from '@/Layouts/TenantNavbarLayout';
 
 export default function Dashboard({ stats = {}, recentBookings = [] }) {
     return (
-        <TenantLayout>
+        <TenantNavbarLayout>
             <Head title="Dashboard" />
 
             <p>Welcome</p>
             
-        </TenantLayout>
+        </TenantNavbarLayout>
     );
 }

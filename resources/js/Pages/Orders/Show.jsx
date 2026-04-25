@@ -1,6 +1,6 @@
 import React from 'react';
 import { Head, Link, useForm, usePage } from '@inertiajs/react';
-import TenantLayout from '@/Layouts/TenantLayout';
+import TenantNavbarLayout from '@/Layouts/TenantNavbarLayout';
 import { Button } from '@/Components/ui/Button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/Components/ui/Card';
 import { Badge } from '@/Components/ui/Badge';
@@ -189,7 +189,7 @@ export default function Show({ order, itemTransactions, voidRefundAccount }) {
     const depositAccountEmail = voidRefundAccount?.email ?? auth?.user?.email ?? '-';
 
     return (
-        <TenantLayout>
+        <TenantNavbarLayout>
             <Head title={`Order ${order.number}`} />
 
             <div className="mx-auto max-w-7xl space-y-6 px-4 py-8">
@@ -506,6 +506,6 @@ export default function Show({ order, itemTransactions, voidRefundAccount }) {
                     </DialogContent>
                 </Dialog>
             </div>
-        </TenantLayout>
+        </TenantNavbarLayout>
     );
 }

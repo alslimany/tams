@@ -1,6 +1,6 @@
 import React from 'react';
 import { Head, useForm, Link } from '@inertiajs/react';
-import TenantLayout from '@/Layouts/TenantLayout';
+import TenantNavbarLayout from '@/Layouts/TenantNavbarLayout';
 import { Button } from '@/Components/ui/Button';
 import { Input } from '@/Components/ui/Input';
 import { Label } from '@/Components/ui/Label';
@@ -24,7 +24,7 @@ export default function Edit({ user }) {
     };
 
     return (
-        <TenantLayout>
+        <TenantNavbarLayout>
             <Head title={`Edit User: ${user.name}`} />
             
             <div className="max-w-2xl mx-auto">
@@ -121,6 +121,6 @@ export default function Edit({ user }) {
                     </form>
                 </Card>
             </div>
-        </TenantLayout>
+        </TenantNavbarLayout>
     );
 }

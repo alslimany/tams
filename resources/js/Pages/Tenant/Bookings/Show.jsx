@@ -1,6 +1,6 @@
 import React from 'react';
 import { Head, Link, usePage } from '@inertiajs/react';
-import TenantLayout from '@/Layouts/TenantLayout';
+import TenantNavbarLayout from '@/Layouts/TenantNavbarLayout';
 import { Card, CardContent, CardHeader, CardTitle } from "@/Components/ui/Card";
 import { Badge } from "@/Components/ui/Badge";
 import { Button } from "@/Components/ui/Button";
@@ -26,7 +26,7 @@ export default function Show({ booking }) {
     };
 
     return (
-        <TenantLayout>
+        <TenantNavbarLayout>
             <Head title={`Booking ${booking.pnr}`} />
 
             <div className="max-w-7xl mx-auto py-8 px-4">
@@ -234,6 +234,6 @@ export default function Show({ booking }) {
                     
                 </div>
             </div>
-        </TenantLayout>
+        </TenantNavbarLayout>
     );
 }
