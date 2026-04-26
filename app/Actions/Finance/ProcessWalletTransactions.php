@@ -28,6 +28,7 @@ class ProcessWalletTransactions
         $pendingItems = $order->items->filter(
             fn (OrderItem $item): bool => $item->wallet_transaction_id === null
                 && $item->airline_transaction_id === null
+                && (string) data_get($item->item_details, 'financial_source') === 'master_agency_supply'
         );
 
         if ($pendingItems->isEmpty()) {

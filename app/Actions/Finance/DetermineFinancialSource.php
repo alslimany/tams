@@ -11,8 +11,9 @@ class DetermineFinancialSource
      * Determine the financial source for an order item based on its airline code and currency.
      *
      * Returns 'own_credentials' when an active TenantProvider exists for the airline and the
-     * current tenant is configured to use its own airline credentials. Returns 'master_supply'
-     * in all other cases (no provider found, provider inactive, or tenant uses master supply).
+     * current tenant is configured to use its own airline credentials. Returns
+     * 'master_agency_supply' in all other cases (no provider found, provider inactive, or
+     * tenant uses master supply).
      */
     public function execute(string $airlineCode, string $currency): FinancialSourceData
     {
@@ -22,7 +23,7 @@ class DetermineFinancialSource
             && (bool) tenant()?->usesOwnAirlineCredentials($airlineCode);
 
         return new FinancialSourceData(
-            type: $usesOwnCredentials ? 'own_credentials' : 'master_supply',
+            type: $usesOwnCredentials ? 'own_credentials' : 'master_agency_supply',
             provider: $provider,
         );
     }

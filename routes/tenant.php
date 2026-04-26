@@ -2,10 +2,12 @@
 
 declare(strict_types=1);
 
+use App\Http\Controllers\LanguageController;
 use App\Http\Controllers\Tenant\AirlineConfigController;
 use App\Http\Controllers\Tenant\BookingController;
 use App\Http\Controllers\Tenant\DashboardController;
 use App\Http\Controllers\Tenant\OrderController;
+use App\Http\Controllers\Tenant\ReportController;
 use App\Http\Controllers\Tenant\TicketController;
 use App\Http\Controllers\Tenant\UserController;
 use Illuminate\Support\Facades\Route;
@@ -43,6 +45,9 @@ Route::middleware([
         return inertia('Welcome');
     })->name('home');
 
+    // Language switching route
+    Route::get('/language/switch', [LanguageController::class, 'switch'])->name('language.switch');
+
     Route::middleware(['auth', 'tenant.status'])->group(function () {
         Route::get('dashboard', DashboardController::class)->name('dashboard');
 
@@ -58,11 +63,21 @@ Route::middleware([
         Route::post('flights/open-reservation-availability', [BookingController::class, 'openReservationAvailability'])->name('flights.open-reservation-availability');
         Route::post('flights/seatmap', [BookingController::class, 'seatmap'])->name('flights.seatmap');
         Route::post('flights/select', [BookingController::class, 'select'])->name('flights.select');
-        Route::post('flights', [BookingController::class, 'store'])->name('flights.store');
+        Route::post('flights', [BookingController::class, 'store'])->middleware('wallet.balance')->name('flights.store');
         Route::get('flights/{booking}', [BookingController::class, 'show'])->name('flights.show');
         Route::get('flights/{booking}/completed', [TicketController::class, 'completed'])->name('tickets.completed');
         Route::get('orders', [OrderController::class, 'index'])->name('orders.index');
         Route::get('orders/{order}', [OrderController::class, 'show'])->name('orders.show');
+
+        // Reports
+        Route::get('reports/sales', [ReportController::class, 'dailySales'])->name('reports.sales');
+        Route::get('reports/commissions', [ReportController::class, 'commissions'])->name('reports.commissions');
+        Route::get('reports/taxes', [ReportController::class, 'taxes'])->name('reports.taxes');
+        Route::get('wallet/transactions', [ReportController::class, 'walletTransactions'])->name('wallet.transactions');
+        Route::middleware('role:admin')->group(function () {
+            Route::get('reports/reconciliation', [ReportController::class, 'reconciliation'])->name('reports.reconciliation');
+        });
+
         Route::middleware('role:manager')->group(function () {
             Route::post('flights/{booking}/tickets/issue', [TicketController::class, 'issue'])->name('tickets.issue');
             Route::post('flights/{booking}/tickets/{ticket}/void', [TicketController::class, 'void'])->name('tickets.void');

@@ -5,6 +5,7 @@ import { createRoot } from 'react-dom/client';
 import { createInertiaApp } from '@inertiajs/react';
 import { resolvePageComponent } from 'laravel-vite-plugin/inertia-helpers';
 import { route } from 'ziggy-js';
+import { DirectionProvider } from "@/components/ui/direction"
 
 import { TooltipProvider } from '@/Components/ui/tooltip';
 
@@ -18,9 +19,11 @@ createInertiaApp({
 
         window.route = route;
         root.render(
-            <TooltipProvider>
-                <App {...props} />
-            </TooltipProvider>,
+             <DirectionProvider dir="rtl"> 
+                <TooltipProvider>
+                    <App {...props} />
+                </TooltipProvider>
+            </DirectionProvider>,
         );
     },
     progress: {

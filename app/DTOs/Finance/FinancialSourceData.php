@@ -15,4 +15,9 @@ readonly class FinancialSourceData
     {
         return $this->type === 'own_credentials';
     }
+
+    public function usesMasterAgencySupply(): bool
+    {
+        return $this->type === 'master_agency_supply';
+    }
 }

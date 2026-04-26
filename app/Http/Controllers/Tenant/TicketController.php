@@ -67,6 +67,7 @@ class TicketController extends Controller
 
         try {
             $issuedOrder = DB::transaction(function () use ($booking, $provider, $pnr, $paymentType, $issuer): Order {
+                // Step 1: Issue ticket via the airline provider.
                 $issueResult = $provider->issueTicket($pnr, [
                     'type' => $paymentType,
                     'user' => $issuer,
@@ -89,31 +90,40 @@ class TicketController extends Controller
                 $parsedBookingData->paymentMethod = $paymentType;
                 $parsedBookingData->paymentReference = $parsedBookingData->paymentReference ?: $pnr;
 
+                // Step 2: Create order and order items (without financial source processing yet).
                 $order = app(CreateOrderFromBookingData::class)->execute($parsedBookingData);
                 $order->update([
                     'parent_id' => $booking->id,
                 ]);
 
+                // Step 3: Determine financial source and set commission on each order item.
+                // Step 4: Save order items (they now have commission and financial source flag).
                 $this->applyFinancialSourceAndCommission($order);
 
+                // Collect the distinct financial sources across all order items.
                 $financialSources = $order->items
                     ->pluck('item_details.financial_source')
                     ->filter(fn ($value): bool => is_string($value) && $value !== '')
                     ->unique();
 
+                // Step 5: If financial source = 'master_agency_supply', withdraw from wallet
+                //         and deposit commission.
                 if ($financialSources->contains('master_agency_supply')) {
                     app(ProcessWalletTransactions::class)->execute($order, $issuer);
                 }
 
+                // Step 6: If financial source = 'own_credentials', record airline account debits.
                 if ($financialSources->contains('own_credentials')) {
                     app(CreateAirlineTransactions::class)->execute($order);
                 }
 
+                // Step 7: Create ledger entries.
                 app(InitializeTenantLedger::class)->execute((string) $order->currency);
                 app(PostToLedger::class)->execute($order, includeOwnCredentials: true);
 
                 $this->syncBookingIssueSnapshot($booking, $order, $parsedPnr, $formattedPnr);
 
+                // Step 8: Log order status change.
                 $order->statusLogs()->create([
                     'old_status' => (string) $booking->status,
                     'new_status' => 'issued',
@@ -121,6 +131,7 @@ class TicketController extends Controller
                     'comment' => "Ticket issued and financials posted for PNR {$parsedBookingData->pnr}.",
                 ]);
 
+                // Step 9: Commit (handled by DB::transaction returning).
                 return $order->fresh('items');
             });
 
@@ -132,12 +143,14 @@ class TicketController extends Controller
         } catch (ConnectionException $exception) {
             report($exception);
 
+            // Rollback is automatic; void the PNR to avoid orphaned tickets.
             $this->voidProviderPnrSafely($provider, $pnr);
 
             return back()->with('error', 'Airline ticket issuance timed out. Please try again.');
         } catch (\Throwable $exception) {
             report($exception);
 
+            // Rollback is automatic; void the PNR to avoid orphaned tickets.
             $this->voidProviderPnrSafely($provider, $pnr);
 
             return back()->with('error', 'Failed to issue ticket and post financial transactions. The PNR void command was attempted.');
@@ -508,7 +521,7 @@ class TicketController extends Controller
             );
 
             $details = (array) $item->item_details;
-            $details['financial_source'] = $source->usesOwnCredentials() ? 'own_credentials' : 'master_agency_supply';
+            $details['financial_source'] = $source->type;
             $details['financial_provider_id'] = $source->provider?->id;
 
             $item->fill([

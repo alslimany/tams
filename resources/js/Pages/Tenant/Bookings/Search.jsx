@@ -30,6 +30,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Popover, PopoverContent, PopoverTrigger } from '@/Components/ui/popover';
 import { Calendar } from '@/Components/ui/calendar';
 import { AsyncAirportSelect } from '@/Components/ui/AsyncAirportSelect';
+import { useTranslation } from '@/hooks/useTranslation';
 
 export default function Search({ searchDisplayMode, bookings, filters, airlines, searchDefaults = {} }) {
     const [isPaxDropdownOpen, setIsPaxDropdownOpen] = useState(false);
@@ -48,6 +49,8 @@ export default function Search({ searchDisplayMode, bookings, filters, airlines,
         is_return: Boolean(searchDefaults.is_return ?? false),
         cabin_class: searchDefaults.cabin_class || 'economy',
     });
+
+    const { t } = useTranslation();
 
     useEffect(() => {
         const handleClickOutside = (event) => {
@@ -221,7 +224,7 @@ export default function Search({ searchDisplayMode, bookings, filters, airlines,
 
     return (
         <TenantNavbarLayout>
-            <Head title="Search Flights" />
+            <Head title={t('common.search_flights')} />
 
             {/* Hero Section */}
             <section className="relative min-h-[600px]  bg-slate-900">
@@ -242,14 +245,13 @@ export default function Search({ searchDisplayMode, bookings, filters, airlines,
                     <div className="mb-10 text-center">
                         <Badge variant="secondary" className="mb-4 border-sky-500/30 bg-sky-500/10 text-sky-300">
                             <Plane className="mr-1 h-3 w-3" />
-                            Fly Smarter, Fly Better
+                            {t('common.fly_smarter')}
                         </Badge>
                         <h1 className="text-4xl font-bold tracking-tight text-white sm:text-5xl lg:text-6xl">
-                            Explore the Skies
+                            {t('common.explore_skies')}
                         </h1>
                         <p className="mx-auto mt-4 max-w-2xl text-lg text-slate-300">
-                            Search and compare flights across all Libyan airlines. Find the best fares and book your
-                            next journey with confidence.
+                            {t('common.search_compare_flights')}
                         </p>
                     </div>
 
@@ -259,7 +261,7 @@ export default function Search({ searchDisplayMode, bookings, filters, airlines,
                             <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                                 <div>
                                     <CardTitle className="flex items-center gap-2">
-                                        Book Your Next Flight
+                                        {t('common.book_next_flight')}
                                     </CardTitle>
                                 </div>
 
@@ -272,7 +274,7 @@ export default function Search({ searchDisplayMode, bookings, filters, airlines,
                                         className="gap-2"
                                     >
                                         <ArrowRight className="h-4 w-4" />
-                                        One-way
+                                        {t('common.one_way')}
                                     </Button>
                                     <Button
                                         type="button"
@@ -282,7 +284,7 @@ export default function Search({ searchDisplayMode, bookings, filters, airlines,
                                         className="gap-2"
                                     >
                                         <ArrowRightLeft className="h-4 w-4" />
-                                        Round-trip
+                                        {t('common.round_trip')}
                                     </Button>
                                 </div>
                             </div>
@@ -291,10 +293,10 @@ export default function Search({ searchDisplayMode, bookings, filters, airlines,
                             <form onSubmit={submit} className="space-y-6">
                                 <div className="grid gap-4 md:grid-cols-12">
                                     <div className="space-y-2 md:col-span-4">
-                                        <Label htmlFor="origin">From (IATA)</Label>
+                                        <Label htmlFor="origin">{t('common.from')}</Label>
                                         <AsyncAirportSelect
                                             id="origin"
-                                            placeholder="MJI"
+                                            placeholder=""
                                             value={data.origin}
                                             onChange={(event) => setData('origin', event.target.value.toUpperCase())}
                                         />
@@ -308,10 +310,10 @@ export default function Search({ searchDisplayMode, bookings, filters, airlines,
                                     </div>
 
                                     <div className="space-y-2 md:col-span-4">
-                                        <Label htmlFor="destination">To (IATA)</Label>
+                                        <Label htmlFor="destination">{t('common.to')}</Label>
                                         <AsyncAirportSelect
                                             id="destination"
-                                            placeholder="IST"
+                                            placeholder=""
                                             value={data.destination}
                                             onChange={(event) => setData('destination', event.target.value.toUpperCase())}
                                             isDestination
@@ -320,19 +322,19 @@ export default function Search({ searchDisplayMode, bookings, filters, airlines,
                                     </div>
 
                                     <div className="space-y-2 md:col-span-3">
-                                        <Label htmlFor="cabin_class">Class</Label>
+                                        <Label htmlFor="cabin_class">{t('common.class')}</Label>
                                         <Select
                                             value={data.cabin_class}
                                             onValueChange={(value) => setData('cabin_class', value)}
                                         >
                                             <SelectTrigger id="cabin_class" className="w-full rounded-md border-input bg-background">
-                                                <SelectValue placeholder="Select class" />
+                                                <SelectValue placeholder={t('common.select_class')} />
                                             </SelectTrigger>
                                             <SelectContent className="rounded-md" align="start">
-                                                <SelectItem value="economy">Economy</SelectItem>
-                                                <SelectItem value="premium_economy">Premium Economy</SelectItem>
-                                                <SelectItem value="business">Business</SelectItem>
-                                                <SelectItem value="first">First Class</SelectItem>
+                                                <SelectItem value="economy">{t('common.economy')}</SelectItem>
+                                                <SelectItem value="premium_economy">{t('common.premium_economy')}</SelectItem>
+                                                <SelectItem value="business">{t('common.business')}</SelectItem>
+                                                <SelectItem value="first">{t('common.first_class')}</SelectItem>
                                             </SelectContent>
                                         </Select>
                                     </div>
@@ -341,13 +343,13 @@ export default function Search({ searchDisplayMode, bookings, filters, airlines,
                                 <div className="grid gap-4 md:grid-cols-12">
                                     {!data.is_return ? (
                                         <div className="space-y-2 md:col-span-6">
-                                            <Label htmlFor="date">Departure Date</Label>
+                                            <Label htmlFor="date">{t('common.departure_date')}</Label>
                                             <Popover>
                                                 <PopoverTrigger asChild>
-                                                    <Button id="date" variant="outline" className="w-full justify-start text-left font-normal">
-                                                        <CalendarIcon className="mr-2 h-4 w-4" />
-                                                        {departureDate ? format(departureDate, 'PPP') : 'Pick a date'}
-                                                    </Button>
+                                                <Button id="date" variant="outline" className="w-full justify-start text-left font-normal">
+                                                    <CalendarIcon className="mr-2 h-4 w-4" />
+                                                    {departureDate ? format(departureDate, 'PPP') : t('common.pick_date')}
+                                                </Button>
                                                 </PopoverTrigger>
                                                 <PopoverContent className="w-auto p-0" align="start">
                                                     <Calendar
@@ -365,7 +367,7 @@ export default function Search({ searchDisplayMode, bookings, filters, airlines,
                                         </div>
                                     ) : (
                                         <div className="space-y-2 md:col-span-6">
-                                            <Label htmlFor="date-range">Trip Dates</Label>
+                                            <Label htmlFor="date-range">{t('common.trip_dates')}</Label>
                                             <Popover>
                                                 <PopoverTrigger asChild>
                                                     <Button id="date-range" variant="outline" className="w-full justify-start text-left font-normal">
@@ -374,7 +376,7 @@ export default function Search({ searchDisplayMode, bookings, filters, airlines,
                                                             ? tripRange.to
                                                                 ? `${format(tripRange.from, 'LLL dd, y')} - ${format(tripRange.to, 'LLL dd, y')}`
                                                                 : format(tripRange.from, 'LLL dd, y')
-                                                            : 'Pick a date range'}
+                                                            : t('common.pick_date_range')}
                                                     </Button>
                                                 </PopoverTrigger>
                                                 <PopoverContent className="w-auto p-0" align="start">
@@ -396,7 +398,7 @@ export default function Search({ searchDisplayMode, bookings, filters, airlines,
                                     )}
 
                                     <div className="relative space-y-2 md:col-span-6" ref={paxDropdownRef}>
-                                        <Label>Passengers</Label>
+                                        <Label>{t('common.passengers')}</Label>
                                         <Button
                                             type="button"
                                             variant="outline"
@@ -405,7 +407,7 @@ export default function Search({ searchDisplayMode, bookings, filters, airlines,
                                         >
                                             <div className="flex items-center gap-2">
                                                 <Users className="h-4 w-4 text-muted-foreground" />
-                                                <span>{totalPax} Passenger{totalPax > 1 ? 's' : ''}</span>
+                                                <span>{totalPax} {t('common.passenger')}{totalPax > 1 ? t('common.plural_suffix') : ''}</span>
                                                 <Badge variant="secondary" className="ml-1 text-xs font-medium">
                                                     {data.adults}A, {data.children}C, {data.infants}I
                                                 </Badge>
@@ -418,8 +420,8 @@ export default function Search({ searchDisplayMode, bookings, filters, airlines,
                                                 <CardContent className="space-y-4 p-4">
                                                 <div className="flex items-center justify-between">
                                                     <div>
-                                                        <p className="text-sm font-medium">Adults</p>
-                                                        <p className="text-xs text-muted-foreground">Age 12+</p>
+                                                        <p className="text-sm font-medium">{t('common.adults')}</p>
+                                                        <p className="text-xs text-muted-foreground">{t('common.age_12_plus')}</p>
                                                     </div>
                                                     <div className="flex items-center gap-3">
                                                         <Button type="button" variant="outline" size="icon" onClick={() => updatePax('adults', -1)} disabled={data.adults <= 1}>
@@ -434,8 +436,8 @@ export default function Search({ searchDisplayMode, bookings, filters, airlines,
 
                                                 <div className="flex items-center justify-between border-t pt-3">
                                                     <div>
-                                                        <p className="text-sm font-medium">Children</p>
-                                                        <p className="text-xs text-muted-foreground">Age 2-11</p>
+                                                        <p className="text-sm font-medium">{t('common.children')}</p>
+                                                        <p className="text-xs text-muted-foreground">{t('common.age_2_11')}</p>
                                                     </div>
                                                     <div className="flex items-center gap-3">
                                                         <Button type="button" variant="outline" size="icon" onClick={() => updatePax('children', -1)} disabled={data.children <= 0}>
@@ -450,8 +452,8 @@ export default function Search({ searchDisplayMode, bookings, filters, airlines,
 
                                                 <div className="flex items-center justify-between border-t pt-3">
                                                     <div>
-                                                        <p className="text-sm font-medium">Infants</p>
-                                                        <p className="text-xs text-muted-foreground">Under 2</p>
+                                                        <p className="text-sm font-medium">{t('common.infants')}</p>
+                                                        <p className="text-xs text-muted-foreground">{t('common.under_2')}</p>
                                                     </div>
                                                     <div className="flex items-center gap-3">
                                                         <Button type="button" variant="outline" size="icon" onClick={() => updatePax('infants', -1)} disabled={data.infants <= 0}>
@@ -466,7 +468,7 @@ export default function Search({ searchDisplayMode, bookings, filters, airlines,
                                                 
                                                 <div className="pt-2 border-t">
                                                     <Button type="button" className="w-full" onClick={() => setIsPaxDropdownOpen(false)}>
-                                                        Done
+                                                        {t('common.done')}
                                                     </Button>
                                                 </div>
                                                 </CardContent>
@@ -483,7 +485,7 @@ export default function Search({ searchDisplayMode, bookings, filters, airlines,
                                         disabled={processing}
                                     >
                                         <Plane className="mr-2 h-4 w-4" />
-                                        {processing ? 'Searching...' : 'Find Flights'}
+                                        {processing ? t('common.searching_flights') : t('common.find_flights')}
                                     </Button>
                                 </div>
                             </form>
@@ -498,11 +500,11 @@ export default function Search({ searchDisplayMode, bookings, filters, airlines,
                     <div className="mb-8 text-center">
                         <div className="mb-2 flex items-center justify-center gap-2 text-primary">
                             <TrendingDown className="h-5 w-5" />
-                            <span className="text-sm font-semibold uppercase tracking-wider">Popular Routes</span>
+                            <span className="text-sm font-semibold uppercase tracking-wider">{t('common.popular_routes')}</span>
                         </div>
-                        <h2 className="text-3xl font-bold tracking-tight">Cheapest Flights This Month</h2>
+                        <h2 className="text-3xl font-bold tracking-tight">{t('common.cheapest_flights')}</h2>
                         <p className="mt-2 text-muted-foreground">
-                            Top-selling routes with the most competitive fares across Libyan airlines.
+                            {t('common.top_selling_routes')}
                         </p>
                     </div>
 
@@ -542,11 +544,11 @@ export default function Search({ searchDisplayMode, bookings, filters, airlines,
 
                                     <div className="flex items-end justify-between">
                                         <div>
-                                            <p className="text-xs text-muted-foreground">Starting from</p>
+                                            <p className="text-xs text-muted-foreground">{t('common.starting_from')}</p>
                                             <p className="text-2xl font-bold text-primary">${route.price}</p>
                                         </div>
                                         <Button variant="outline" size="sm" className="group-hover:bg-primary group-hover:text-primary-foreground">
-                                            Book Now
+                                            {t('common.book_now')}
                                         </Button>
                                     </div>
                                 </CardContent>
@@ -562,11 +564,11 @@ export default function Search({ searchDisplayMode, bookings, filters, airlines,
                     <div className="mb-8 text-center">
                         <div className="mb-2 flex items-center justify-center gap-2 text-primary">
                             <Star className="h-5 w-5" />
-                            <span className="text-sm font-semibold uppercase tracking-wider">Special Offers</span>
+                            <span className="text-sm font-semibold uppercase tracking-wider">{t('common.special_offers')}</span>
                         </div>
-                        <h2 className="text-3xl font-bold tracking-tight">Exclusive Deals & Discounts</h2>
+                        <h2 className="text-3xl font-bold tracking-tight">{t('common.exclusive_deals')}</h2>
                         <p className="mt-2 text-muted-foreground">
-                            Limited-time promotions to make your travel more affordable.
+                            {t('common.limited_promotions')}
                         </p>
                     </div>
 
@@ -591,7 +593,7 @@ export default function Search({ searchDisplayMode, bookings, filters, airlines,
                                         <h3 className="mb-2 text-xl font-semibold">{offer.title}</h3>
                                         <p className="mb-4 text-sm text-muted-foreground">{offer.description}</p>
                                         <Button variant="outline" className="w-full group-hover:bg-primary group-hover:text-primary-foreground">
-                                            View Details
+                                            {t('common.view_details')}
                                         </Button>
                                     </CardContent>
                                 </Card>
@@ -607,11 +609,11 @@ export default function Search({ searchDisplayMode, bookings, filters, airlines,
                     <div className="mb-8 text-center">
                         <div className="mb-2 flex items-center justify-center gap-2 text-primary">
                             <Shield className="h-5 w-5" />
-                            <span className="text-sm font-semibold uppercase tracking-wider">Why Choose Us</span>
+                            <span className="text-sm font-semibold uppercase tracking-wider">{t('common.why_choose_us')}</span>
                         </div>
-                        <h2 className="text-3xl font-bold tracking-tight">Travel With Confidence</h2>
+                        <h2 className="text-3xl font-bold tracking-tight">{t('common.travel_confidence')}</h2>
                         <p className="mt-2 text-muted-foreground">
-                            We make flight booking simple, secure, and affordable.
+                            {t('common.booking_simple_secure')}
                         </p>
                     </div>
 
@@ -641,9 +643,9 @@ export default function Search({ searchDisplayMode, bookings, filters, airlines,
                 <div className="relative mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
                     <div className="flex flex-col items-center justify-between gap-6 md:flex-row">
                         <div className="text-center md:text-left">
-                            <h2 className="text-2xl font-bold text-white sm:text-3xl">Ready to take off?</h2>
+                            <h2 className="text-2xl font-bold text-white sm:text-3xl">{t('common.ready_take_off')}</h2>
                             <p className="mt-2 text-sky-100">
-                                Search from hundreds of flights and book your perfect trip today.
+                                {t('common.search_hundreds_flights')}
                             </p>
                         </div>
                         <Button
@@ -653,7 +655,7 @@ export default function Search({ searchDisplayMode, bookings, filters, airlines,
                             onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
                         >
                             <Plane className="mr-2 h-4 w-4" />
-                            Search Flights Now
+                            {t('common.search_flights_now')}
                         </Button>
                     </div>
                 </div>

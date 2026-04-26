@@ -581,7 +581,7 @@ export default function PassengerInfo({ uuid, provider_id, flight, reservation_t
                             </TabsList>
 
                             <TabsContent value="passengers" className="space-y-6">
-                                <Card className="border bg-muted/10">
+                                {/* <Card className="border bg-muted/10">
                                     <CardContent className="pt-6">
                                         <p className="text-sm font-medium text-muted-foreground">
                                             Passport fields are {passportRequired ? 'required for this international route' : 'optional for this domestic route'}.
@@ -592,7 +592,7 @@ export default function PassengerInfo({ uuid, provider_id, flight, reservation_t
                                             </p>
                                         )}
                                     </CardContent>
-                                </Card>
+                                </Card> */}
 
                                 {data.passengers.map((passenger, index) => (
                                     <Card key={index} className="overflow-hidden border-2 shadow-sm">

@@ -15,7 +15,7 @@
 
 @theme {
     --font-sans:
-        'Instrument Sans', ui-sans-serif, system-ui, sans-serif,
+        'IBM Plex Sans Arabic', 'Instrument Sans', ui-sans-serif, system-ui, sans-serif,
         'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol',
         'Noto Color Emoji';
 
@@ -295,4 +295,153 @@
         calc(var(--radius) * 2.2);
     --radius-4xl:
         calc(var(--radius) * 2.6);
+}
+
+/* RTL Support */
+.rtl {
+    direction: rtl;
+}
+
+/* RTL-specific overrides */
+[dir="rtl"] .dropdown-menu-content {
+    left: auto;
+    right: 0;
+}
+
+[dir="rtl"] .avatar {
+    margin-left: 0;
+    margin-right: 0.5rem;
+}
+
+[dir="rtl"] .lucide {
+    transform: scaleX(-1);
+}
+
+/* Adjust dropdown positioning for RTL */
+[dir="rtl"] [data-radix-popper-content-wrapper] {
+    transform-origin: right center !important;
+}
+
+/* Arabic Font Support */
+[dir="rtl"] {
+    font-family: 'IBM Plex Sans Arabic', ui-sans-serif, system-ui, sans-serif;
+}
+
+[dir="rtl"] * {
+    font-family: inherit;
+}
+
+/* Ensure Arabic text uses the correct font */
+.arabic-text,
+[dir="rtl"] .arabic-text {
+    font-family: 'IBM Plex Sans Arabic', ui-sans-serif, system-ui, sans-serif !important;
+    font-weight: 400;
+    line-height: 1.5;
+}
+
+/* Arabic-specific typography improvements */
+[dir="rtl"] h1,
+[dir="rtl"] h2,
+[dir="rtl"] h3,
+[dir="rtl"] h4,
+[dir="rtl"] h5,
+[dir="rtl"] h6 {
+    font-family: 'IBM Plex Sans Arabic', ui-sans-serif, system-ui, sans-serif;
+    font-weight: 600;
+    line-height: 1.3;
+}
+
+[dir="rtl"] p {
+    line-height: 1.6;
+}
+
+[dir="rtl"] button,
+[dir="rtl"] input,
+[dir="rtl"] textarea,
+[dir="rtl"] select {
+    font-family: 'IBM Plex Sans Arabic', ui-sans-serif, system-ui, sans-serif;
+}
+
+/* Arabic Text Enhancements */
+[dir="rtl"] {
+    text-align: right;
+}
+
+/* Improve Arabic number and punctuation spacing */
+[dir="rtl"] .arabic-numbers {
+    font-variant-numeric: tabular-nums;
+    text-combine-upright: all;
+}
+
+/* Better Arabic text selection */
+[dir="rtl"] *::selection {
+    background-color: rgba(59, 130, 246, 0.3);
+}
+
+/* Arabic-specific line height for better readability */
+[dir="rtl"] .text-readable {
+    line-height: 1.7;
+}
+
+/* Ensure Arabic form inputs have proper text alignment */
+[dir="rtl"] input[type="text"],
+[dir="rtl"] input[type="email"],
+[dir="rtl"] input[type="password"],
+[dir="rtl"] input[type="number"],
+[dir="rtl"] textarea,
+[dir="rtl"] select {
+    text-align: right;
+    direction: rtl;
+}
+
+/* Arabic Typography Enhancements */
+[dir="rtl"] {
+    /* Better Arabic text rendering */
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+/* Arabic text classes for special cases */
+.arabic-heading {
+    font-family: 'IBM Plex Sans Arabic', ui-sans-serif, system-ui, sans-serif;
+    font-weight: 600;
+    line-height: 1.3;
+    letter-spacing: -0.025em;
+}
+
+.arabic-body {
+    font-family: 'IBM Plex Sans Arabic', ui-sans-serif, system-ui, sans-serif;
+    font-weight: 400;
+    line-height: 1.6;
+    letter-spacing: 0.01em;
+}
+
+/* Arabic number styling */
+[dir="rtl"] .arabic-number {
+    font-variant-numeric: lining-nums;
+    font-feature-settings: "lnum";
+}
+
+/* Better Arabic punctuation spacing */
+[dir="rtl"] {
+    /* Improve spacing around Arabic punctuation */
+    word-spacing: 0.1em;
+}
+
+/* Arabic-specific button styling */
+[dir="rtl"] .btn-arabic {
+    font-family: 'IBM Plex Sans Arabic', ui-sans-serif, system-ui, sans-serif;
+    font-weight: 500;
+    padding: 0.5rem 1rem;
+    border-radius: 0.5rem;
+}
+
+/* Arabic form field improvements */
+[dir="rtl"] .form-control-arabic {
+    font-family: 'IBM Plex Sans Arabic', ui-sans-serif, system-ui, sans-serif;
+    padding: 0.5rem 0.75rem;
+    border-radius: 0.375rem;
+    border: 1px solid hsl(var(--border));
+    background-color: hsl(var(--background));
 }

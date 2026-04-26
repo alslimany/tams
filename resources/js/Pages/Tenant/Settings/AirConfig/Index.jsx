@@ -34,6 +34,8 @@ export default function Index({ airlines }) {
         airports: [],
         domestic_commission_rate: '',
         international_commission_rate: '',
+        commission_domestic: '',
+        commission_international: '',
     });
 
     const openConfig = (airline, account) => {
@@ -57,6 +59,8 @@ export default function Index({ airlines }) {
             airports: account.airports || [],
             domestic_commission_rate: account.domestic_commission_rate || '',
             international_commission_rate: account.international_commission_rate || '',
+            commission_domestic: account.commission_domestic || '',
+            commission_international: account.commission_international || '',
         });
     };
 
@@ -155,9 +159,11 @@ export default function Index({ airlines }) {
                                                 </div>
                                                 {airline.provider_type === 'videcom' && (
                                                     <div className="mt-1 text-xs text-muted-foreground">
-                                                        Domestic Commission <span className="font-medium text-foreground">{account.domestic_commission_rate || '0.00'}%</span> 
+                                                        Domestic Commission <span className="font-medium text-foreground">{account.domestic_commission_rate || '0.00'}%</span>
+                                                        {account.commission_domestic > 0 && <span className="ml-1">+ {account.commission_domestic} fixed</span>}
                                                         <br />
                                                         International Commission <span className="font-medium text-foreground">{account.international_commission_rate || '0.00'}%</span>
+                                                        {account.commission_international > 0 && <span className="ml-1">+ {account.commission_international} fixed</span>}
                                                     </div>
                                                 )}
                                             </div>
@@ -303,8 +309,36 @@ export default function Index({ airlines }) {
                                                 />
                                                 {errors.international_commission_rate && <p className="text-xs text-destructive">{errors.international_commission_rate}</p>}
                                             </div>
+                                            <div className="grid grid-cols-2 gap-4">
+                                                <div className="grid gap-2">
+                                                    <Label htmlFor="commission_domestic">Domestic Fixed Amount</Label>
+                                                    <Input
+                                                        id="commission_domestic"
+                                                        type="number"
+                                                        min="0"
+                                                        step="0.01"
+                                                        value={data.commission_domestic}
+                                                        onChange={e => setData('commission_domestic', e.target.value)}
+                                                        placeholder="0.00"
+                                                    />
+                                                    {errors.commission_domestic && <p className="text-xs text-destructive">{errors.commission_domestic}</p>}
+                                                </div>
+                                                <div className="grid gap-2">
+                                                    <Label htmlFor="commission_international">International Fixed Amount</Label>
+                                                    <Input
+                                                        id="commission_international"
+                                                        type="number"
+                                                        min="0"
+                                                        step="0.01"
+                                                        value={data.commission_international}
+                                                        onChange={e => setData('commission_international', e.target.value)}
+                                                        placeholder="0.00"
+                                                    />
+                                                    {errors.commission_international && <p className="text-xs text-destructive">{errors.commission_international}</p>}
+                                                </div>
+                                            </div>
                                             <div className="rounded-lg border bg-muted/30 p-4 text-sm text-muted-foreground">
-                                                Commission is calculated from the fare amount only. Domestic flights use the domestic rate, and international flights use the international rate.
+                                                Commission is calculated as: percentage of fare + fixed amount. Domestic flights use the domestic rate, and international flights use the international rate.
                                             </div>
                                         </TabsContent>
                                     )}

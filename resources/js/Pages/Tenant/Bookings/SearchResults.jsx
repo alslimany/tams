@@ -18,8 +18,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/Components/ui/Tabs";
 import { formatMoney, formatMoneyValue } from '@/lib/currency';
 import FlightGroupCard from '@/Components/FlightGroupCard';
+import { useTranslation } from '@/hooks/useTranslation';
 
 export default function SearchResults({ providers, query, uuid, searchDisplayMode }) {
+    const { t, loading: translationsLoading, locale } = useTranslation();
+
     const isRoundTripSearch = Boolean(query?.is_return);
     const initialActiveSearchDate = query?.date;
     const initialReturnDate = query?.return_date || query?.date;
@@ -146,7 +149,7 @@ export default function SearchResults({ providers, query, uuid, searchDisplayMod
                     });
                 }
             }).catch(err => {
-                const message = err?.response?.data?.error || err?.message || 'Failed to load flights from provider.';
+                const message = err?.response?.data?.error || err?.message || t('common.failed_to_load_flights');
 
                 setProviderErrors((prev) => ([
                     ...prev,
@@ -262,7 +265,7 @@ export default function SearchResults({ providers, query, uuid, searchDisplayMod
             setReturnOptions(response.data?.return_options || []);
             setActiveReturnDate(response.data?.return_date || returnDate);
         } catch (error) {
-            const message = error?.response?.data?.error || 'Failed to load return flights.';
+            const message = error?.response?.data?.error || t('common.failed_to_load_return_flights');
             setProviderErrors((prev) => [
                 ...prev,
                 {
@@ -757,10 +760,13 @@ export default function SearchResults({ providers, query, uuid, searchDisplayMod
                         )}
                         <p className="text-sm font-bold">
                             {isOffersLoading
-                                ? (isSelectingReturnStep ? 'Loading return flight offers...' : 'Loading flight offers...')
+                                ? (isSelectingReturnStep ? t('common.loading_return_flight_offers') : t('common.loading_flight_offers'))
                                 : offersFoundCount > 0
-                                    ? `${offersFoundCount} flight offer${offersFoundCount === 1 ? '' : 's'} found`
-                                    : 'No flight offers found'}
+                                    ? t('common.flight_offers_found', {
+                                        count: offersFoundCount,
+                                        plural: offersFoundCount === 1 ? '' : (locale === 'ar' ? 'ون' : 's')
+                                    })
+                                    : t('common.no_flight_offers_found')}
                         </p>
                     </div>
                 </div>

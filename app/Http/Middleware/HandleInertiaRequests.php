@@ -38,6 +38,9 @@ class HandleInertiaRequests extends Middleware
     {
         return [
             ...parent::share($request),
+            'app' => [
+                'name' => __('common.book_now'), // Translates based on active locale
+            ],
             'auth' => [
                 'user' => $request->user(),
                 'landlordUser' => auth('landlord')->user(),
@@ -56,6 +59,7 @@ class HandleInertiaRequests extends Middleware
                 ...(new Ziggy)->toArray(),
                 'location' => $request->url(),
             ],
+            'locale' => session('locale', app()->getLocale()),
         ];
     }
 }

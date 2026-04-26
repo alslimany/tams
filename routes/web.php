@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\AgencyRegistrationController;
+use App\Http\Controllers\Landlord\AirportController;
 use App\Http\Controllers\Landlord\Auth\AuthenticatedSessionController as LandlordAuthenticatedSessionController;
 use App\Http\Controllers\Landlord\DashboardController as LandlordDashboardController;
 use App\Http\Controllers\Landlord\GlobalFlightCacheSettingsController;
@@ -36,5 +37,8 @@ Route::prefix('admin')->name('landlord.')->group(function () {
         Route::post('tenants/{tenant}/users', [TenantUserController::class, 'store'])->name('tenants.users.store');
         Route::put('tenants/{tenant}/users/{user}', [TenantUserController::class, 'update'])->name('tenants.users.update');
         Route::delete('tenants/{tenant}/users/{user}', [TenantUserController::class, 'destroy'])->name('tenants.users.destroy');
+
+        // Airport Management
+        Route::resource('airports', AirportController::class)->names('airports');
     });
 });

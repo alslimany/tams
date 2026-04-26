@@ -12,6 +12,7 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->web(append: [
+            \App\Http\Middleware\SetLocale::class,
             \App\Http\Middleware\HandleInertiaRequests::class,
             \Illuminate\Http\Middleware\AddLinkHeadersForPreloadedAssets::class,
             \App\Http\Middleware\TrackUserActivity::class,
@@ -22,6 +23,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'role' => \App\Http\Middleware\EnsureUserRole::class,
             'landlord.auth' => \App\Http\Middleware\EnsureLandlordAuthenticated::class,
             'tenant.status' => \App\Http\Middleware\CheckTenantOperationalStatus::class,
+            'wallet.balance' => \App\Http\Middleware\EnsureSufficientWalletBalance::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

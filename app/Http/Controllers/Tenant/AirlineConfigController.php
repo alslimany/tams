@@ -142,6 +142,8 @@ class AirlineConfigController extends Controller
                     'remaining_balance' => $remainingBalance,
                     'domestic_commission_rate' => $existing ? $existing->domestic_commission_rate : null,
                     'international_commission_rate' => $existing ? $existing->international_commission_rate : null,
+                    'commission_domestic' => $existing ? $existing->commission_domestic : null,
+                    'commission_international' => $existing ? $existing->commission_international : null,
                 ]);
             }
             );
@@ -170,6 +172,8 @@ class AirlineConfigController extends Controller
             'airports' => 'nullable|array',
             'domestic_commission_rate' => 'nullable|numeric|min:0|max:100',
             'international_commission_rate' => 'nullable|numeric|min:0|max:100',
+            'commission_domestic' => 'nullable|numeric|min:0',
+            'commission_international' => 'nullable|numeric|min:0',
         ]);
 
         $credentials = [
@@ -202,6 +206,8 @@ class AirlineConfigController extends Controller
                 'last_test_message' => null,
                 'domestic_commission_rate' => $this->normalizeCommissionRate($validated['domestic_commission_rate'] ?? null),
                 'international_commission_rate' => $this->normalizeCommissionRate($validated['international_commission_rate'] ?? null),
+                'commission_domestic' => $this->normalizeCommissionRate($validated['commission_domestic'] ?? null),
+                'commission_international' => $this->normalizeCommissionRate($validated['commission_international'] ?? null),
             ]
         );
 
@@ -225,6 +231,8 @@ class AirlineConfigController extends Controller
             'airports' => 'nullable|array',
             'domestic_commission_rate' => 'nullable|numeric|min:0|max:100',
             'international_commission_rate' => 'nullable|numeric|min:0|max:100',
+            'commission_domestic' => 'nullable|numeric|min:0',
+            'commission_international' => 'nullable|numeric|min:0',
         ]);
 
         $credentials = [
