@@ -18,6 +18,6 @@ class OyaAirline extends BaseVidecomAirline
 
     public function getVidecomCode(): string
     {
-        return 'OYa';
+        return 'Oya';
     }
 }

@@ -17,7 +17,7 @@ class PostToLedgerJob implements ShouldQueue
 
     public int $backoff = 30;
 
-    public function __construct(public int $orderId, public bool $includeOwnCredentials = true) {}
+    public function __construct(public string $orderId, public bool $includeOwnCredentials = true) {}
 
     public function handle(PostToLedger $postToLedger): void
     {

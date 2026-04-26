@@ -10,7 +10,7 @@ beforeEach(function () {
         'company_name' => 'Wallet Middleware Test',
         'status' => 'active',
         'subscription_status' => 'trial',
-        'use_own_airline_credentials' => false,
+        'settings' => ['finance' => ['use_own_airline_credentials' => false]],
     ]);
 
     $tenant->domains()->create(['domain' => $tenant->id.'.localhost']);
@@ -62,7 +62,7 @@ test('wallet balance middleware allows booking when balance is sufficient', func
 
 test('wallet balance middleware skips for tenants with own credentials', function () {
     // Update tenant to use own airline credentials.
-    tenant()->update(['use_own_airline_credentials' => true]);
+    tenant()->update(['settings' => ['finance' => ['use_own_airline_credentials' => true]]]);
 
     $this->actingAs($this->manager);
 

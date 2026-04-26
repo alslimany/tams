@@ -8,6 +8,7 @@ use Livewire\Component;
 
 new class extends Component {
     use PasswordValidationRules;
+    protected $layout = 'layouts.tenant-navbar';
 
     public string $current_password = '';
     public string $password = '';

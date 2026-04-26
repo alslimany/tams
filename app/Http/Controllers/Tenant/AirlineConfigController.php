@@ -104,6 +104,18 @@ class AirlineConfigController extends Controller
                     ['name' => 'Default Account', 'currency' => 'LYD'],
                 ],
             ],
+            [
+                'id' => 'LB',
+                'iata' => 'LB',
+                'icao' => 'LBA',
+                'name' => 'Libyan Express',
+                'provider_type' => 'videcom',
+                'videcom_code' => 'LibyanExpress',
+                'base_url' => 'https://customer2.videcom.com/LibyanExpress',
+                'accounts' => [
+                    ['name' => 'Default Account', 'currency' => 'LYD'],
+                ],
+            ],
         ];
     }
 
@@ -206,8 +218,8 @@ class AirlineConfigController extends Controller
                 'last_test_message' => null,
                 'domestic_commission_rate' => $this->normalizeCommissionRate($validated['domestic_commission_rate'] ?? null),
                 'international_commission_rate' => $this->normalizeCommissionRate($validated['international_commission_rate'] ?? null),
-                'commission_domestic' => $this->normalizeCommissionRate($validated['commission_domestic'] ?? null),
-                'commission_international' => $this->normalizeCommissionRate($validated['commission_international'] ?? null),
+                'commission_domestic' => $this->normalizeCommissionRate($validated['commission_domestic'] ?? null) ?? 0,
+                'commission_international' => $this->normalizeCommissionRate($validated['commission_international'] ?? null) ?? 0,
             ]
         );
 

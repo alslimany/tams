@@ -89,7 +89,7 @@ class FinanceReconcileCommand extends Command
                 $currency = $wallet->meta['currency'] ?? $wallet->slug;
 
                 if ($currencyFilter && $currency !== $currencyFilter) {
-                    return [$currency => [
+                    return [$currency => (object) [
                         'currency' => $currency,
                         'total_deposits' => 0,
                         'total_withdrawals' => 0,
@@ -108,10 +108,10 @@ class FinanceReconcileCommand extends Command
                     ->whereBetween(DB::raw('DATE(created_at)'), [$startDate, $endDate])
                     ->sum('amount');
 
-                return [$currency => [
+                return [$currency => (object) [
                     'currency' => $currency,
                     'total_deposits' => (float) ($deposits / 100),
-                    'total_withdrawals' => (float) ($withdrawals / 100),
+                    'total_withdrawals' => (float) (abs($withdrawals) / 100),
                 ]];
             });
         }

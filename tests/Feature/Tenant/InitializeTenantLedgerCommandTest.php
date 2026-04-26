@@ -2,10 +2,7 @@
 
 use Abivia\Ledger\Models\LedgerAccount;
 use App\Models\Tenant;
-use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
-
-uses(Tests\TestCase::class, RefreshDatabase::class);
 
 test('ledger initialize command sets up ledger for all tenants', function () {
     $tenantA = Tenant::create([

@@ -11,6 +11,7 @@ use Livewire\Component;
 
 new class extends Component {
     use ProfileValidationRules;
+    protected $layout = 'layouts.tenant-navbar';
 
     public string $name = '';
     public string $email = '';

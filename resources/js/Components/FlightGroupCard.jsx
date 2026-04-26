@@ -770,7 +770,7 @@ export default function FlightGroupCard({
             className="overflow-hidden shadow-md border-2 border-muted/50 hover:border-primary/30 transition-all"
         >
             {/* Row 1: Airline + Itinerary */}
-            <div className="p-4 sm:p-6 border-b bg-muted/5">
+            <div className="p-4 sm:p-6 bg-muted/5">
                 <div className="flex flex-col gap-4">
                     <div className="flex items-center justify-between gap-1">
                         <div className="flex items-center gap-1">
@@ -859,7 +859,7 @@ export default function FlightGroupCard({
                             </div>
                         </div>
                         {/*  */}
-                        <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-dashed border-muted/50">
+                        <div className="flex flex-col items-center gap-2 pt-2 border-t border-dashed border-muted/50">
                            
                             {cabinKeys.map((cabin) => {
                                 const isExpanded = expandedCabin === cabin;
@@ -913,9 +913,12 @@ export default function FlightGroupCard({
             {/* Row 2: Comparison Table (shown when cabin selected) */}
             {expandedCabin && (
                 <div className="bg-muted/5 p-4 sm:p-6 animate-in slide-in-from-top-2 duration-200">
+                    {/* hide using if statement */}
+                    {false && (
                     <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground mb-4">
                         {getCabinName(expandedCabin)} {t('common.class_comparison')} &mdash; {cabins[expandedCabin].length} {t('common.offer')}{cabins[expandedCabin].length !== 1 ? t('common.plural_suffix') : ''}
                     </p>
+                    )}
                     {renderComparisonTable(cabins[expandedCabin])}
                 </div>
             )}

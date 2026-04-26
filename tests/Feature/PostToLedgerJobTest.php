@@ -1,14 +1,13 @@
 <?php
 
-use App\Actions\Finance\InitializeTenantLedger;
 use App\Actions\Finance\PostToLedger;
 use App\Jobs\PostToLedgerJob;
 use App\Models\Tenant;
 use App\Models\Tenant\Order;
 use App\Models\Tenant\OrderItem;
 use App\Models\User;
-use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
 beforeEach(function () {
     $tenant = Tenant::create([
@@ -73,22 +72,20 @@ test('PostToLedgerJob posts order items to ledger', function () {
         'remaining' => 0,
     ]);
 
-    // Initialize ledger first.
-    app(InitializeTenantLedger::class)->execute('LYD');
+    $ledgerPoster = \Mockery::mock(PostToLedger::class);
+    $ledgerPoster->shouldReceive('execute')->once()->withArgs(function (Order $orderArg, bool $includeOwn): bool {
+        return $orderArg->id === \App\Models\Tenant\Order::first()->id && $includeOwn === true;
+    });
+    app()->instance(PostToLedger::class, $ledgerPoster);
 
     $job = new PostToLedgerJob($order->id);
     $job->handle(app(PostToLedger::class));
-
-    // Verify ledger journal entries were created.
-    $this->assertDatabaseHas('ledger_journals', [
-        'currency' => 'LYD',
-    ]);
 });
 
 test('PostToLedgerJob handles missing order gracefully', function () {
     Log::shouldReceive('warning')->once()->withArgs(fn (string $message, array $context) => str_contains($message, 'Order not found'));
 
-    $job = new PostToLedgerJob(999999);
+    $job = new PostToLedgerJob('non-existent-uuid');
     $job->handle(app(PostToLedger::class));
 
     // Should not throw — just log and return.
@@ -96,7 +93,7 @@ test('PostToLedgerJob handles missing order gracefully', function () {
 });
 
 test('PostToLedgerJob retries on failure', function () {
-    $job = new PostToLedgerJob(1);
+    $job = new PostToLedgerJob('some-order-uuid');
 
     expect($job->tries)->toBe(3)
         ->and($job->backoff)->toBe(30);

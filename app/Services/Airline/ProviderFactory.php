@@ -7,6 +7,7 @@ use App\Services\Airline\Videcom\Airlines\BerniqAirline;
 use App\Services\Airline\Videcom\Airlines\BuraqAirline;
 use App\Services\Airline\Videcom\Airlines\CrownAirline;
 use App\Services\Airline\Videcom\Airlines\GlobalAirline;
+use App\Services\Airline\Videcom\Airlines\LibyaExpressAirline;
 use App\Services\Airline\Videcom\Airlines\LibyanWingsAirline;
 use App\Services\Airline\Videcom\Airlines\MedskyAirline;
 use App\Services\Airline\Videcom\Airlines\OyaAirline;
@@ -57,6 +58,7 @@ class ProviderFactory
             'NB', 'Berniq' => new BerniqAirline($credentials),
             '5S', 'GlobalAir' => new GlobalAirline($credentials),
             'FQ', 'FlyCrown' => new CrownAirline($credentials),
+            'LB', 'LibyanExpress' => new LibyaExpressAirline($credentials),
             default => throw new Exception("Unsupported Videcom airline code: {$config->airline_code}"),
         };
     }

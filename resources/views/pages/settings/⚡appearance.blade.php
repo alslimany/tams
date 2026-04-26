@@ -3,6 +3,7 @@
 use Livewire\Component;
 
 new class extends Component {
+    protected $layout = 'layouts.tenant-navbar';
     //
 }; ?>
 

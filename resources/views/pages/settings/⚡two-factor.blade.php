@@ -11,6 +11,7 @@ use Livewire\Component;
 use Symfony\Component\HttpFoundation\Response;
 
 new class extends Component {
+    protected $layout = 'layouts.tenant-navbar';
     #[Locked]
     public bool $twoFactorEnabled;
 
