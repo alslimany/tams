@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Tenant;
 use App\Http\Controllers\Controller;
 use App\Models\Tenant\AirlineAccount;
 use App\Models\TenantProvider;
+use App\Services\Airline\AgencyProviderResolver;
 use App\Services\Airline\ProviderFactory;
 use App\Services\Airline\Videcom\BaseVidecomAirline;
 use Exception;
@@ -13,6 +14,13 @@ use Inertia\Inertia;
 
 class AirlineConfigController extends Controller
 {
+    protected AgencyProviderResolver $providerResolver;
+
+    public function __construct(AgencyProviderResolver $providerResolver)
+    {
+        $this->providerResolver = $providerResolver;
+    }
+
     /**
      * List of all airlines supported by the system.
      */
@@ -121,6 +129,11 @@ class AirlineConfigController extends Controller
 
     public function index()
     {
+        // Redirect if agency is not allowed to manage its own providers
+        if (! $this->providerResolver->canManageOwnProviders()) {
+            return redirect()->route('dashboard')->with('error', 'Airline providers are managed by the system.');
+        }
+
         $supportedAirlines = $this->getSupportedAirlines();
         $configuredAirlines = TenantProvider::all()->groupBy('airline_code');
 
@@ -170,6 +183,11 @@ class AirlineConfigController extends Controller
 
     public function store(Request $request)
     {
+        // Redirect if agency is not allowed to manage its own providers
+        if (! $this->providerResolver->canManageOwnProviders()) {
+            return redirect()->route('dashboard')->with('error', 'Airline providers are managed by the system.');
+        }
+
         $validated = $request->validate([
             'provider_type' => 'required|string',
             'airline_code' => 'required|string',
@@ -230,6 +248,11 @@ class AirlineConfigController extends Controller
 
     public function testConnection(Request $request)
     {
+        // Redirect if agency is not allowed to manage its own providers
+        if (! $this->providerResolver->canManageOwnProviders()) {
+            return response()->json(['error' => 'Airline providers are managed by the system.'], 403);
+        }
+
         $validated = $request->validate([
             'provider_type' => 'required|string',
             'airline_code' => 'required|string',
@@ -311,6 +334,11 @@ class AirlineConfigController extends Controller
 
     public function toggle(TenantProvider $provider)
     {
+        // Redirect if agency is not allowed to manage its own providers
+        if (! $this->providerResolver->canManageOwnProviders()) {
+            return back()->with('error', 'Airline providers are managed by the system.');
+        }
+
         $provider->update(['is_active' => ! $provider->is_active]);
 
         return back()->with('success', $provider->airline_name.' '.($provider->is_active ? 'enabled' : 'disabled'));

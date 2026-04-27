@@ -2,26 +2,33 @@
 
 namespace App\Console\Commands;
 
+use App\Actions\Finance\InitializeTenantLedger;
 use App\Models\AgencySettlement;
 use App\Models\AgencyWalletTransaction;
+use App\Models\Tenant;
 use Illuminate\Console\Command;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Throwable;
 
 class FinanceSettleMasterCommissionsCommand extends Command
 {
     protected $signature = 'finance:settle-master-commissions
         {tenantId? : Optional buyer tenant ID. If omitted, all buyer tenants are processed}
         {--currency= : Filter by currency}
-        {--dry-run : Preview only, without creating settlement records}';
+        {--dry-run : Preview only, without creating settlement records}
+        {--post-to-ledger : Also create journal entries in each tenant ledger (requires ledger initialized)}
+        {--init-ledger : Initialize tenant ledger accounts if not present before posting}';
 
-    protected $description = 'Create central settlement records for outstanding default-agency commission payables.';
+    protected $description = 'Create central settlement records for outstanding default-agency commission payable.';
 
     public function handle(): int
     {
         $tenantId = $this->argument('tenantId');
         $currency = $this->option('currency');
         $isDryRun = (bool) $this->option('dry-run');
+        $postToLedger = (bool) $this->option('post-to-ledger');
+        $initLedger = (bool) $this->option('init-ledger');
 
         /** @var Collection<int, AgencyWalletTransaction> $payables */
         $payables = AgencyWalletTransaction::query()
@@ -132,9 +139,91 @@ class FinanceSettleMasterCommissionsCommand extends Command
         if ($isDryRun) {
             $this->comment('Dry run completed. No settlement records were written.');
         } else {
-            $this->comment("Created {$settlementRecordsCreated} settlement record(s). Automatic cross-tenant wallet transfer is not performed.");
+            $this->comment("Created {$settlementRecordsCreated} settlement record(s).");
+        }
+
+        if ($postToLedger && ! $isDryRun) {
+            $this->info('');
+            $this->info('Posting journal entries to tenant ledgers...');
+            $this->postToLedgers($groupedPayables, $initLedger);
+        } elseif ($postToLedger && $isDryRun) {
+            $this->comment('Skipping ledger post in dry-run mode.');
         }
 
         return self::SUCCESS;
+    }
+
+    /**
+     * @param  Collection<string, Collection<int, AgencyWalletTransaction>>  $groupedPayables
+     */
+    protected function postToLedgers(Collection $groupedPayables, bool $initLedger): void
+    {
+        $defaultCurrency = 'USD';
+        $initializer = new InitializeTenantLedger;
+
+        $tenantsThatNeedPosting = $groupedPayables->keys()
+            ->map(fn (string $key) => explode('|', $key, 3)[0])
+            ->unique()
+            ->values();
+
+        $failedTenants = [];
+
+        foreach ($tenantsThatNeedPosting as $buyerTenantId) {
+            /** @var Tenant|null $tenant */
+            $tenant = Tenant::query()->find($buyerTenantId);
+
+            if (! $tenant) {
+                $this->warn("Tenant {$buyerTenantId} not found, skipping ledger post.");
+
+            }
+
+            $groupKey = implode('|', [
+                $buyerTenantId,
+            ]);
+
+            $settlementTotal = $groupedPayables
+                ->filter(fn (Collection $group, string $key) => str_starts_with($key, $buyerTenantId.'|'))
+                ->sum(fn (Collection $group) => (float) $group->sum('amount'));
+
+            if ($settlementTotal <= 0) {
+                continue;
+            }
+
+            try {
+                $tenant->run(function () use ($initializer, $initLedger, $defaultCurrency, $settlementTotal, $buyerTenantId): void {
+                    if ($initLedger) {
+                        $initializer->execute($defaultCurrency);
+                    }
+
+                    $journalId = app(\App\Services\Finance\LedgerDriver::class)->postOperationJournal(
+                        source: 'settlement_'.$buyerTenantId,
+                        description: "Commission settlement for buyer {$buyerTenantId}",
+                        entries: [
+                            [
+                                'account' => '6100',
+                                'direction' => 'debit',
+                                'amount' => $settlementTotal,
+                            ],
+                            [
+                                'account' => '2300',
+                                'direction' => 'credit',
+                                'amount' => $settlementTotal,
+                            ],
+                        ],
+                    );
+
+                    $this->info("  Posted to buyer {$buyerTenantId}: journal_id={$journalId}, amount=".number_format($settlementTotal, 2, '.', ''));
+                });
+            } catch (Throwable $e) {
+                $failedTenants[] = $buyerTenantId;
+                $this->error("  Failed for buyer {$buyerTenantId}: {$e->getMessage()}");
+            }
+        }
+
+        if ($failedTenants !== []) {
+            $this->warn('Failed tenants: '.implode(', ', $failedTenants));
+        } else {
+            $this->info('All ledger entries posted successfully.');
+        }
     }
 }

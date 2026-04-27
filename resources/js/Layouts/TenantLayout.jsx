@@ -5,6 +5,7 @@ import {
     LayoutDashboardIcon,
     LogOutIcon,
     PlaneTakeoffIcon,
+    PlaneLandingIcon,
     SettingsIcon,
     ShieldCheckIcon,
     ShoppingCartIcon,
@@ -12,6 +13,7 @@ import {
     UsersIcon,
 } from 'lucide-react';
 import { Toaster, toast } from 'sonner';
+import { AlertCircleIcon } from 'lucide-react';
 
 import {
     Sidebar,
@@ -31,10 +33,11 @@ import {
 import { Separator } from '@/Components/ui/separator';
 
 export default function TenantLayout({ children }) {
-    const { auth, tenant, flash } = usePage().props;
+    const { auth, tenant, flash, agencySettings } = usePage().props;
     const currentPath = usePage().url;
 
     const isAdmin = auth.user?.role === 'admin';
+    const canManageProviders = agencySettings?.can_manage_providers ?? true;
 
     useEffect(() => {
         if (flash?.success) {
@@ -72,9 +75,9 @@ export default function TenantLayout({ children }) {
 
     const adminLinks = [
         { name: 'Users', route: 'users.index', icon: UsersIcon },
-        { name: 'Air Config', route: 'settings.airlines.index', icon: PlaneTakeoffIcon },
+        { name: 'Air Config', route: 'settings.airlines.index', icon: PlaneTakeoffIcon, showWhen: canManageProviders },
         { name: 'General Settings', route: 'settings.general.index', icon: SettingsIcon },
-    ].filter((item) => isAdmin && hasRoute(item.route));
+    ].filter((item) => isAdmin && hasRoute(item.route) && (item.showWhen !== false));
 
     const accountLinks = [
         { name: 'Profile', route: 'profile.edit', icon: UserIcon },
@@ -121,6 +124,12 @@ export default function TenantLayout({ children }) {
 
     return (
         <>
+            {agencySettings?.force_use_default_agency && (
+                <div className="flex items-center gap-2 bg-amber-50 px-4 py-2 text-sm text-amber-800 border-b border-amber-200">
+                    <PlaneLandingIcon className="size-4" />
+                    <span>Airline providers are managed by the system. Your bookings use the default agency credentials.</span>
+                </div>
+            )}
             <SidebarProvider>
                 <Sidebar collapsible="icon" variant="inset">
                     <SidebarHeader>

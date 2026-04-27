@@ -16,6 +16,7 @@ use App\Models\Tenant\Order;
 use App\Models\Tenant\OrderItem;
 use App\Models\TenantProvider;
 use App\Models\User;
+use App\Services\Airline\AgencyProviderResolver;
 use App\Services\Airline\ProviderFactory;
 use App\Services\Airline\Videcom\VidecomPnrParser;
 use App\Services\Commission\TenantProviderCommissionCalculator;
@@ -33,7 +34,10 @@ use SimpleXMLElement;
 
 class TicketController extends Controller
 {
-    public function __construct(protected TenantProviderCommissionCalculator $tenantProviderCommissionCalculator) {}
+    public function __construct(
+        protected TenantProviderCommissionCalculator $tenantProviderCommissionCalculator,
+        protected AgencyProviderResolver $providerResolver,
+    ) {}
 
     public function issue(Request $request, Order $booking): RedirectResponse
     {
@@ -47,10 +51,9 @@ class TicketController extends Controller
         $pnr = (string) ($firstItem->provider_reference ?: $booking->payment_reference);
         $airlineCode = (string) data_get($firstItem->item_details, 'airline_code', '');
 
-        $providerConfig = TenantProvider::query()
-            ->where('is_active', true)
-            ->when($airlineCode !== '', fn ($query) => $query->where('airline_code', $airlineCode))
-            ->first();
+        // Resolve the correct provider based on agency settings
+        $resolved = $this->providerResolver->resolve($airlineCode);
+        $providerConfig = $resolved['provider'];
 
         if (! $providerConfig) {
             return back()->with('error', 'No active provider found for this booking.');
@@ -514,12 +517,17 @@ class TicketController extends Controller
 
         $financialSourceAction = app(DetermineFinancialSource::class);
         $commissionCalculator = app(CommissionCalculator::class);
+        $providerResolver = app(AgencyProviderResolver::class);
 
         foreach ($order->items as $item) {
             $segment = (array) data_get($item->item_details, 'segment', data_get($item->product_details, 'segment', []));
             $origin = (string) ($segment['departure_airport'] ?? '');
             $destination = (string) ($segment['arrival_airport'] ?? '');
             $airlineCode = (string) data_get($item->item_details, 'airline_code', data_get($item->product_details, 'airline_code', ''));
+
+            // Resolve provider to check if using master agency
+            $resolved = $providerResolver->resolve($airlineCode);
+            $isUsingMasterAgency = $resolved['is_using_master_agency'];
 
             $source = $financialSourceAction->execute($airlineCode, (string) $item->currency);
             $commission = $commissionCalculator->calculate(
@@ -560,6 +568,8 @@ class TicketController extends Controller
                 'net_after_commission' => $netAfterCommission,
                 'agent_commission' => $agentCommission,
                 'net_commission' => $agentCommission,
+                'used_master_agency_provider' => $isUsingMasterAgency,
+                'master_commission_percent' => $source->usesMasterAgencySupply() ? $source->masterCommissionRate : null,
                 'item_details' => $details,
             ])->save();
         }

@@ -36,6 +36,28 @@ class HandleInertiaRequests extends Middleware
      */
     public function share(Request $request): array
     {
+        $agencySettings = null;
+
+        if (function_exists('tenant') && tenant()) {
+            try {
+                $settings = \App\Models\Tenant\AgencySetting::current();
+                $agencySettings = [
+                    'can_use_own_airline_credentials' => $settings->canUseOwnAirlineCredentials(),
+                    'force_use_default_agency' => $settings->isForcedToUseDefaultAgency(),
+                    'can_manage_providers' => ! $settings->isForcedToUseDefaultAgency()
+                        && $settings->canUseOwnAirlineCredentials(),
+                ];
+            } catch (\Throwable $e) {
+                // Table doesn't exist or other error - default to allowing own credentials
+                report($e);
+                $agencySettings = [
+                    'can_use_own_airline_credentials' => true,
+                    'force_use_default_agency' => false,
+                    'can_manage_providers' => true,
+                ];
+            }
+        }
+
         return [
             ...parent::share($request),
             'app' => [
@@ -55,6 +77,7 @@ class HandleInertiaRequests extends Middleware
                 'companyName' => function_exists('tenant') && tenant() ? tenant()->company_name : null,
                 'status' => function_exists('tenant') && tenant() ? tenant()->status : null,
             ],
+            'agencySettings' => $agencySettings,
             'ziggy' => fn () => [
                 ...(new Ziggy)->toArray(),
                 'location' => $request->url(),

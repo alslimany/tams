@@ -27,6 +27,15 @@ class AgencySetting extends Model
      */
     public static function current(): self
     {
+        // If table doesn't exist, return default settings
+        if (! \Schema::hasTable('agency_settings')) {
+            return new self([
+                'can_use_own_airline_credentials' => true,
+                'force_use_default_agency' => false,
+                'master_commission_percent' => 0,
+            ]);
+        }
+
         return self::firstOrCreate([], [
             'can_use_own_airline_credentials' => true,
             'force_use_default_agency' => false,

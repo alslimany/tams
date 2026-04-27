@@ -8,6 +8,7 @@ use App\Models\Airport;
 use App\Models\Tenant\Order;
 use App\Models\Tenant\OrderItem;
 use App\Models\TenantProvider;
+use App\Services\Airline\AgencyProviderResolver;
 use App\Services\Airline\ProviderFactory;
 use App\Services\Airline\RoundTripPriceManager;
 use App\Services\Airline\Videcom\VidecomAncillaryCatalog;
@@ -35,6 +36,7 @@ class BookingController extends Controller
         protected RouteAvailabilityService $routeAvailabilityService,
         protected FlightScheduleCacheService $flightScheduleCacheService,
         protected GlobalFlightCacheSettingsService $globalFlightCacheSettingsService,
+        protected AgencyProviderResolver $providerResolver,
     ) {}
 
     public function index(): Response
@@ -53,14 +55,21 @@ class BookingController extends Controller
 
         $bookings = $this->queryBookingsFromOrders(request())->latest()->limit(25)->get();
 
+        // Get airlines list based on agency settings
+        $providers = $this->providerResolver->getAllActiveProviders();
+        $airlines = $providers
+            ->map(fn ($p) => [
+                'airline_code' => $p->airline_code,
+                'airline_name' => $p->airline_name,
+            ])
+            ->unique(fn ($a) => $a['airline_code'])
+            ->sortBy('airline_name')
+            ->values();
+
         return Inertia::render('Tenant/Bookings/Search', [
             'bookings' => $bookings->map(fn (Order $order): array => $this->formatOrderForBookingList($order))->values(),
             'filters' => request()->only(['status', 'pnr', 'customer', 'airline']),
-            'airlines' => TenantProvider::query()
-                ->select('airline_code', 'airline_name')
-                ->distinct()
-                ->orderBy('airline_name')
-                ->get(),
+            'airlines' => $airlines,
             'searchDefaults' => [
                 'origin' => strtoupper((string) ($searchDefaults['origin'] ?? '')),
                 'destination' => strtoupper((string) ($searchDefaults['destination'] ?? '')),
@@ -105,8 +114,8 @@ class BookingController extends Controller
             return redirect()->route('flights.index')->with('error', 'Search expired. Please search again.');
         }
 
-        $providers = TenantProvider::where('is_active', '=', true)
-            ->get(['id', 'airline_name', 'airline_code', 'account_name']);
+        // Get providers based on agency settings (uses default agency if forced)
+        $providers = $this->providerResolver->getAllActiveProviders();
 
         $filteredProviders = $this->filterProvidersByRouteAvailability(
             $providers,
@@ -118,7 +127,13 @@ class BookingController extends Controller
         if ($request->has('provider_id')) {
             $providerId = $request->input('provider_id');
             try {
-                $providerConfig = TenantProvider::findOrFail($providerId);
+                // Try to find provider from the resolved providers collection
+                $providerConfig = $providers->firstWhere('id', $providerId);
+
+                if (! $providerConfig) {
+                    return back()->with('error', 'Provider not found.');
+                }
+
                 $provider = ProviderFactory::make($providerConfig);
 
                 $params = $this->buildOneWayAvailabilityParams($searchParams);
@@ -184,7 +199,7 @@ class BookingController extends Controller
     {
         $validated = $request->validate([
             'uuid' => 'required|string',
-            'provider_id' => 'required|exists:tenant_providers,id',
+            'provider_id' => 'required|integer',
         ]);
 
         $searchParams = Cache::get("flight_search_{$validated['uuid']}");
@@ -193,8 +208,17 @@ class BookingController extends Controller
             return response()->json(['error' => 'Search session expired'], 410);
         }
 
+        // Get providers based on agency settings
+        $providers = $this->providerResolver->getAllActiveProviders();
+
+        // Find provider from collection
+        $providerConfig = $providers->firstWhere('id', $validated['provider_id']);
+
+        if (! $providerConfig) {
+            return response()->json(['error' => 'Provider not found.'], 422);
+        }
+
         try {
-            $providerConfig = TenantProvider::findOrFail($validated['provider_id']);
             $provider = ProviderFactory::make($providerConfig);
             $providerConfig->update(['last_used_at' => now()]);
 
@@ -253,11 +277,20 @@ class BookingController extends Controller
     public function openReservationAvailability(Request $request)
     {
         $validated = $request->validate([
-            'provider_id' => 'required|exists:tenant_providers,id',
+            'provider_id' => 'required|integer',
             'flight' => 'required|array',
         ]);
 
-        $providerConfig = TenantProvider::findOrFail($validated['provider_id']);
+        // Get providers based on agency settings
+        $providers = $this->providerResolver->getAllActiveProviders();
+
+        // Find provider from collection
+        $providerConfig = $providers->firstWhere('id', $validated['provider_id']);
+
+        if (! $providerConfig) {
+            return response()->json(['error' => 'Provider not found.'], 422);
+        }
+
         $provider = ProviderFactory::make($providerConfig);
 
         $segment = $this->mapFlightToProviderSegment($validated['flight']);
@@ -274,13 +307,20 @@ class BookingController extends Controller
     public function seatmap(Request $request)
     {
         $validated = $request->validate([
-            'provider_id' => 'required|exists:tenant_providers,id',
+            'provider_id' => 'required|integer',
             'flight_number' => 'required|string',
             'date' => 'required|date',
         ]);
 
         try {
-            $providerConfig = TenantProvider::findOrFail($validated['provider_id']);
+            // Get providers based on agency settings
+            $providers = $this->providerResolver->getAllActiveProviders();
+            $providerConfig = $providers->firstWhere('id', $validated['provider_id']);
+
+            if (! $providerConfig) {
+                return response()->json(['error' => 'Provider not found.'], 422);
+            }
+
             $provider = ProviderFactory::make($providerConfig);
 
             return response()->json($provider->getSeatMap($validated['flight_number'], $validated['date']));
@@ -322,8 +362,8 @@ class BookingController extends Controller
             'force_refresh' => filter_var($validated['force_refresh'] ?? false, FILTER_VALIDATE_BOOLEAN),
         ]);
 
-        $providers = TenantProvider::query()
-            ->where('is_active', '=', true)
+        // Get providers based on agency settings (uses default agency if forced)
+        $providers = $this->providerResolver->getAllActiveProviders()
             ->where('provider_type', '=', 'videcom')
             ->get(['id', 'airline_name', 'airline_code', 'account_name', 'provider_type', 'credentials']);
 
@@ -449,22 +489,28 @@ class BookingController extends Controller
         ]);
 
         $searchParams = Cache::get("flight_search_{$validated['uuid']}");
-        $providerConfig = TenantProvider::findOrFail($validated['provider_id']);
+
+        // Use resolver to find provider
+        $providerConfig = $this->providerResolver->findProviderById((int) $validated['provider_id']);
+
+        if (! $providerConfig) {
+            return response()->json(['error' => 'Provider not found.'], 422);
+        }
+
         $provider = ProviderFactory::make($providerConfig);
 
         $isRoundTrip = filter_var($validated['is_round_trip'] ?? false, FILTER_VALIDATE_BOOLEAN);
         $ancillaryCatalogByOffer = [];
 
+        // Get all providers for round trip lookup
+        $allProviders = $this->providerResolver->getAllActiveProviders();
+
         if ($isRoundTrip) {
             $outboundProviderId = (int) ($validated['outbound_provider_id'] ?? $validated['provider_id']);
             $returnProviderId = (int) ($validated['return_provider_id'] ?? $validated['provider_id']);
 
-            $outboundProvider = $outboundProviderId === (int) $providerConfig->id
-                ? $providerConfig
-                : TenantProvider::find($outboundProviderId);
-            $returnProvider = $returnProviderId === (int) $providerConfig->id
-                ? $providerConfig
-                : TenantProvider::find($returnProviderId);
+            $outboundProvider = $allProviders->firstWhere('id', $outboundProviderId);
+            $returnProvider = $allProviders->firstWhere('id', $returnProviderId);
 
             $outboundFlight = data_get($validated, 'flight.round_trip.outbound_flight', $validated['flight']);
             $returnFlight = data_get($validated, 'flight.round_trip.return_flight', $validated['flight']);
@@ -567,7 +613,14 @@ class BookingController extends Controller
         }
 
         $searchParams = Cache::get("flight_search_{$validated['uuid']}") ?? [];
-        $providerConfig = TenantProvider::findOrFail($validated['provider_id']);
+
+        // Use resolver to find provider
+        $providerConfig = $this->providerResolver->findProviderById((int) $validated['provider_id']);
+
+        if (! $providerConfig) {
+            return back()->withErrors(['error' => 'Provider not found.']);
+        }
+
         $provider = ProviderFactory::make($providerConfig);
         $providerConfig->update(['last_used_at' => now()]);
 
@@ -587,16 +640,15 @@ class BookingController extends Controller
         $catalogByOffer = [];
         $flightByOffer = [];
 
+        // Get all providers for round trip lookup
+        $allProviders = $this->providerResolver->getAllActiveProviders();
+
         if ($isRoundTrip) {
             $outboundProviderId = (int) ($validated['outbound_provider_id'] ?? $validated['provider_id']);
             $returnProviderId = (int) ($validated['return_provider_id'] ?? $validated['provider_id']);
 
-            $outboundProvider = $outboundProviderId === (int) $providerConfig->id
-                ? $providerConfig
-                : TenantProvider::find($outboundProviderId);
-            $returnProvider = $returnProviderId === (int) $providerConfig->id
-                ? $providerConfig
-                : TenantProvider::find($returnProviderId);
+            $outboundProvider = $allProviders->firstWhere('id', $outboundProviderId);
+            $returnProvider = $allProviders->firstWhere('id', $returnProviderId);
 
             $flightByOffer['outbound'] = data_get($validated, 'flight.round_trip.outbound_flight', $validated['flight']);
             $flightByOffer['return'] = data_get($validated, 'flight.round_trip.return_flight', $validated['flight']);
