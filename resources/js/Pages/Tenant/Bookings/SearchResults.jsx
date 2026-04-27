@@ -142,9 +142,9 @@ export default function SearchResults({ providers, query, uuid, searchDisplayMod
                 if (newFlights.length > 0) {
                     setResults(prev => {
                         return [...prev, ...newFlights].sort((a, b) => {
-                            const priceA = a?.pricing?.total || 0;
-                            const priceB = b?.pricing?.total || 0;
-                            return priceA - priceB;
+                            const timeA = new Date(a.departure_time);
+                            const timeB = new Date(b.departure_time);
+                            return timeA - timeB;
                         });
                     });
                 }
@@ -368,6 +368,12 @@ export default function SearchResults({ providers, query, uuid, searchDisplayMod
     const selectedRoundTripCurrency = selectedOutboundFlight?.pricing?.currency || selectedReturnFlight?.pricing?.currency || 'LYD';
     const selectedOneWayTotal = Number(selectedOneWayFlight?.pricing?.total || 0);
     const selectedOneWayCurrency = selectedOneWayFlight?.pricing?.currency || 'LYD';
+
+    const bestOffer = activeResults.length > 0 ? activeResults.reduce((cheapest, flight) => {
+        const currentPrice = flight?.pricing?.total || 0;
+        const cheapestPrice = cheapest?.pricing?.total || 0;
+        return currentPrice < cheapestPrice ? flight : cheapest;
+    }) : null;
 
     const renderFlightDetailsDialog = (flight, triggerLabel = 'Flight Details') => {
         if (!flight) {
@@ -689,7 +695,7 @@ export default function SearchResults({ providers, query, uuid, searchDisplayMod
                             {activeOrigin} <ChevronRight className="h-8 w-8 text-muted-foreground/30" /> {activeDestination}
                         </h2>
                         <p className="text-muted-foreground font-medium mt-1">
-                            {new Date(activeDate).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })} • {
+                            {new Date(activeDate).toLocaleDateString(locale, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })} • {
                                 [
                                     query.adults > 0 ? `${query.adults} Adult${query.adults > 1 ? 's' : ''}` : null,
                                     query.children > 0 ? `${query.children} Child${query.children > 1 ? 'ren' : ''}` : null,
@@ -707,9 +713,9 @@ export default function SearchResults({ providers, query, uuid, searchDisplayMod
 
                             // Format date for the POST payload (YYYY-MM-DD)
                             const localDateStr = new Date(date.getTime() - (date.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
-                            const dayName = date.toLocaleDateString('en-US', { weekday: 'short' });
+                            const dayName = date.toLocaleDateString(locale, { weekday: 'short' });
                             const dayNum = date.getDate();
-                            const monthName = date.toLocaleDateString('en-US', { month: 'short' });
+                            const monthName = date.toLocaleDateString(locale, { month: 'short' });
 
                             if (isPast && !isSelected) {
                                 return (
@@ -762,9 +768,8 @@ export default function SearchResults({ providers, query, uuid, searchDisplayMod
                             {isOffersLoading
                                 ? (isSelectingReturnStep ? t('common.loading_return_flight_offers') : t('common.loading_flight_offers'))
                                 : offersFoundCount > 0
-                                    ? t('common.flight_offers_found', {
-                                        count: offersFoundCount,
-                                        plural: offersFoundCount === 1 ? '' : (locale === 'ar' ? 'ون' : 's')
+                                    ? t(offersFoundCount === 1 ? 'common.flight_offer_found' : 'common.flight_offers_found', {
+                                        count: offersFoundCount
                                     })
                                     : t('common.no_flight_offers_found')}
                         </p>
@@ -846,6 +851,17 @@ export default function SearchResults({ providers, query, uuid, searchDisplayMod
                             <p className="mt-1 text-xs text-destructive/90">
                                 {providerErrors.map((entry) => `${entry.provider}: ${entry.message}`).join(' | ')}
                             </p>
+                        </div>
+                    )}
+
+                    {bestOffer && !selectedOneWayFlight && !selectedOutboundFlight && (
+                        <div className="space-y-4">
+                            <div className="flex items-center gap-3">
+                                <div className="h-2 w-2 rounded-full bg-primary"></div>
+                                <h3 className="text-lg font-bold">Best Offer</h3>
+                                <div className="h-px bg-border flex-1"></div>
+                            </div>
+                            {renderOfferCard(bestOffer)}
                         </div>
                     )}
 

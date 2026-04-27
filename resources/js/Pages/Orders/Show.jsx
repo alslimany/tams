@@ -1,6 +1,6 @@
 import React from 'react';
 import { Head, Link, useForm, usePage } from '@inertiajs/react';
-import TenantNavbarLayout from '@/Layouts/TenantNavbarLayout';
+import TenantSidebarLayout from '@/Layouts/TenantSidebarLayout';
 import { Button } from '@/Components/ui/Button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/Components/ui/Card';
 import { Badge } from '@/Components/ui/Badge';
@@ -189,7 +189,7 @@ export default function Show({ order, itemTransactions, voidRefundAccount }) {
     const depositAccountEmail = voidRefundAccount?.email ?? auth?.user?.email ?? '-';
 
     return (
-        <TenantNavbarLayout>
+        <TenantSidebarLayout>
             <Head title={`Order ${order.number}`} />
 
             <div className="mx-auto max-w-7xl space-y-6 px-4 py-8">
@@ -198,8 +198,8 @@ export default function Show({ order, itemTransactions, voidRefundAccount }) {
                         <div className="flex flex-col gap-4 border-b border-slate-200/80 px-6 py-6 md:flex-row md:items-start md:justify-between">
                             <div className="space-y-3">
                                 <div className="flex flex-wrap items-center gap-3">
-                                    <p className="text-3xl font-black tracking-tight text-slate-950">Order {order.number}</p>
-                                    <Badge variant={orderStatusVariant(order.status)} className="px-3 py-1 font-black uppercase tracking-wider">
+                                    <p className="text-3xl font-black tracking-tight text-white-950">Order {order.number}</p>
+                                    <Badge variant={orderStatusVariant(order.status)} className="px-3 py-1 font-black uppercase text-white tracking-wider">
                                         {order.status}
                                     </Badge>
                                 </div>
@@ -264,7 +264,7 @@ export default function Show({ order, itemTransactions, voidRefundAccount }) {
                                         <div className="space-y-2">
                                             <div className="flex flex-wrap items-center gap-3">
                                                 <p className="text-2xl font-black tracking-tight text-slate-950">PNR: {item.provider_reference ?? pnr.rloc ?? '-'}</p>
-                                                <Badge variant={itemStatusVariant(item.status)} className="px-3 py-1 font-black uppercase tracking-wider">
+                                                <Badge variant={itemStatusVariant(item.status)} className="px-3 py-1 font-black uppercase text-white tracking-wider">
                                                     {item.status}
                                                 </Badge>
                                                 {pnr.is_voidable ? (
@@ -506,6 +506,6 @@ export default function Show({ order, itemTransactions, voidRefundAccount }) {
                     </DialogContent>
                 </Dialog>
             </div>
-        </TenantNavbarLayout>
+        </TenantSidebarLayout>
     );
 }

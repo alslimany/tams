@@ -10,10 +10,12 @@ import { Input } from '@/Components/ui/Input';
 import { Label } from '@/Components/ui/Label';
 import { Select } from '@/Components/ui/Select';
 import { Switch } from '@/Components/ui/Switch';
-import { Plus, Pencil, Trash2, ShieldCheck, User as UserIcon, Mail, Key } from 'lucide-react';
+import { Plus, Pencil, Trash2, ShieldCheck, User as UserIcon, Mail, Key, Wallet, Star, ArrowUpCircle } from 'lucide-react';
 
 export default function Show({ tenantRecord }) {
     const [isUserModalOpen, setIsUserModalOpen] = useState(false);
+    const [isTopUpModalOpen, setIsTopUpModalOpen] = useState(false);
+    const [isDefaultAgencyModalOpen, setIsDefaultAgencyModalOpen] = useState(false);
     const [editingUser, setEditingUser] = useState(null);
 
     const { data, setData, post, put, delete: destroy, processing, errors, reset } = useForm({
@@ -22,6 +24,17 @@ export default function Show({ tenantRecord }) {
         password: '',
         role: 'agent',
         is_active: true,
+    });
+
+    const topUpForm = useForm({
+        currency: 'LYD',
+        amount: '',
+        description: '',
+    });
+
+    const defaultAgencyForm = useForm({
+        is_default_agency: tenantRecord.is_default_agency || false,
+        master_commission_rate: tenantRecord.master_commission_rate || 0,
     });
 
     const updateStatus = (status) => {
@@ -71,6 +84,58 @@ export default function Show({ tenantRecord }) {
         }
     };
 
+    const submitTopUp = (e) => {
+        e.preventDefault();
+        topUpForm.post(route('landlord.tenants.wallet.topup', tenantRecord.id), {
+            onSuccess: () => {
+                setIsTopUpModalOpen(false);
+                topUpForm.reset();
+            },
+        });
+    };
+
+    const submitDefaultAgency = (e) => {
+        e.preventDefault();
+        defaultAgencyForm.patch(route('landlord.tenants.default-agency', tenantRecord.id), {
+            onSuccess: () => {
+                setIsDefaultAgencyModalOpen(false);
+            },
+        });
+    };
+
+    const toggleCredentialsPermission = (useOwn) => {
+        router.patch(route('landlord.tenants.credentials-permission', tenantRecord.id), {
+            use_own_airline_credentials: useOwn,
+        });
+    };
+
+    const walletBalances = tenantRecord.wallet_balances || {};
+    const recentWalletTransactions = tenantRecord.recent_wallet_transactions || [];
+
+    const formatAmount = (amount, currency) => {
+        return `${Number(amount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency}`;
+    };
+
+    const transactionTypeLabel = (type) => {
+        const labels = {
+            topup_from_admin: 'Top-Up',
+            ticket_cost_deduction: 'Ticket Deduction',
+            commission_payment: 'Commission',
+            settlement: 'Settlement',
+        };
+        return labels[type] || type;
+    };
+
+    const transactionTypeVariant = (type) => {
+        const variants = {
+            topup_from_admin: 'success',
+            ticket_cost_deduction: 'destructive',
+            commission_payment: 'outline',
+            settlement: 'secondary',
+        };
+        return variants[type] || 'outline';
+    };
+
     return (
         <LandlordLayout>
             <Head title={tenantRecord.company_name || tenantRecord.id} />
@@ -83,6 +148,11 @@ export default function Show({ tenantRecord }) {
                             <Badge variant={tenantRecord.status === 'active' ? 'success' : tenantRecord.status === 'frozen' ? 'secondary' : 'destructive'}>
                                 {tenantRecord.status}
                             </Badge>
+                            {tenantRecord.is_default_agency && (
+                                <Badge variant="outline" className="border-amber-400/50 bg-amber-50 text-amber-700 font-bold">
+                                    <Star className="mr-1 h-3 w-3 fill-amber-400 text-amber-400" /> Master Agency
+                                </Badge>
+                            )}
                         </div>
                         <p className="text-muted-foreground">{tenantRecord.domains.join(', ')}</p>
                     </div>
@@ -127,6 +197,124 @@ export default function Show({ tenantRecord }) {
                             ) : (
                                 <p className="text-muted-foreground">No admin user found in this tenant.</p>
                             )}
+                        </CardContent>
+                    </Card>
+                </div>
+
+                {/* Wallet & Master Agency Controls */}
+                <div className="grid gap-6 lg:grid-cols-2">
+                    <Card className="border-2 shadow-sm">
+                        <CardHeader className="flex flex-row items-center justify-between space-y-0 border-b bg-muted/10 pb-4">
+                            <div>
+                                <CardTitle className="flex items-center gap-2 text-lg font-bold">
+                                    <Wallet className="h-5 w-5" /> Agency Wallet
+                                </CardTitle>
+                                <CardDescription>Wallet balances and top-up management.</CardDescription>
+                            </div>
+                            <Button onClick={() => setIsTopUpModalOpen(true)} size="sm" className="rounded-full shadow-md">
+                                <ArrowUpCircle className="mr-2 h-4 w-4" /> Top Up
+                            </Button>
+                        </CardHeader>
+                        <CardContent className="pt-4">
+                            <div className="grid grid-cols-3 gap-4 mb-4">
+                                {Object.entries(walletBalances).map(([currency, balance]) => (
+                                    <div key={currency} className="rounded-lg border bg-card p-3 text-center">
+                                        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{currency}</p>
+                                        <p className="text-xl font-bold">{Number(balance).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                                    </div>
+                                ))}
+                            </div>
+
+                            {recentWalletTransactions.length > 0 && (
+                                <div className="space-y-2">
+                                    <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Recent Transactions</p>
+                                    <div className="space-y-1">
+                                        {recentWalletTransactions.slice(0, 5).map((tx) => (
+                                            <div key={tx.id} className="flex items-center justify-between rounded-md px-2 py-1.5 text-sm hover:bg-muted/30">
+                                                <div className="flex items-center gap-2">
+                                                    <Badge variant={transactionTypeVariant(tx.type)} className="text-[10px] px-1.5">
+                                                        {transactionTypeLabel(tx.type)}
+                                                    </Badge>
+                                                    <span className="text-muted-foreground text-xs">{tx.description}</span>
+                                                </div>
+                                                <div className="text-right">
+                                                    <span className={`font-bold ${tx.type === 'topup_from_admin' ? 'text-green-600' : 'text-red-600'}`}>
+                                                        {tx.type === 'topup_from_admin' ? '+' : '-'}{formatAmount(tx.amount, tx.currency)}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                            {recentWalletTransactions.length === 0 && (
+                                <p className="text-sm text-muted-foreground text-center py-4">No wallet transactions yet.</p>
+                            )}
+                        </CardContent>
+                    </Card>
+
+                    <Card className="border-2 shadow-sm">
+                        <CardHeader className="flex flex-row items-center justify-between space-y-0 border-b bg-muted/10 pb-4">
+                            <div>
+                                <CardTitle className="flex items-center gap-2 text-lg font-bold">
+                                    <Star className="h-5 w-5" /> Master Agency & Credentials
+                                </CardTitle>
+                                <CardDescription>Control default agency designation and credential permissions.</CardDescription>
+                            </div>
+                            <Button onClick={() => {
+                                defaultAgencyForm.setData({
+                                    is_default_agency: tenantRecord.is_default_agency || false,
+                                    master_commission_rate: tenantRecord.master_commission_rate || 0,
+                                });
+                                setIsDefaultAgencyModalOpen(true);
+                            }} size="sm" variant="outline" className="rounded-full">
+                                <Star className="mr-2 h-4 w-4" /> Configure
+                            </Button>
+                        </CardHeader>
+                        <CardContent className="pt-4 space-y-4">
+                            <div className="flex items-center justify-between rounded-lg border p-3">
+                                <div>
+                                    <p className="font-semibold text-sm">Default Agency</p>
+                                    <p className="text-xs text-muted-foreground">
+                                        {tenantRecord.is_default_agency
+                                            ? 'This agency supplies airline credentials to other agencies.'
+                                            : 'Not the default agency. Other agencies use their own or the default agency\'s credentials.'}
+                                    </p>
+                                </div>
+                                <Badge variant={tenantRecord.is_default_agency ? 'success' : 'secondary'}>
+                                    {tenantRecord.is_default_agency ? 'Active' : 'Inactive'}
+                                </Badge>
+                            </div>
+
+                            {tenantRecord.is_default_agency && (
+                                <div className="flex items-center justify-between rounded-lg border p-3">
+                                    <div>
+                                        <p className="font-semibold text-sm">Master Commission Rate</p>
+                                        <p className="text-xs text-muted-foreground">Commission earned by the default agency on each ticket.</p>
+                                    </div>
+                                    <span className="text-lg font-bold">{tenantRecord.master_commission_rate}%</span>
+                                </div>
+                            )}
+
+                            <div className="flex items-center justify-between rounded-lg border p-3">
+                                <div>
+                                    <p className="font-semibold text-sm">Airline Credentials</p>
+                                    <p className="text-xs text-muted-foreground">
+                                        {tenantRecord.uses_own_airline_credentials
+                                            ? 'This agency uses its own airline credentials for bookings.'
+                                            : 'This agency uses the default agency\'s airline credentials (master supply).'}
+                                    </p>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <Switch
+                                        checked={tenantRecord.uses_own_airline_credentials}
+                                        onCheckedChange={(checked) => toggleCredentialsPermission(checked)}
+                                    />
+                                    <span className="text-xs text-muted-foreground">
+                                        {tenantRecord.uses_own_airline_credentials ? 'Own' : 'Master'}
+                                    </span>
+                                </div>
+                            </div>
                         </CardContent>
                     </Card>
                 </div>
@@ -261,6 +449,7 @@ export default function Show({ tenantRecord }) {
                 </div>
             </div>
 
+            {/* User Modal */}
             <Dialog open={isUserModalOpen} onOpenChange={setIsUserModalOpen}>
                 <DialogContent className="sm:max-w-[425px]">
                     <form onSubmit={submitUserForm}>
@@ -354,6 +543,126 @@ export default function Show({ tenantRecord }) {
                             <Button type="button" variant="outline" onClick={() => setIsUserModalOpen(false)}>Cancel</Button>
                             <Button type="submit" disabled={processing} className="font-bold">
                                 {processing ? 'Saving...' : (editingUser ? 'Update User' : 'Create User')}
+                            </Button>
+                        </DialogFooter>
+                    </form>
+                </DialogContent>
+            </Dialog>
+
+            {/* Wallet Top-Up Modal */}
+            <Dialog open={isTopUpModalOpen} onOpenChange={setIsTopUpModalOpen}>
+                <DialogContent className="sm:max-w-[425px]">
+                    <form onSubmit={submitTopUp}>
+                        <DialogHeader>
+                            <DialogTitle className="flex items-center gap-2">
+                                <ArrowUpCircle className="h-5 w-5" /> Wallet Top-Up
+                            </DialogTitle>
+                            <DialogDescription>
+                                Add funds to this agency's wallet. The balance will be updated immediately.
+                            </DialogDescription>
+                        </DialogHeader>
+
+                        <div className="grid gap-4 py-4">
+                            <div className="space-y-2">
+                                <Label htmlFor="topup-currency">Currency</Label>
+                                <Select
+                                    id="topup-currency"
+                                    value={topUpForm.data.currency}
+                                    onChange={e => topUpForm.setData('currency', e.target.value)}
+                                >
+                                    <option value="LYD">LYD - Libyan Dinar</option>
+                                    <option value="USD">USD - US Dollar</option>
+                                    <option value="EUR">EUR - Euro</option>
+                                </Select>
+                                {topUpForm.errors.currency && <p className="text-xs text-destructive">{topUpForm.errors.currency}</p>}
+                            </div>
+
+                            <div className="space-y-2">
+                                <Label htmlFor="topup-amount">Amount</Label>
+                                <Input
+                                    id="topup-amount"
+                                    type="number"
+                                    step="0.01"
+                                    min="0.01"
+                                    value={topUpForm.data.amount}
+                                    onChange={e => topUpForm.setData('amount', e.target.value)}
+                                    placeholder="Enter amount"
+                                    required
+                                />
+                                {topUpForm.errors.amount && <p className="text-xs text-destructive">{topUpForm.errors.amount}</p>}
+                            </div>
+
+                            <div className="space-y-2">
+                                <Label htmlFor="topup-description">Description (optional)</Label>
+                                <Input
+                                    id="topup-description"
+                                    value={topUpForm.data.description}
+                                    onChange={e => topUpForm.setData('description', e.target.value)}
+                                    placeholder="Reason for top-up"
+                                />
+                                {topUpForm.errors.description && <p className="text-xs text-destructive">{topUpForm.errors.description}</p>}
+                            </div>
+                        </div>
+
+                        <DialogFooter>
+                            <Button type="button" variant="outline" onClick={() => setIsTopUpModalOpen(false)}>Cancel</Button>
+                            <Button type="submit" disabled={topUpForm.processing} className="font-bold">
+                                {topUpForm.processing ? 'Processing...' : 'Top Up Wallet'}
+                            </Button>
+                        </DialogFooter>
+                    </form>
+                </DialogContent>
+            </Dialog>
+
+            {/* Default Agency Configuration Modal */}
+            <Dialog open={isDefaultAgencyModalOpen} onOpenChange={setIsDefaultAgencyModalOpen}>
+                <DialogContent className="sm:max-w-[425px]">
+                    <form onSubmit={submitDefaultAgency}>
+                        <DialogHeader>
+                            <DialogTitle className="flex items-center gap-2">
+                                <Star className="h-5 w-5" /> Default Agency Configuration
+                            </DialogTitle>
+                            <DialogDescription>
+                                Set this tenant as the default agency. Only one agency can be the default at a time.
+                            </DialogDescription>
+                        </DialogHeader>
+
+                        <div className="grid gap-4 py-4">
+                            <div className="flex items-center justify-between rounded-lg border p-3">
+                                <div>
+                                    <Label htmlFor="is_default_agency" className="font-semibold">Default Agency</Label>
+                                    <p className="text-xs text-muted-foreground">Designate this agency as the default supplier.</p>
+                                </div>
+                                <Switch
+                                    id="is_default_agency"
+                                    checked={defaultAgencyForm.data.is_default_agency}
+                                    onCheckedChange={val => defaultAgencyForm.setData('is_default_agency', val)}
+                                />
+                            </div>
+
+                            {defaultAgencyForm.data.is_default_agency && (
+                                <div className="space-y-2">
+                                    <Label htmlFor="master_commission_rate">Master Commission Rate (%)</Label>
+                                    <Input
+                                        id="master_commission_rate"
+                                        type="number"
+                                        step="0.01"
+                                        min="0"
+                                        max="100"
+                                        value={defaultAgencyForm.data.master_commission_rate}
+                                        onChange={e => defaultAgencyForm.setData('master_commission_rate', e.target.value)}
+                                        placeholder="e.g. 5.00"
+                                    />
+                                    <p className="text-xs text-muted-foreground">Commission percentage earned by the default agency on each ticket sold through master supply.</p>
+                                    {defaultAgencyForm.errors.master_commission_rate && <p className="text-xs text-destructive">{defaultAgencyForm.errors.master_commission_rate}</p>}
+                                </div>
+                            )}
+                        </div>
+
+                        <DialogFooter>
+                            <Button type="button" variant="outline" onClick={() => setIsDefaultAgencyModalOpen(false)}>Cancel</Button>
+                            <Button type="submit" disabled={defaultAgencyForm.processing} className="font-bold">
+                                {defaultAgencyForm.processing ? 'Saving...' : 'Save Configuration'}
                             </Button>
                         </DialogFooter>
                     </form>

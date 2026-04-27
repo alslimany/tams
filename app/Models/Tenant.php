@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Str;
 use Stancl\Tenancy\Contracts\TenantWithDatabase;
 use Stancl\Tenancy\Database\Concerns\HasDatabase;
@@ -25,6 +26,8 @@ class Tenant extends BaseTenant implements TenantWithDatabase
             'subscription_plan',
             'settings',
             'last_activity_at',
+            'is_default_agency',
+            'master_commission_rate',
         ];
     }
 
@@ -33,7 +36,32 @@ class Tenant extends BaseTenant implements TenantWithDatabase
         return [
             'settings' => 'array',
             'last_activity_at' => 'datetime',
+            'is_default_agency' => 'boolean',
+            'master_commission_rate' => 'decimal:2',
         ];
+    }
+
+    public function isDefaultAgency(): bool
+    {
+        return (bool) $this->is_default_agency;
+    }
+
+    public function getMasterCommissionRate(): float
+    {
+        return (float) ($this->master_commission_rate ?? 0);
+    }
+
+    public static function getDefaultAgency(): ?self
+    {
+        return static::query()
+            ->where('is_default_agency', true)
+            ->where('status', 'active')
+            ->first();
+    }
+
+    public function walletTransactions(): HasMany
+    {
+        return $this->hasMany(AgencyWalletTransaction::class, 'tenant_id');
     }
 
     public function usesOwnAirlineCredentials(?string $airlineCode = null): bool

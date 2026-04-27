@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import axios from 'axios';
 import { Head, useForm, router } from '@inertiajs/react';
-import TenantNavbarLayout from '@/Layouts/TenantNavbarLayout';
+import TenantSidebarLayout from '@/Layouts/TenantSidebarLayout';
 import { Button } from "@/Components/ui/Button";
 import { Input } from "@/Components/ui/Input";
 import { Label } from "@/Components/ui/Label";
@@ -107,7 +107,7 @@ export default function Index({ airlines }) {
     const isVidecomProvider = selectedAirline?.provider_type === 'videcom';
 
     return (
-        <TenantNavbarLayout>
+        <TenantSidebarLayout>
             <Head title="Airline Configuration" />
 
             <div className="flex justify-between items-center mb-6">
@@ -383,6 +383,6 @@ export default function Index({ airlines }) {
                     </Card>
                 </div>
             )}
-        </TenantNavbarLayout>
+        </TenantSidebarLayout>
     );
 }

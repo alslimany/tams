@@ -21,6 +21,8 @@ class AgencyWalletTransaction extends Model
         'reference_id',
         'description',
         'admin_id',
+        'settlement_id',
+        'settled_at',
     ];
 
     protected function casts(): array
@@ -28,6 +30,7 @@ class AgencyWalletTransaction extends Model
         return [
             'amount' => 'decimal:2',
             'balance_after' => 'decimal:2',
+            'settled_at' => 'datetime',
         ];
     }
 
@@ -44,6 +47,11 @@ class AgencyWalletTransaction extends Model
     public function admin(): BelongsTo
     {
         return $this->belongsTo(LandlordUser::class, 'admin_id');
+    }
+
+    public function settlement(): BelongsTo
+    {
+        return $this->belongsTo(AgencySettlement::class, 'settlement_id');
     }
 
     /**

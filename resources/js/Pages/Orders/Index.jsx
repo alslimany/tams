@@ -1,6 +1,6 @@
 import React from 'react';
 import { Head, Link } from '@inertiajs/react';
-import TenantNavbarLayout from '@/Layouts/TenantNavbarLayout';
+import TenantSidebarLayout from '@/Layouts/TenantSidebarLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/Components/ui/Card';
 import { Badge } from '@/Components/ui/Badge';
 import { Button } from '@/Components/ui/Button';
@@ -175,7 +175,7 @@ export default function Index({ orders }) {
     };
 
     return (
-        <TenantNavbarLayout>
+        <TenantSidebarLayout>
             <Head title="Orders" />
 
             <div className="mx-auto max-w-7xl space-y-6 px-4 py-8">
@@ -295,6 +295,6 @@ export default function Index({ orders }) {
                     </CardContent>
                 </Card>
             </div>
-        </TenantNavbarLayout>
+        </TenantSidebarLayout>
     );
 }

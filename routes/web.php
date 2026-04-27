@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\AgencyRegistrationController;
+use App\Http\Controllers\Landlord\AgencyWalletController;
 use App\Http\Controllers\Landlord\AirportController;
 use App\Http\Controllers\Landlord\Auth\AuthenticatedSessionController as LandlordAuthenticatedSessionController;
 use App\Http\Controllers\Landlord\DashboardController as LandlordDashboardController;
@@ -37,6 +38,13 @@ Route::prefix('admin')->name('landlord.')->group(function () {
         Route::post('tenants/{tenant}/users', [TenantUserController::class, 'store'])->name('tenants.users.store');
         Route::put('tenants/{tenant}/users/{user}', [TenantUserController::class, 'update'])->name('tenants.users.update');
         Route::delete('tenants/{tenant}/users/{user}', [TenantUserController::class, 'destroy'])->name('tenants.users.destroy');
+
+        // Agency Wallet & Master Agency Management
+        Route::post('tenants/{tenant}/wallet-topup', [AgencyWalletController::class, 'topUp'])->name('tenants.wallet.topup');
+        Route::patch('tenants/{tenant}/default-agency', [AgencyWalletController::class, 'setDefaultAgency'])->name('tenants.default-agency');
+        Route::patch('tenants/{tenant}/credentials-permission', [AgencyWalletController::class, 'updateCredentialsPermission'])->name('tenants.credentials-permission');
+        Route::patch('tenants/{tenant}/agency-settings', [AgencyWalletController::class, 'updateAgencySettings'])->name('tenants.agency-settings');
+        Route::patch('tenants/{tenant}/default-agency-settings', [AgencyWalletController::class, 'updateDefaultAgencySettings'])->name('tenants.default-agency-settings');
 
         // Airport Management
         Route::resource('airports', AirportController::class)->names('airports');

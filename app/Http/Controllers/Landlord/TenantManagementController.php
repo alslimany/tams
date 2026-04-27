@@ -4,7 +4,10 @@ namespace App\Http\Controllers\Landlord;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Landlord\UpdateTenantStatusRequest;
+use App\Models\AgencyWalletTransaction;
+use App\Models\DefaultAgencySetting;
 use App\Models\Tenant;
+use App\Models\Tenant\AgencySetting;
 use App\Models\Tenant\Order;
 use App\Models\TenantProvider;
 use App\Models\User;
@@ -21,15 +24,22 @@ class TenantManagementController extends Controller
             ->get()
             ->map(function (Tenant $tenant): array {
                 $snapshot = $this->tenantSnapshot($tenant);
+                $agencySettings = $this->resolveAgencySettings($tenant);
+                $primaryDomain = (string) ($tenant->domains->first()?->domain ?? '');
 
                 return [
                     'id' => $tenant->id,
                     'company_name' => $tenant->company_name,
+                    'subdomain' => $primaryDomain,
                     'owner_name' => $tenant->owner_name,
                     'owner_email' => $tenant->owner_email,
                     'status' => $tenant->status,
                     'subscription_status' => $tenant->subscription_status,
+                    'is_default_agency' => $tenant->isDefaultAgency(),
                     'domains' => $tenant->domains->pluck('domain')->values(),
+                    'can_use_own_airline_credentials' => $agencySettings['can_use_own_airline_credentials'],
+                    'force_use_default_agency' => $agencySettings['force_use_default_agency'],
+                    'master_commission_percent' => $agencySettings['master_commission_percent'],
                     'created_at' => $tenant->created_at,
                     'stats' => $snapshot['stats'],
                 ];
@@ -43,6 +53,10 @@ class TenantManagementController extends Controller
     public function show(Tenant $tenant): Response
     {
         $snapshot = $this->tenantSnapshot($tenant);
+        $walletBalances = $this->resolveWalletBalances($tenant);
+        $recentWalletTransactions = $this->resolveRecentWalletTransactions($tenant);
+        $agencySettings = $this->resolveAgencySettings($tenant);
+        $defaultAgencySettings = $this->resolveDefaultAgencySettings($tenant);
 
         return Inertia::render('Landlord/Tenants/Show', [
             'tenantRecord' => [
@@ -55,9 +69,16 @@ class TenantManagementController extends Controller
                 'subscription_status' => $tenant->subscription_status,
                 'subscription_plan' => $tenant->subscription_plan,
                 'settings' => $tenant->settings,
+                'is_default_agency' => $tenant->isDefaultAgency(),
+                'master_commission_rate' => $tenant->getMasterCommissionRate(),
+                'uses_own_airline_credentials' => $tenant->usesOwnAirlineCredentials(),
                 'domains' => $tenant->domains->pluck('domain')->values(),
                 'created_at' => $tenant->created_at,
                 'last_activity_at' => $tenant->last_activity_at,
+                'wallet_balances' => $walletBalances,
+                'recent_wallet_transactions' => $recentWalletTransactions,
+                'agency_settings' => $agencySettings,
+                'default_agency_settings' => $defaultAgencySettings,
                 'snapshot' => $snapshot,
             ],
         ]);
@@ -171,6 +192,80 @@ class TenantManagementController extends Controller
             'providers' => $data['providers'],
             'recent_bookings' => $data['recent_bookings'],
             'users' => $data['users'],
+        ];
+    }
+
+    protected function resolveWalletBalances(Tenant $tenant): array
+    {
+        $balances = [];
+        $currencies = ['LYD', 'USD', 'EUR'];
+
+        foreach ($currencies as $currency) {
+            $lastTransaction = AgencyWalletTransaction::query()
+                ->where('tenant_id', $tenant->id)
+                ->where('currency', $currency)
+                ->latest('id')
+                ->first();
+
+            $balances[$currency] = (float) ($lastTransaction?->balance_after ?? 0);
+        }
+
+        return $balances;
+    }
+
+    protected function resolveRecentWalletTransactions(Tenant $tenant): array
+    {
+        return AgencyWalletTransaction::query()
+            ->where('tenant_id', $tenant->id)
+            ->latest('id')
+            ->limit(20)
+            ->get()
+            ->map(fn (AgencyWalletTransaction $transaction): array => [
+                'id' => $transaction->id,
+                'type' => $transaction->type,
+                'currency' => $transaction->currency,
+                'amount' => (float) $transaction->amount,
+                'balance_after' => (float) $transaction->balance_after,
+                'description' => $transaction->description,
+                'admin_id' => $transaction->admin_id,
+                'created_at' => $transaction->created_at,
+            ])
+            ->values()
+            ->all();
+    }
+
+    /**
+     * Resolve the agency_settings from the tenant database.
+     */
+    protected function resolveAgencySettings(Tenant $tenant): array
+    {
+        return $tenant->run(function (): array {
+            $settings = AgencySetting::current();
+
+            return [
+                'can_use_own_airline_credentials' => $settings->canUseOwnAirlineCredentials(),
+                'force_use_default_agency' => $settings->isForcedToUseDefaultAgency(),
+                'default_agency_tenant_id' => $settings->default_agency_tenant_id,
+                'master_commission_percent' => $settings->getMasterCommissionPercent(),
+            ];
+        });
+    }
+
+    /**
+     * Resolve the default_agency_settings from the central database.
+     * Only returns data if this tenant is the default agency.
+     */
+    protected function resolveDefaultAgencySettings(Tenant $tenant): ?array
+    {
+        if (! $tenant->isDefaultAgency()) {
+            return null;
+        }
+
+        $settings = DefaultAgencySetting::forDefaultAgency($tenant->id);
+
+        return [
+            'master_commission_percent' => (float) ($settings->master_commission_percent ?? 0),
+            'allowed_airline_codes' => $settings->allowed_airline_codes ?? [],
         ];
     }
 }

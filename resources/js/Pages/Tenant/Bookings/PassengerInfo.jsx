@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Head, Link, useForm, usePage } from '@inertiajs/react';
 import axios from 'axios';
 import TenantNavbarLayout from '@/Layouts/TenantNavbarLayout';
+import { useTranslation } from '@/hooks/useTranslation';
 import { Button } from '@/Components/ui/Button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/Components/ui/Card';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/Components/ui/Dialog';
@@ -11,6 +12,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/Components/ui/Tabs';
 import { Armchair, Briefcase, CheckCircle2, ChevronLeft, ChevronRight, Loader2, Settings2, Users } from 'lucide-react';
 
 export default function PassengerInfo({ uuid, provider_id, flight, reservation_type, is_round_trip = false, outbound_provider_id = null, return_provider_id = null, passportRequired = false, searchParams, ancillaryCatalog = [], ancillaryCatalogByOffer = {} }) {
+    const { t } = useTranslation();
     const flash = usePage().props.flash ?? {};
     const issueCommandPreview = flash.issue_command_preview || '';
 
@@ -76,7 +78,7 @@ export default function PassengerInfo({ uuid, provider_id, flight, reservation_t
             if (outboundFlight) {
                 contexts.push({
                     key: 'outbound',
-                    label: 'Outbound Offer',
+                    label: t('common.outbound_offer'),
                     providerId: Number(outbound_provider_id || provider_id),
                     flight: outboundFlight,
                     segments: outboundFlight.segments || [outboundFlight],
@@ -86,7 +88,7 @@ export default function PassengerInfo({ uuid, provider_id, flight, reservation_t
             if (returnFlight) {
                 contexts.push({
                     key: 'return',
-                    label: 'Return Offer',
+                    label: t('common.return_offer'),
                     providerId: Number(return_provider_id || provider_id),
                     flight: returnFlight,
                     segments: returnFlight.segments || [returnFlight],
@@ -101,7 +103,7 @@ export default function PassengerInfo({ uuid, provider_id, flight, reservation_t
         return [
             {
                 key: 'oneway',
-                label: 'Offer',
+                label: t('common.offer'),
                 providerId: Number(provider_id),
                 flight,
                 segments: flight?.segments || [flight],
@@ -145,17 +147,17 @@ export default function PassengerInfo({ uuid, provider_id, flight, reservation_t
         const errors = {};
         if (step === 'passengers') {
             data.passengers.forEach((p, i) => {
-                if (!p.first_name) errors[`passengers.${i}.first_name`] = 'Required';
-                if (!p.last_name) errors[`passengers.${i}.last_name`] = 'Required';
-                if (!p.dob) errors[`passengers.${i}.dob`] = 'Required';
-                if (!p.gender) errors[`passengers.${i}.gender`] = 'Required';
+                if (!p.first_name) errors[`passengers.${i}.first_name`] = t('common.required');
+                if (!p.last_name) errors[`passengers.${i}.last_name`] = t('common.required');
+                if (!p.dob) errors[`passengers.${i}.dob`] = t('common.required');
+                if (!p.gender) errors[`passengers.${i}.gender`] = t('common.required');
 
                 if (p.first_name && !/^[A-Za-z]+$/.test(p.first_name)) {
-                    errors[`passengers.${i}.first_name`] = 'Letters only';
+                    errors[`passengers.${i}.first_name`] = t('common.letters_only');
                 }
 
                 if (p.last_name && !/^[A-Za-z]+$/.test(p.last_name)) {
-                    errors[`passengers.${i}.last_name`] = 'Letters only';
+                    errors[`passengers.${i}.last_name`] = t('common.letters_only');
                 }
 
                 const passportValues = passportFields.map((field) => (p[field] ?? '').toString().trim());
@@ -164,8 +166,8 @@ export default function PassengerInfo({ uuid, provider_id, flight, reservation_t
 
                 if (needsPassportDetails) {
                     const passportMessage = passportRequired
-                        ? 'Required for international flights'
-                        : 'Complete all passport fields or clear all passport fields';
+                        ? t('common.required_for_international_flights')
+                        : t('common.complete_all_passport_fields_or_clear_all');
 
                     if (!p.passport_number) errors[`passengers.${i}.passport_number`] = passportMessage;
                     if (!p.passport_expiry) errors[`passengers.${i}.passport_expiry`] = passportMessage;
@@ -173,8 +175,8 @@ export default function PassengerInfo({ uuid, provider_id, flight, reservation_t
                     if (!p.passport_issue_country) errors[`passengers.${i}.passport_issue_country`] = passportMessage;
                 }
             });
-            if (!data.customer.email) errors['customer.email'] = 'Required';
-            if (!data.customer.phone) errors['customer.phone'] = 'Required';
+            if (!data.customer.email) errors['customer.email'] = t('common.required');
+            if (!data.customer.phone) errors['customer.phone'] = t('common.required');
         }
         setLocalErrors(errors);
         return Object.keys(errors).length === 0;
@@ -502,7 +504,7 @@ export default function PassengerInfo({ uuid, provider_id, flight, reservation_t
         const offerSeats = data.extras.seats?.[offer.key] ?? {};
 
         return Object.entries(offerSeats)
-            .map(([index, seatCode]) => (seatCode ? `${offer.label} - Pax ${Number(index) + 1}: ${seatCode}` : null))
+            .map(([index, seatCode]) => (seatCode ? `${offer.label} - ${t('common.pax')} ${Number(index) + 1}: ${seatCode}` : null))
             .filter(Boolean);
     });
 
@@ -535,11 +537,11 @@ export default function PassengerInfo({ uuid, provider_id, flight, reservation_t
             <div className="mx-auto grid max-w-7xl grid-cols-1 gap-8 px-4 py-8 lg:grid-cols-3">
                 <div className="space-y-8 lg:col-span-2">
                     <div>
-                        <Link href={route('flights.results', { uuid })} className="mb-4 flex items-center text-sm font-bold text-muted-foreground hover:text-primary">
-                            <ChevronLeft className="mr-1 h-4 w-4" /> Back to Flights
+                            <Link href={route('flights.results', { uuid })} className="mb-4 flex items-center text-sm font-bold text-muted-foreground hover:text-primary">
+                            <ChevronLeft className="mr-1 h-4 w-4" /> {t('common.back_to_flights')}
                         </Link>
-                        <h2 className="text-3xl font-black tracking-tight">Complete your Booking</h2>
-                        <p className="mt-1 font-medium text-muted-foreground">Fill the passenger details, seats, and airline services for your selected itinerary.</p>
+                        <h2 className="text-3xl font-black tracking-tight">{t('common.complete_your_booking')}</h2>
+                        <p className="mt-1 font-medium text-muted-foreground">{t('common.fill_passenger_details_seats_services')}</p>
                     </div>
 
                     {flash.error && (
@@ -575,9 +577,9 @@ export default function PassengerInfo({ uuid, provider_id, flight, reservation_t
                     <form onSubmit={submitBooking} className="space-y-8">
                         <Tabs value={activeTab} className="w-full">
                             <TabsList className="mb-8 grid w-full grid-cols-3 rounded-2xl border bg-muted/30 p-1">
-                                <TabsTrigger value="passengers" disabled className="rounded-xl font-bold">1. Passengers</TabsTrigger>
-                                <TabsTrigger value="extras" disabled className="rounded-xl font-bold">2. Extras</TabsTrigger>
-                                <TabsTrigger value="review" disabled className="rounded-xl font-bold">3. Review & Confirm</TabsTrigger>
+                                <TabsTrigger value="passengers" disabled className="rounded-xl font-bold">{t('common.passengers_tab')}</TabsTrigger>
+                                <TabsTrigger value="extras" disabled className="rounded-xl font-bold">{t('common.extras_tab')}</TabsTrigger>
+                                <TabsTrigger value="review" disabled className="rounded-xl font-bold">{t('common.review_tab')}</TabsTrigger>
                             </TabsList>
 
                             <TabsContent value="passengers" className="space-y-6">
@@ -599,54 +601,54 @@ export default function PassengerInfo({ uuid, provider_id, flight, reservation_t
                                         <CardHeader className="border-b bg-primary/5 pb-4">
                                             <CardTitle className="flex items-center gap-2 text-lg">
                                                 <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-xs text-primary-foreground">{index + 1}</span>
-                                                <span className="capitalize">{passenger.type}</span> Passenger
+                                                {t(`common.${passenger.type}_passenger`)}
                                             </CardTitle>
                                         </CardHeader>
                                         <CardContent className="grid grid-cols-1 gap-6 pt-6 md:grid-cols-3">
                                             <div className="space-y-2">
-                                                <Label>First Name</Label>
+                                                <Label>{t('common.first_name')}</Label>
                                                 <Input required value={passenger.first_name} onChange={(event) => handlePassengerChange(index, 'first_name', event.target.value)} />
                                                 {(localErrors[`passengers.${index}.first_name`] || errors[`passengers.${index}.first_name`]) && <p className="text-xs text-destructive">{localErrors[`passengers.${index}.first_name`] || errors[`passengers.${index}.first_name`]}</p>}
                                             </div>
                                             <div className="space-y-2">
-                                                <Label>Last Name</Label>
+                                                <Label>{t('common.last_name')}</Label>
                                                 <Input required value={passenger.last_name} onChange={(event) => handlePassengerChange(index, 'last_name', event.target.value)} />
                                                 {(localErrors[`passengers.${index}.last_name`] || errors[`passengers.${index}.last_name`]) && <p className="text-xs text-destructive">{localErrors[`passengers.${index}.last_name`] || errors[`passengers.${index}.last_name`]}</p>}
                                             </div>
                                             <div className="space-y-2">
-                                                <Label>Gender</Label>
+                                                <Label>{t('common.gender')}</Label>
                                                 <select
                                                     className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background"
                                                     value={passenger.gender}
                                                     onChange={(event) => handlePassengerChange(index, 'gender', event.target.value)}
                                                 >
-                                                    <option value="M">Male</option>
-                                                    <option value="F">Female</option>
+                                                    <option value="M">{t('common.male')}</option>
+                                                    <option value="F">{t('common.female')}</option>
                                                 </select>
                                                 {localErrors[`passengers.${index}.gender`] && <p className="text-xs text-destructive">{localErrors[`passengers.${index}.gender`]}</p>}
                                             </div>
                                             <div className="space-y-2">
-                                                <Label>Date of Birth</Label>
+                                                <Label>{t('common.date_of_birth')}</Label>
                                                 <Input type="date" required value={passenger.dob} onChange={(event) => handlePassengerChange(index, 'dob', event.target.value)} />
                                                 {localErrors[`passengers.${index}.dob`] && <p className="text-xs text-destructive">{localErrors[`passengers.${index}.dob`]}</p>}
                                             </div>
                                             <div className="space-y-2">
-                                                <Label>Passport Number</Label>
+                                                <Label>{t('common.passport_number')}</Label>
                                                 <Input required={passportRequired} value={passenger.passport_number} onChange={(event) => handlePassengerChange(index, 'passport_number', event.target.value)} />
                                                 {localErrors[`passengers.${index}.passport_number`] && <p className="text-xs text-destructive">{localErrors[`passengers.${index}.passport_number`]}</p>}
                                             </div>
                                             <div className="space-y-2">
-                                                <Label>Passport Expiry</Label>
+                                                <Label>{t('common.passport_expiry')}</Label>
                                                 <Input type="date" required={passportRequired} value={passenger.passport_expiry} onChange={(event) => handlePassengerChange(index, 'passport_expiry', event.target.value)} />
                                                 {localErrors[`passengers.${index}.passport_expiry`] && <p className="text-xs text-destructive">{localErrors[`passengers.${index}.passport_expiry`]}</p>}
                                             </div>
                                             <div className="space-y-2">
-                                                <Label>Nationality (3-letter)</Label>
+                                                <Label>{t('common.nationality')} (3-{t('common.letters_only').toLowerCase()})</Label>
                                                 <Input required={passportRequired} maxLength={3} value={passenger.nationality} onChange={(event) => handlePassengerChange(index, 'nationality', event.target.value.toUpperCase())} placeholder="LBY" />
                                                 {(localErrors[`passengers.${index}.nationality`] || errors[`passengers.${index}.nationality`]) && <p className="text-xs text-destructive">{localErrors[`passengers.${index}.nationality`] || errors[`passengers.${index}.nationality`]}</p>}
                                             </div>
                                             <div className="space-y-2">
-                                                <Label>Passport Issue Country (3-letter)</Label>
+                                                <Label>{t('common.passport_issue_country')} (3-{t('common.letters_only').toLowerCase()})</Label>
                                                 <Input required={passportRequired} maxLength={3} value={passenger.passport_issue_country} onChange={(event) => handlePassengerChange(index, 'passport_issue_country', event.target.value.toUpperCase())} placeholder="LBY" />
                                                 {(localErrors[`passengers.${index}.passport_issue_country`] || errors[`passengers.${index}.passport_issue_country`]) && <p className="text-xs text-destructive">{localErrors[`passengers.${index}.passport_issue_country`] || errors[`passengers.${index}.passport_issue_country`]}</p>}
                                             </div>
@@ -658,18 +660,18 @@ export default function PassengerInfo({ uuid, provider_id, flight, reservation_t
                                     <CardHeader className="border-b bg-muted/10 pb-4">
                                         <CardTitle className="flex items-center gap-2">
                                             <div className="rounded-full bg-primary/10 p-2"><Users className="h-5 w-5 text-primary" /></div>
-                                            Contact Information
+                                            {t('common.contact_information')}
                                         </CardTitle>
-                                        <CardDescription>Enter the email and phone number for the primary contact.</CardDescription>
+                                        <CardDescription>{t('common.enter_email_phone_primary_contact')}</CardDescription>
                                     </CardHeader>
                                     <CardContent className="grid grid-cols-1 gap-6 pt-6 md:grid-cols-2">
                                         <div className="space-y-2">
-                                            <Label>Email Address</Label>
+                                            <Label>{t('common.email_address')}</Label>
                                             <Input required type="email" value={data.customer.email} onChange={(event) => handleCustomerChange('email', event.target.value)} />
                                             {(localErrors['customer.email'] || errors['customer.email']) && <p className="text-xs text-destructive">{localErrors['customer.email'] || errors['customer.email']}</p>}
                                         </div>
                                         <div className="space-y-2">
-                                            <Label>Phone Number</Label>
+                                            <Label>{t('common.phone_number')}</Label>
                                             <Input required value={data.customer.phone} onChange={(event) => handleCustomerChange('phone', event.target.value)} />
                                             {(localErrors['customer.phone'] || errors['customer.phone']) && <p className="text-xs text-destructive">{localErrors['customer.phone'] || errors['customer.phone']}</p>}
                                         </div>
@@ -678,7 +680,7 @@ export default function PassengerInfo({ uuid, provider_id, flight, reservation_t
 
                                 <div className="flex justify-end">
                                     <Button type="button" size="lg" className="rounded-full px-8 shadow-md" onClick={() => nextStep('passengers', 'extras')}>
-                                        Continue to Extras <ChevronRight className="ml-2 h-4 w-4" />
+                                        {t('common.continue_to_extras')} <ChevronRight className="ml-2 h-4 w-4" />
                                     </Button>
                                 </div>
                             </TabsContent>
@@ -686,8 +688,8 @@ export default function PassengerInfo({ uuid, provider_id, flight, reservation_t
                             <TabsContent value="extras" className="space-y-6">
                                 <div className="space-y-6">
                                     <div>
-                                        <h3 className="text-lg font-bold">Airline Services</h3>
-                                        <p className="text-sm text-muted-foreground">Select services per offer, or apply a service to all offers in this booking.</p>
+                                        <h3 className="text-lg font-bold">{t('common.airline_services')}</h3>
+                                        <p className="text-sm text-muted-foreground">{t('common.select_services_per_offer_or_apply_all')}</p>
                                     </div>
 
                                     {offerContexts.map((offer) => {
@@ -701,13 +703,13 @@ export default function PassengerInfo({ uuid, provider_id, flight, reservation_t
                                                         <p className="text-xs font-black uppercase tracking-widest text-primary">{offer.label}</p>
                                                         <h4 className="text-base font-bold">{offerAirline}</h4>
                                                     </div>
-                                                    <p className="text-xs font-semibold text-muted-foreground">Provider extras</p>
+                                                    <p className="text-xs font-semibold text-muted-foreground">{t('common.provider_extras')}</p>
                                                 </div>
 
                                                 {offerServices.length === 0 ? (
                                                     <Card className="border-dashed">
                                                         <CardContent className="py-8 text-center text-sm text-muted-foreground">
-                                                            No airline-specific services were returned for this offer.
+                                                            {t('common.no_airline_services_for_offer')}
                                                         </CardContent>
                                                     </Card>
                                                 ) : (
@@ -736,7 +738,7 @@ export default function PassengerInfo({ uuid, provider_id, flight, reservation_t
 
                                                                         {isQuantityService && (
                                                                             <div className="flex items-center justify-between rounded-xl border bg-muted/20 px-3 py-2">
-                                                                                <span className="text-sm font-semibold">{service.unit_label || 'unit'} quantity</span>
+                                                                                <span className="text-sm font-semibold">{service.unit_label || t('common.unit_quantity')}</span>
                                                                                 <div className="flex items-center gap-2">
                                                                                     <Button type="button" variant="outline" onClick={() => setQuantityService(offer.key, service, quantity - 1)} disabled={quantity <= (service.min_quantity || 0)}>-</Button>
                                                                                     <span className="min-w-16 text-center text-sm font-black">{quantity}</span>
@@ -752,13 +754,13 @@ export default function PassengerInfo({ uuid, provider_id, flight, reservation_t
                                                                                 className="w-full rounded-full"
                                                                                 onClick={() => toggleBookingService(offer.key, service)}
                                                                             >
-                                                                                {quantity > 0 ? 'Selected for this offer' : 'Add to this offer'}
+                                                                                {quantity > 0 ? t('common.selected_for_this_offer') : t('common.add_to_this_offer')}
                                                                             </Button>
                                                                         )}
 
                                                                         {!isQuantityService && !isBookingService && (
                                                                             <div className="space-y-2">
-                                                                                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Select passengers</p>
+                                                                                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{t('common.select_passengers')}</p>
                                                                                 <div className="flex flex-wrap gap-2">
                                                                                     {data.passengers.map((passenger, passengerIndex) => {
                                                                                         const isSelected = selectedPassengers.has(passengerIndex);
@@ -770,9 +772,9 @@ export default function PassengerInfo({ uuid, provider_id, flight, reservation_t
                                                                                                 variant={isSelected ? 'default' : 'outline'}
                                                                                                 className="rounded-full"
                                                                                                 onClick={() => togglePassengerService(offer.key, service, passengerIndex)}
-                                                                                            >
-                                                                                                Pax {passengerIndex + 1}
-                                                                                            </Button>
+                                                                                        >
+                                                                                            {t('common.pax')} {passengerIndex + 1}
+                                                                                        </Button>
                                                                                         );
                                                                                     })}
                                                                                 </div>
@@ -786,7 +788,7 @@ export default function PassengerInfo({ uuid, provider_id, flight, reservation_t
                                                                                 className="h-8 px-0 text-xs font-bold text-primary"
                                                                                 onClick={() => applyServiceToAllOffers(offer.key, service)}
                                                                             >
-                                                                                Apply to all offers
+                                                                                {t('common.apply_to_all_offers')}
                                                                             </Button>
                                                                         )}
                                                                     </CardContent>
@@ -806,9 +808,9 @@ export default function PassengerInfo({ uuid, provider_id, flight, reservation_t
                                             <Armchair className="h-6 w-6" />
                                         </div>
                                         <div>
-                                            <h3 className="mb-1 text-lg font-bold">Seat Selection</h3>
+                                            <h3 className="mb-1 text-lg font-bold">{t('common.seat_selection')}</h3>
                                             <p className="mb-1 text-sm text-muted-foreground">
-                                                {selectedSeatLabels.length > 0 ? `${selectedSeatLabels.length} seat(s) selected across offers` : 'Standard auto-assignment applied.'}
+                                                {selectedSeatLabels.length > 0 ? `${selectedSeatLabels.length} ${t('common.seats_selected_across_offers')}` : t('common.standard_auto_assignment')}
                                             </p>
                                             <div className="mt-2 flex flex-wrap gap-2">
                                                 {selectedSeatLabels.map((label) => (
@@ -823,10 +825,10 @@ export default function PassengerInfo({ uuid, provider_id, flight, reservation_t
 
                                 <div className="mt-8 flex items-center justify-between border-t pt-8">
                                     <Button type="button" variant="ghost" className="font-bold" onClick={() => prevStep('passengers')}>
-                                        <ChevronLeft className="mr-2 h-4 w-4" /> Back to Passengers
+                                        <ChevronLeft className="mr-2 h-4 w-4" /> {t('common.back_to_passengers')}
                                     </Button>
                                     <Button type="button" size="lg" className="rounded-full px-8 shadow-md" onClick={() => nextStep('extras', 'review')}>
-                                        Continue to Review <ChevronRight className="ml-2 h-4 w-4" />
+                                        {t('common.continue_to_review')} <ChevronRight className="ml-2 h-4 w-4" />
                                     </Button>
                                 </div>
                             </TabsContent>
@@ -836,14 +838,14 @@ export default function PassengerInfo({ uuid, provider_id, flight, reservation_t
                                     <CardHeader className="border-b bg-muted/10 pb-4">
                                         <CardTitle className="flex items-center gap-2">
                                             <CheckCircle2 className="h-5 w-5 text-emerald-600" />
-                                            Review your Details
+                                            {t('common.review_your_details')}
                                         </CardTitle>
-                                        <CardDescription>Double-check everything before finalizing the booking.</CardDescription>
+                                        <CardDescription>{t('common.double_check_before_finalizing')}</CardDescription>
                                     </CardHeader>
                                     <CardContent className="p-0">
                                         <div className="p-6 space-y-8">
                                             <div>
-                                                <p className="text-xs font-black uppercase tracking-widest text-primary mb-4">Passenger Details</p>
+                                                <p className="text-xs font-black uppercase tracking-widest text-primary mb-4">{t('common.passenger_details')}</p>
                                                 <div className="grid gap-4">
                                                     {data.passengers.map((p, i) => (
                                                         <div key={i} className="flex justify-between items-center p-4 rounded-xl border bg-muted/5">
@@ -852,7 +854,7 @@ export default function PassengerInfo({ uuid, provider_id, flight, reservation_t
                                                                 <p className="text-xs text-muted-foreground uppercase font-black tracking-tighter">{p.type} • {p.gender} • DOB: {p.dob}</p>
                                                             </div>
                                                             <div className="text-right">
-                                                                <p className="text-xs font-bold text-muted-foreground">Passport</p>
+                                                                <p className="text-xs font-bold text-muted-foreground">{t('common.passport')}</p>
                                                                 <p className="text-sm font-black">{p.passport_number}</p>
                                                             </div>
                                                         </div>
@@ -862,13 +864,13 @@ export default function PassengerInfo({ uuid, provider_id, flight, reservation_t
 
                                             <div className="grid grid-cols-2 gap-8 border-t pt-8">
                                                 <div>
-                                                    <p className="text-xs font-black uppercase tracking-widest text-primary mb-2">Primary Contact</p>
+                                                    <p className="text-xs font-black uppercase tracking-widest text-primary mb-2">{t('common.primary_contact')}</p>
                                                     <p className="font-bold">{data.customer.first_name} {data.customer.last_name}</p>
                                                     <p className="text-sm text-muted-foreground">{data.customer.email}</p>
                                                     <p className="text-sm text-muted-foreground">{data.customer.phone}</p>
                                                 </div>
                                                 <div>
-                                                    <p className="text-xs font-black uppercase tracking-widest text-primary mb-2">Selected Extras</p>
+                                                     <p className="text-xs font-black uppercase tracking-widest text-primary mb-2">{t('common.selected_extras')}</p>
                                                     {ancillaryLines.length > 0 || selectedSeatLabels.length > 0 ? (
                                                         <ul className="space-y-1">
                                                             {ancillaryLines.map(l => (
@@ -879,7 +881,7 @@ export default function PassengerInfo({ uuid, provider_id, flight, reservation_t
                                                             ))}
                                                         </ul>
                                                     ) : (
-                                                        <p className="text-sm text-muted-foreground italic">No extras selected.</p>
+                                                         <p className="text-sm text-muted-foreground italic">{t('common.no_extras_selected')}</p>
                                                     )}
                                                 </div>
                                             </div>
@@ -888,12 +890,12 @@ export default function PassengerInfo({ uuid, provider_id, flight, reservation_t
                                 </Card>
 
                                 <div className="mt-8 flex items-center justify-between border-t pt-8">
-                                    <Button type="button" variant="ghost" className="font-bold" onClick={() => prevStep('extras')}>
-                                        <ChevronLeft className="mr-2 h-4 w-4" /> Back to Extras
-                                    </Button>
+                                        <Button type="button" variant="ghost" className="font-bold" onClick={() => prevStep('extras')}>
+                                            <ChevronLeft className="mr-2 h-4 w-4" /> {t('common.back_to_extras')}
+                                        </Button>
 
                                     <Button type="submit" size="lg" className="rounded-full bg-emerald-600 px-12 text-lg font-black text-white shadow-xl hover:bg-emerald-700" disabled={processing}>
-                                        {processing ? 'Processing...' : 'Confirm, Pay & Issue Ticket'}
+                                        {processing ? t('common.processing') : t('common.confirm_pay_issue_ticket')}
                                     </Button>
                                 </div>
                             </TabsContent>
@@ -905,7 +907,7 @@ export default function PassengerInfo({ uuid, provider_id, flight, reservation_t
                     <div className="sticky top-8">
                         <Card className="overflow-hidden border-2 shadow-lg">
                             <div className="bg-primary p-6 text-primary-foreground">
-                                <h3 className="mb-1 text-xl font-black">Trip Summary</h3>
+                                <h3 className="mb-1 text-xl font-black">{t('common.trip_summary')}</h3>
                                 <p className="text-sm font-medium text-primary-foreground/80">
                                     {firstSegment?.departure_airport || firstSegment?.origin || '--'} <ChevronRight className="inline h-3 w-3" /> {lastSegment?.arrival_airport || lastSegment?.destination || '--'}
                                 </p>
@@ -913,32 +915,32 @@ export default function PassengerInfo({ uuid, provider_id, flight, reservation_t
                             <CardContent className="p-0">
                                 <div className="space-y-4 border-b bg-muted/10 p-6">
                                     <div className="flex items-center justify-between text-sm font-bold">
-                                        <span className="text-muted-foreground">Booking Type</span>
+                                        <span className="text-muted-foreground">{t('common.booking_type')}</span>
                                         <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-black uppercase tracking-wider text-primary">
-                                            {isRoundTripBooking ? 'Round Trip' : 'One Way'}
+                                            {isRoundTripBooking ? t('common.round_trip') : t('common.one_way')}
                                         </span>
                                     </div>
                                     <div className="flex items-center justify-between text-sm font-bold">
-                                        <span className="text-muted-foreground">Reservation Type</span>
-                                        <span className={`rounded-full px-3 py-0.5 text-[10px] font-black uppercase tracking-widest ${reservation_type === 'NN' ? 'bg-emerald-100 text-emerald-700 ring-1 ring-emerald-600/20' : 'bg-amber-100 text-amber-700 ring-1 ring-amber-600/20'}`}>
-                                            {reservation_type === 'NN' ? 'Confirmed' : 'Open'}
+                                        <span className="text-muted-foreground">{t('common.reservation_type')}</span>
+                                        <span class={`rounded-full px-3 py-0.5 text-[10px] font-black uppercase tracking-widest ${reservation_type === 'NN' ? 'bg-emerald-100 text-emerald-700 ring-1 ring-emerald-600/20' : 'bg-amber-100 text-amber-700 ring-1 ring-amber-600/20'}`}>
+                                            {reservation_type === 'NN' ? t('common.confirmed') : t('common.open')}
                                         </span>
                                     </div>
                                     <div className="mt-2 flex justify-between text-sm font-bold">
-                                        <span className="text-muted-foreground">Passengers</span>
+                                        <span className="text-muted-foreground">{t('common.passengers')}</span>
                                         <span className="text-right">
-                                            {searchParams?.adults > 0 && <span>{searchParams.adults} Adult(s)<br /></span>}
-                                            {searchParams?.children > 0 && <span>{searchParams.children} Child(ren)<br /></span>}
-                                            {searchParams?.infants > 0 && <span>{searchParams.infants} Infant(s)</span>}
+                                            {searchParams?.adults > 0 && <span>{searchParams.adults} {t('common.adult_s')}<br /></span>}
+                                            {searchParams?.children > 0 && <span>{searchParams.children} {t('common.child_ren')}<br /></span>}
+                                            {searchParams?.infants > 0 && <span>{searchParams.infants} {t('common.infant_s')}</span>}
                                         </span>
                                     </div>
 
                                     <div className="space-y-3 border-t pt-4">
-                                        <p className="text-xs font-black uppercase tracking-widest text-primary">Flight Itineraries</p>
+                                        <p className="text-xs font-black uppercase tracking-widest text-primary">{t('common.flight_itineraries')}</p>
                                         {offerContexts.map((offer) => (
                                             <div key={offer.key} className="rounded-xl border bg-background/80 p-3">
                                                 <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">{offer.label}</p>
-                                                <p className="text-sm font-black">{offer.flight?.airline_name || 'Airline'}</p>
+                                                <p className="text-sm font-black">{offer.flight?.airline_name || t('common.airline')}</p>
                                                 <div className="mt-2 space-y-1">
                                                     {offer.segments.map((segment, index) => (
                                                         <p key={`${offer.key}-${index}`} className="text-xs font-medium text-muted-foreground">
@@ -953,7 +955,7 @@ export default function PassengerInfo({ uuid, provider_id, flight, reservation_t
 
                                 <div className="space-y-3 p-6">
                                     <div className="flex justify-between text-sm font-bold">
-                                        <span className="text-muted-foreground">Base Flight Fare</span>
+                                        <span className="text-muted-foreground">{t('common.base_flight_fare')}</span>
                                         <span>{providerPrice.toFixed(2)} {currency}</span>
                                     </div>
                                     {ancillaryLines.map((line) => (
@@ -965,7 +967,7 @@ export default function PassengerInfo({ uuid, provider_id, flight, reservation_t
                                 </div>
 
                                 <div className="flex items-end justify-between border-t bg-muted/30 p-6">
-                                    <span className="font-bold text-muted-foreground">Total to Pay</span>
+                                    <span className="font-bold text-muted-foreground">{t('common.total_to_pay')}</span>
                                     <span className="text-3xl font-black text-primary">{grandTotal.toFixed(2)} <span className="text-sm">{currency}</span></span>
                                 </div>
                             </CardContent>
@@ -974,7 +976,7 @@ export default function PassengerInfo({ uuid, provider_id, flight, reservation_t
                         <div className="mt-6 flex items-start gap-3 rounded-2xl border border-blue-100 bg-blue-50/50 p-4 text-blue-800">
                             <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0" />
                             <p className="text-xs font-semibold leading-relaxed">
-                                By continuing, you confirm the passenger names match the travel documents exactly and any ancillary request without an airline command code may need manual airline processing.
+                                {t('common.booking_confirmation_message')}
                             </p>
                         </div>
                     </div>
@@ -984,17 +986,17 @@ export default function PassengerInfo({ uuid, provider_id, flight, reservation_t
             <Dialog open={isSeatMapOpen} onOpenChange={setIsSeatMapOpen}>
                 <DialogContent className="max-h-[90vh] max-w-4xl overflow-y-auto">
                     <DialogHeader>
-                        <DialogTitle>Select Your Seats</DialogTitle>
-                        <DialogDescription>Select seats for each passenger across all selected offers.</DialogDescription>
+                        <DialogTitle>{t('common.select_your_seats')}</DialogTitle>
+                        <DialogDescription>{t('common.select_seats_for_each_passenger')}</DialogDescription>
                     </DialogHeader>
 
                     {loadingSeatMap ? (
                         <div className="flex flex-col items-center justify-center space-y-4 py-20">
                             <Loader2 className="h-10 w-10 animate-spin text-primary" />
-                            <p className="font-medium text-muted-foreground">Loading interactive seat map from airline...</p>
+                            <p className="font-medium text-muted-foreground">{t('common.loading_seat_map')}</p>
                         </div>
                     ) : !offerContexts.some((offer) => seatMapByOffer[offer.key]) ? (
-                        <div className="py-10 text-center text-muted-foreground">Could not load seat map.</div>
+                        <div className="py-10 text-center text-muted-foreground">{t('common.could_not_load_seat_map')}</div>
                     ) : (
                         <Tabs value={activeOfferKeyForSeat} onValueChange={setActiveOfferKeyForSeat} className="mt-4 w-full">
                             <TabsList className={`grid w-full ${offerContexts.length > 1 ? 'grid-cols-2' : 'grid-cols-1'}`}>
@@ -1006,7 +1008,7 @@ export default function PassengerInfo({ uuid, provider_id, flight, reservation_t
                             {offerContexts.map((offer) => (
                                 <TabsContent key={offer.key} value={offer.key} className="mt-4">
                                     {!seatMapByOffer[offer.key] ? (
-                                        <div className="py-10 text-center text-muted-foreground">Could not load seat map for this offer.</div>
+                                        <div className="py-10 text-center text-muted-foreground">{t('common.could_not_load_seat_map_for_offer')}</div>
                                     ) : (
                                         <div className="flex flex-col gap-8 lg:flex-row">
                                             <div className="flex flex-1 justify-center overflow-x-auto pb-8">
@@ -1074,7 +1076,7 @@ export default function PassengerInfo({ uuid, provider_id, flight, reservation_t
                                             </div>
 
                                             <div className="flex w-full flex-col gap-4 lg:w-1/3">
-                                                <h4 className="border-b pb-2 text-lg font-bold">Assign Passengers</h4>
+                                                <h4 className="border-b pb-2 text-lg font-bold">{t('common.assign_passengers')}</h4>
                                                 <div className="flex flex-col gap-2">
                                                     {data.passengers.map((passenger, index) => {
                                                         const assignedSeat = data.extras.seats?.[offer.key]?.[index];
@@ -1089,12 +1091,12 @@ export default function PassengerInfo({ uuid, provider_id, flight, reservation_t
                                                             >
                                                                 <div className="flex items-center justify-between gap-3">
                                                                     <div>
-                                                                        <p className="font-bold">Pax {index + 1}</p>
+                                                                        <p className="font-bold">{t('common.pax')} {index + 1}</p>
                                                                         <p className="text-sm text-muted-foreground capitalize">{passenger.type}</p>
                                                                     </div>
                                                                     <div className="text-right">
-                                                                        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Seat</p>
-                                                                        <p className="font-black text-primary">{assignedSeat || 'Auto'}</p>
+                                                                        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{t('common.seat')}</p>
+                                                                        <p className="font-black text-primary">{assignedSeat || t('common.auto')}</p>
                                                                     </div>
                                                                 </div>
                                                             </button>

@@ -138,7 +138,7 @@ export default function WalletTransactions({ transactions, balanceSummary = [], 
                                             <TableCell className="text-right font-semibold">
                                                 {tx.type === 'deposit' ? '+' : '-'}{formatMoney(tx.amount, tx.currency)}
                                             </TableCell>
-                                            <TableCell className="max-w-[200px] truncate text-sm text-muted-foreground">
+                                            <TableCell className="max-w-50 truncate text-sm text-muted-foreground">
                                                 {tx.description || '-'}
                                             </TableCell>
                                             <TableCell>

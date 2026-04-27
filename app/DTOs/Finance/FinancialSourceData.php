@@ -9,6 +9,8 @@ readonly class FinancialSourceData
     public function __construct(
         public string $type,
         public ?TenantProvider $provider,
+        public ?string $defaultAgencyTenantId = null,
+        public float $masterCommissionRate = 0,
     ) {}
 
     public function usesOwnCredentials(): bool

@@ -204,7 +204,7 @@ export function AsyncAirportSelect({ value, onChange, placeholder, id, className
                 onChange={handleInputChange}
                 onFocus={handleInputFocus}
                 onKeyDown={handleInputKeyDown}
-                className="pl-9 pr-9 uppercase"
+                className="pl-9 pr-9 uppercase bg-white"
             />
             <PlaneIcon className={`absolute left-3 top-2.5 h-4 w-4 text-muted-foreground ${isDestination ? 'rotate-90' : ''}`} />
             <ChevronDownIcon className="absolute right-3 top-2.5 h-4 w-4 text-muted-foreground" />

@@ -227,7 +227,7 @@ export default function Search({ searchDisplayMode, bookings, filters, airlines,
             <Head title={t('common.search_flights')} />
 
             {/* Hero Section */}
-            <section className="relative min-h-[600px]  bg-slate-900">
+            <section className="relative min-h-150  bg-slate-900">
                 {/* Background Image */}
                 <div
                     className="absolute inset-0 bg-cover bg-center bg-no-repeat"
