@@ -75,7 +75,7 @@ class PostToLedger
             ];
         }
 
-        $commissionAmount = (float) ($item->commission_amount ?? 0);
+        $commissionAmount = $this->resolveCommissionAmount($item);
         if ($commissionAmount > 0) {
             $entries[] = [
                 'account' => '6100',
@@ -93,6 +93,17 @@ class PostToLedger
         return array_values(array_filter($entries, function (array $entry): bool {
             return $entry['amount'] > 0;
         }));
+    }
+
+    protected function resolveCommissionAmount(OrderItem $item): float
+    {
+        $financialSource = (string) data_get($item->item_details, 'financial_source', '');
+
+        if ($financialSource === 'master_agency_supply') {
+            return (float) ($item->agent_commission ?? 0);
+        }
+
+        return (float) ($item->commission_amount ?? 0);
     }
 
     /**

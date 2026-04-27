@@ -106,8 +106,17 @@ class TicketController extends Controller
                     ->filter(fn ($value): bool => is_string($value) && $value !== '')
                     ->unique();
 
+                $resolvedPaymentMethod = match (true) {
+                    $financialSources->contains('master_agency_supply') && $financialSources->count() === 1 => 'default_agency_supply',
+                    $financialSources->contains('master_agency_supply') && $financialSources->contains('own_credentials') => 'mixed_supply',
+                    $financialSources->contains('own_credentials') && $financialSources->count() === 1 => 'own_credentials',
+                    default => $paymentType,
+                };
+
+                $order->update(['payment_method' => $resolvedPaymentMethod]);
+
                 // Step 5: If financial source = 'master_agency_supply', withdraw from wallet
-                //         and deposit commission.
+                //         and record commission payable for later settlement.
                 if ($financialSources->contains('master_agency_supply')) {
                     app(ProcessWalletTransactions::class)->execute($order, $issuer);
                 }
@@ -524,12 +533,33 @@ class TicketController extends Controller
             $details['financial_source'] = $source->type;
             $details['financial_provider_id'] = $source->provider?->id;
 
+            $commissionPercent = $commission['percent'];
+            $commissionAmount = $commission['amount'];
+            $netAfterCommission = $commission['net_after_commission'];
+            $agentCommission = $commission['amount'];
+
+            if ($source->usesMasterAgencySupply()) {
+                $masterCommissionAmount = round((float) $item->net_fare * ($source->masterCommissionRate / 100), 2);
+
+                $details['default_agency_tenant_id'] = $source->defaultAgencyTenantId;
+                $details['master_commission_rate'] = $source->masterCommissionRate;
+                $details['settlement_source'] = 'default_agency_supply';
+
+                // Buyer agency does not earn airline commission in master-supply mode.
+                $commissionPercent = 0;
+                $commissionAmount = 0;
+                $netAfterCommission = (float) $item->net_fare;
+                $agentCommission = $masterCommissionAmount;
+            } else {
+                $details['settlement_source'] = 'own_credentials';
+            }
+
             $item->fill([
-                'commission_percent' => $commission['percent'],
-                'commission_amount' => $commission['amount'],
-                'net_after_commission' => $commission['net_after_commission'],
-                'agent_commission' => $commission['amount'],
-                'net_commission' => $commission['amount'],
+                'commission_percent' => $commissionPercent,
+                'commission_amount' => $commissionAmount,
+                'net_after_commission' => $netAfterCommission,
+                'agent_commission' => $agentCommission,
+                'net_commission' => $agentCommission,
                 'item_details' => $details,
             ])->save();
         }

@@ -79,7 +79,11 @@ function makeOrderItem(Order $order, float $totalAmount, float $commissionAmount
         'product_subtype' => 'segment',
         'provider' => 'videcom',
         'provider_reference' => 'PNR001',
-        'item_details' => ['passenger_name' => 'Test Passenger'],
+        'item_details' => [
+            'passenger_name' => 'Test Passenger',
+            'financial_source' => 'master_agency_supply',
+            'default_agency_tenant_id' => (string) tenant('id'),
+        ],
         'product_details' => [],
         'price' => $totalAmount,
         'net_fare' => $totalAmount - $commissionAmount,
@@ -124,7 +128,7 @@ test('it withdraws from wallet and stores wallet_transaction_id on each item', f
     ]);
 });
 
-test('it deposits commission back to wallet after withdrawal', function () {
+test('it records commission as payable without depositing back to wallet', function () {
     global $state;
 
     /** @var User $user */
@@ -144,15 +148,15 @@ test('it deposits commission back to wallet after withdrawal', function () {
         'amount' => -10000,
     ]);
 
-    $this->assertDatabaseHas('transactions', [
+    $this->assertDatabaseMissing('transactions', [
         'wallet_id' => $wallet->id,
         'type' => 'deposit',
         'amount' => 1000,
     ]);
 
-    // Net wallet movement: -100 + 10 = -90
+    // Net wallet movement: full ticket withdrawal only.
     $wallet->refresh();
-    expect((int) $wallet->balance)->toBe(50000 - 10000 + 1000);
+    expect((int) $wallet->balance)->toBe(50000 - 10000);
 });
 
 test('it throws InsufficientWalletBalanceException when balance is too low', function () {
@@ -211,6 +215,12 @@ test('it skips items that already have a wallet_transaction_id', function () {
 
     $order = makeOrder($user, 'USD');
     $item = makeOrderItem($order, 50.0, 0.0, 'USD');
+    $item->update([
+        'item_details' => [
+            'passenger_name' => 'Test Passenger',
+            'financial_source' => 'own_credentials',
+        ],
+    ]);
 
     // Seed a real wallet transaction so the FK is satisfied
     $seedTx = $wallet->deposit(100);

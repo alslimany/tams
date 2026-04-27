@@ -4,7 +4,9 @@ use App\Actions\Finance\InitializeTenantLedger;
 use App\Actions\Finance\PostToLedger;
 use App\Actions\Finance\ProcessWalletTransactions;
 use App\DTOs\Finance\FinancialSourceData;
+use App\Models\DefaultAgencySetting;
 use App\Models\Tenant;
+use App\Models\Tenant\AgencySetting;
 use App\Models\Tenant\Order;
 use App\Models\Tenant\OrderItem;
 use App\Models\TenantProvider;
@@ -135,6 +137,10 @@ test('issuing a ticket with master agency supply processes wallet transactions a
         ],
     ]);
 
+    AgencySetting::current()->update([
+        'master_commission_percent' => 10,
+    ]);
+
     [$order, $item] = seedPendingOrder($state['user']);
 
     $providerMock = mockProviderForIssue();
@@ -176,9 +182,10 @@ test('issuing a ticket with master agency supply processes wallet transactions a
     // Financial source should be master_agency_supply.
     expect(data_get($issuedItem->item_details, 'financial_source'))->toBe('master_agency_supply');
 
-    // Commission fields should be set (values depend on segment key resolution).
-    expect((float) $issuedItem->agent_commission)->toBe((float) $issuedItem->commission_amount)
-        ->and((float) $issuedItem->net_commission)->toBe((float) $issuedItem->commission_amount);
+    // In master-supply mode, commission is tracked as payable via agent_commission.
+    expect((float) $issuedItem->commission_amount)->toBe(0.0)
+        ->and((float) $issuedItem->agent_commission)->toBe(35.0)
+        ->and((float) $issuedItem->net_commission)->toBe(35.0);
 
     // Wallet should have been debited for the ticket purchase.
     $wallet->refresh();
@@ -358,6 +365,37 @@ test('DetermineFinancialSource returns own_credentials when tenant uses own cred
         ->and($result->type)->toBe('own_credentials')
         ->and($result->usesOwnCredentials())->toBeTrue()
         ->and($result->usesMasterAgencySupply())->toBeFalse();
+});
+
+test('DetermineFinancialSource uses per-agency master commission percent only', function () {
+    global $state;
+
+    $defaultAgency = Tenant::create([
+        'id' => 'default-'.Str::random(4),
+        'company_name' => 'Default Agency',
+        'status' => 'active',
+        'subscription_status' => 'trial',
+        'is_default_agency' => true,
+    ]);
+
+    DefaultAgencySetting::updateOrCreate(
+        ['default_agency_tenant_id' => $defaultAgency->id],
+        ['master_commission_percent' => 12.5],
+    );
+
+    AgencySetting::current()->update([
+        'force_use_default_agency' => true,
+        'default_agency_tenant_id' => $defaultAgency->id,
+        'master_commission_percent' => 0,
+    ]);
+
+    $action = app(\App\Actions\Finance\DetermineFinancialSource::class);
+
+    $result = $action->execute('YI', 'LYD');
+
+    expect($result)->toBeInstanceOf(FinancialSourceData::class)
+        ->and($result->type)->toBe('master_agency_supply')
+        ->and($result->masterCommissionRate)->toBe(0.0);
 });
 
 test('ProcessWalletTransactions only processes master_agency_supply items', function () {

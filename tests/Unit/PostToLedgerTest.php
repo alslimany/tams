@@ -239,6 +239,44 @@ test('it can skip own credentials items when includeOwnCredentials is false', fu
         ->and($driver->calls)->toHaveCount(0);
 });
 
+test('it posts commission payable for master supply using agent_commission', function () {
+    global $state;
+
+    /** @var User $user */
+    $user = $state['user'];
+
+    $order = makeOrderForLedger($user);
+    $walletTransactionUuid = seedWalletTransactionUuid($user, 'USD');
+
+    $item = makeOrderItemForLedger($order, [
+        'wallet_transaction_id' => $walletTransactionUuid,
+        'item_details' => ['financial_source' => 'master_agency_supply'],
+        'commission_amount' => 0,
+        'agent_commission' => 12.5,
+        'net_commission' => 12.5,
+    ]);
+
+    $driver = new TestLedgerDriver;
+    app()->instance(LedgerDriver::class, $driver);
+
+    app(PostToLedger::class)->execute($order);
+
+    $item->refresh();
+
+    expect($item->ledger_entry_id)->toBe(9001)
+        ->and($driver->calls)->toHaveCount(1)
+        ->and($driver->calls[0]['entries'])->toContain([
+            'account' => '6100',
+            'direction' => 'debit',
+            'amount' => 12.5,
+        ])
+        ->and($driver->calls[0]['entries'])->toContain([
+            'account' => '2300',
+            'direction' => 'credit',
+            'amount' => 12.5,
+        ]);
+});
+
 test('it rolls back all item ledger updates when posting fails', function () {
     global $state;
 
