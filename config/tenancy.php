@@ -54,7 +54,7 @@ return [
          * prefix + tenant_id + suffix.
          */
         'prefix' => 'tenant',
-        'suffix' => '',
+        'suffix' => '.sqlite',
 
         /**
          * TenantDatabaseManagers are classes that handle the creation & deletion of tenant databases.
