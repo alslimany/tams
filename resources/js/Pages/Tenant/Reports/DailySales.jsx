@@ -1,6 +1,6 @@
 import React from 'react';
 import { Head, router } from '@inertiajs/react';
-import TenantNavbarLayout from '@/Layouts/TenantNavbarLayout';
+import TenantSidebarLayout from '@/Layouts/TenantSidebarLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/Components/ui/Card';
 import { Badge } from '@/Components/ui/Badge';
 import { Input } from '@/Components/ui/Input';
@@ -28,7 +28,7 @@ export default function DailySales({ rows = [], grandTotals = [], filters = {} }
     };
 
     return (
-        <TenantNavbarLayout>
+        <TenantSidebarLayout>
             <Head title="Daily Sales Report" />
 
             <div className="mx-auto max-w-7xl space-y-6 px-4 py-8">
@@ -119,6 +119,6 @@ export default function DailySales({ rows = [], grandTotals = [], filters = {} }
                     </CardContent>
                 </Card>
             </div>
-        </TenantNavbarLayout>
+        </TenantSidebarLayout>
     );
 }

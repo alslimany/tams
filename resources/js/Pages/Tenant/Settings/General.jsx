@@ -1,6 +1,6 @@
 import React from 'react';
 import { Head, useForm } from '@inertiajs/react';
-import TenantNavbarLayout from '@/Layouts/TenantNavbarLayout';
+import TenantSidebarLayout from '@/Layouts/TenantSidebarLayout';
 import { Button } from "@/Components/ui/Button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/Components/ui/Card";
 import { Label } from "@/Components/ui/Label";
@@ -21,7 +21,7 @@ export default function General({ settings }) {
     };
 
     return (
-        <TenantNavbarLayout>
+        <TenantSidebarLayout>
             <Head title="General Settings" />
 
             <div className="flex justify-between items-center mb-6">
@@ -75,6 +75,6 @@ export default function General({ settings }) {
                     </Card>
                 </form>
             </div>
-        </TenantNavbarLayout>
+        </TenantSidebarLayout>
     );
 }

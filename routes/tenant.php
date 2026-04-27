@@ -63,6 +63,7 @@ Route::middleware([
         Route::post('flights/open-reservation-availability', [BookingController::class, 'openReservationAvailability'])->name('flights.open-reservation-availability');
         Route::post('flights/seatmap', [BookingController::class, 'seatmap'])->name('flights.seatmap');
         Route::post('flights/select', [BookingController::class, 'select'])->name('flights.select');
+        Route::get('flights/passengers/{uuid}', [BookingController::class, 'passengers'])->name('flights.passengers');
         Route::post('flights', [BookingController::class, 'store'])->middleware('wallet.balance')->name('flights.store');
         Route::get('flights/{booking}', [BookingController::class, 'show'])->name('flights.show');
         Route::get('flights/{booking}/completed', [TicketController::class, 'completed'])->name('tickets.completed');

@@ -1,16 +1,20 @@
 import React, { useEffect } from 'react';
 import { Link, usePage } from '@inertiajs/react';
 import {
+    BarChart3Icon,
     BookOpenCheckIcon,
     LayoutDashboardIcon,
     LogOutIcon,
     PlaneTakeoffIcon,
     PlaneLandingIcon,
+    ReceiptTextIcon,
+    ScaleIcon,
     SettingsIcon,
     ShieldCheckIcon,
     ShoppingCartIcon,
     UserIcon,
     UsersIcon,
+    WalletIcon,
 } from 'lucide-react';
 import { Toaster, toast } from 'sonner';
 import { AlertCircleIcon } from 'lucide-react';
@@ -78,6 +82,14 @@ export default function TenantLayout({ children }) {
         { name: 'Air Config', route: 'settings.airlines.index', icon: PlaneTakeoffIcon, showWhen: canManageProviders },
         { name: 'General Settings', route: 'settings.general.index', icon: SettingsIcon },
     ].filter((item) => isAdmin && hasRoute(item.route) && (item.showWhen !== false));
+
+    const financeLinks = [
+        { name: 'Sales', route: 'reports.sales', icon: BarChart3Icon },
+        { name: 'Commissions', route: 'reports.commissions', icon: ReceiptTextIcon },
+        { name: 'Taxes', route: 'reports.taxes', icon: PlaneLandingIcon },
+        { name: 'Wallet Txns', route: 'wallet.transactions', icon: WalletIcon },
+        { name: 'Reconciliation', route: 'reports.reconciliation', icon: ScaleIcon, showWhen: isAdmin },
+    ].filter((item) => hasRoute(item.route) && (item.showWhen !== false));
 
     const accountLinks = [
         { name: 'Profile', route: 'profile.edit', icon: UserIcon },
@@ -149,6 +161,7 @@ export default function TenantLayout({ children }) {
 
                     <SidebarContent>
                         {renderNavSection('Workspace', mainLinks)}
+                        {renderNavSection('Finance', financeLinks)}
                         {renderNavSection('Administration', adminLinks)}
                         {renderNavSection('Account', accountLinks)}
                     </SidebarContent>

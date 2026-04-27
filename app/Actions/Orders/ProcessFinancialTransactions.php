@@ -79,10 +79,10 @@ class ProcessFinancialTransactions
         $walletHolder = $this->resolveAgencyWalletHolder($issuer);
         $wallet = $walletHolder->getOrCreateCurrencyWallet($item->currency);
 
-        $withdrawAmount = $this->toMinor((string) $item->total);
+        $withdrawAmount = (float) $item->total;
 
         try {
-            $withdrawTransaction = $wallet->withdraw($withdrawAmount, [
+            $withdrawTransaction = $wallet->withdrawFloat($withdrawAmount, [
                 'order_id' => $order->id,
                 'order_item_id' => $item->id,
                 'type' => 'ticket_purchase',
@@ -98,18 +98,13 @@ class ProcessFinancialTransactions
 
         $commission = (float) ($item->agent_commission ?? 0);
         if ($commission > 0) {
-            $wallet->deposit($this->toMinor((string) $commission), [
+            $wallet->depositFloat($commission, [
                 'order_id' => $order->id,
                 'order_item_id' => $item->id,
                 'type' => 'commission_earned',
                 'description' => 'Commission on ticket sale',
             ]);
         }
-    }
-
-    protected function toMinor(string $amount): int
-    {
-        return (int) round(((float) $amount) * 100);
     }
 
     protected function resolveAgencyWalletHolder(User $fallback): User

@@ -12,6 +12,57 @@ use Illuminate\Support\Facades\DB;
 class ProcessWalletTransactions
 {
     /**
+     * @param  array<string, float|int|string>  $requiredByCurrency
+     *
+     * @throws InsufficientWalletBalanceException
+     */
+    public function assertCanIssueForAmounts(array $requiredByCurrency, User $issuer): void
+    {
+        $walletHolder = $this->resolveWalletHolder($issuer);
+
+        foreach ($requiredByCurrency as $currency => $requiredAmount) {
+            $required = round((float) $requiredAmount, 2);
+            if ($required <= 0) {
+                continue;
+            }
+
+            $wallet = $walletHolder->getOrCreateCurrencyWallet((string) $currency);
+            $available = round((float) $wallet->balanceFloat, 2);
+
+            if (! $wallet->canWithdrawFloat($required)) {
+                throw new InsufficientWalletBalanceException(
+                    currency: (string) $currency,
+                    required: $required,
+                    available: $available,
+                );
+            }
+        }
+    }
+
+    /**
+     * @throws InsufficientWalletBalanceException
+     */
+    public function assertSufficientBalances(Order $order, User $issuer): void
+    {
+        $order->loadMissing('items');
+
+        $pendingItems = $order->items->filter(
+            fn (OrderItem $item): bool => $item->wallet_transaction_id === null
+                && $item->airline_transaction_id === null
+                && (string) data_get($item->item_details, 'financial_source') === 'master_agency_supply'
+        );
+
+        $requiredByCurrency = [];
+
+        foreach ($pendingItems as $item) {
+            $currency = (string) $item->currency;
+            $requiredByCurrency[$currency] = round(((float) ($requiredByCurrency[$currency] ?? 0)) + (float) ($item->total_amount ?? 0), 2);
+        }
+
+        $this->assertCanIssueForAmounts($requiredByCurrency, $issuer);
+    }
+
+    /**
      * Process wallet withdrawals for all master-supply order items.
      *
      * Items that already have a wallet_transaction_id or airline_transaction_id are skipped
@@ -39,24 +90,15 @@ class ProcessWalletTransactions
             return;
         }
 
+        $this->assertSufficientBalances($order, $issuer);
+
         DB::transaction(function () use ($order, $pendingItems, $issuer): void {
             $walletHolder = $this->resolveWalletHolder($issuer);
 
             foreach ($pendingItems as $item) {
                 $wallet = $walletHolder->getOrCreateCurrencyWallet((string) $item->currency);
 
-                $withdrawAmount = $this->toMinor((string) $item->total_amount);
-                $availableBalance = (int) $wallet->balance;
-
-                if (! $wallet->canWithdraw($withdrawAmount)) {
-                    throw new InsufficientWalletBalanceException(
-                        currency: (string) $item->currency,
-                        required: (float) $item->total_amount,
-                        available: round($availableBalance / 100, 2),
-                    );
-                }
-
-                $withdrawalTransaction = $wallet->withdraw($withdrawAmount, [
+                $withdrawalTransaction = $wallet->withdrawFloat((float) $item->total_amount, [
                     'order_id' => $order->id,
                     'order_item_id' => $item->id,
                     'type' => 'ticket_purchase',
@@ -135,10 +177,5 @@ class ProcessWalletTransactions
             ->whereIn('role', ['admin', 'manager'])
             ->orderBy('id')
             ->first() ?? $fallback;
-    }
-
-    protected function toMinor(string $amount): int
-    {
-        return (int) round(((float) $amount) * 100);
     }
 }

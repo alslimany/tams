@@ -3,7 +3,9 @@
 namespace App\Http\Controllers\Tenant;
 
 use App\Http\Controllers\Controller;
+use App\Models\Tenant\AgencySetting;
 use App\Models\Tenant\AirlineTransaction;
+use App\Models\Tenant as CentralTenant;
 use App\Models\Tenant\Order;
 use App\Models\Tenant\OrderItem;
 use App\Models\TenantProvider;
@@ -11,6 +13,8 @@ use App\Models\User;
 use App\Services\Airline\ProviderFactory;
 use App\Services\Airline\Videcom\VidecomPnrParser;
 use Bavix\Wallet\Models\Transaction as WalletTransaction;
+use Illuminate\Support\Arr;
+use Illuminate\Support\Collection;
 use Inertia\Inertia;
 use Inertia\Response;
 use SimpleXMLElement;
@@ -91,22 +95,12 @@ class OrderController extends Controller
 
         foreach ($pnrGroups as $pnr => $items) {
             try {
-                $airlineCode = (string) ($items->first()?->item_details['airline_code'] ?? $items->first()?->item_details['iata'] ?? '');
-                if ($airlineCode === '') {
+                $pnrResponse = $this->queryPnrFromSourceProvider($items, (string) $pnr);
+
+                if ($pnrResponse === null) {
                     continue;
                 }
 
-                $providerConfig = TenantProvider::query()
-                    ->where('airline_code', $airlineCode)
-                    ->where('is_active', true)
-                    ->first();
-
-                if (! $providerConfig) {
-                    continue;
-                }
-
-                $provider = ProviderFactory::make($providerConfig);
-                $pnrResponse = $provider->queryPnr((string) $pnr);
                 $pnrXml = $this->toXml($pnrResponse);
 
                 if (! $pnrXml instanceof SimpleXMLElement) {
@@ -114,6 +108,10 @@ class OrderController extends Controller
                 }
 
                 $parsed = VidecomPnrParser::parse($pnrXml);
+                if (collect($parsed['tickets'] ?? [])->isEmpty()) {
+                    continue;
+                }
+
                 $formattedPnr = VidecomPnrParser::formatForOrderDetails($pnrXml);
                 $ticketsByNumber = collect($parsed['tickets'] ?? [])->groupBy('ticket_number');
                 $fallbackTicket = collect($parsed['tickets'] ?? [])->first() ?? [];
@@ -123,7 +121,16 @@ class OrderController extends Controller
                     $ticketRows = $ticketNumber !== '' ? $ticketsByNumber->get($ticketNumber) : null;
                     $firstTicket = $ticketRows?->first() ?? $fallbackTicket;
 
-                    $details = $formattedPnr;
+                    $financialMetadata = Arr::only((array) $item->item_details, [
+                        'financial_source',
+                        'financial_provider_id',
+                        'financial_source_tenant_id',
+                        'default_agency_tenant_id',
+                        'master_commission_rate',
+                        'settlement_source',
+                    ]);
+
+                    $details = array_merge($formattedPnr, $financialMetadata);
                     $details['pnr_synced_at'] = now()->toIso8601String();
 
                     $item->update([
@@ -137,6 +144,84 @@ class OrderController extends Controller
                 report($exception);
             }
         }
+    }
+
+    protected function queryPnrFromSourceProvider(Collection $items, string $pnr): mixed
+    {
+        /** @var OrderItem|null $firstItem */
+        $firstItem = $items->first();
+        $airlineCode = (string) ($firstItem?->item_details['airline_code'] ?? $firstItem?->item_details['iata'] ?? '');
+
+        if ($airlineCode === '') {
+            return null;
+        }
+
+        $isMasterSupply = (string) data_get($firstItem?->item_details, 'financial_source') === 'master_agency_supply';
+        $defaultAgencyTenantId = (string) data_get($firstItem?->item_details, 'default_agency_tenant_id', '');
+        $sourceTenantId = (string) (data_get($firstItem?->item_details, 'financial_source_tenant_id') ?: $defaultAgencyTenantId);
+
+        if ($sourceTenantId === '') {
+            $orderPaymentMethod = (string) ($firstItem?->relationLoaded('order')
+                ? data_get($firstItem->order, 'payment_method', '')
+                : (string) $firstItem?->order()->value('payment_method'));
+
+            $shouldUseDefaultAgency = $isMasterSupply || $orderPaymentMethod === 'default_agency_supply';
+
+            if ($shouldUseDefaultAgency) {
+                $sourceTenantId = (string) (
+                    AgencySetting::current()->default_agency_tenant_id
+                    ?: CentralTenant::getDefaultAgency()?->id
+                    ?: ''
+                );
+                $isMasterSupply = $sourceTenantId !== '';
+            }
+        }
+
+        if ($isMasterSupply && $sourceTenantId !== '') {
+            $sourceTenant = CentralTenant::query()->find($sourceTenantId);
+
+            if ($sourceTenant) {
+                return $sourceTenant->run(function () use ($firstItem, $airlineCode, $pnr): mixed {
+                    $providerConfig = $this->resolveProviderForSync($firstItem, $airlineCode);
+
+                    if (! $providerConfig) {
+                        return null;
+                    }
+
+                    $provider = ProviderFactory::make($providerConfig);
+
+                    return $provider->queryPnr($pnr);
+                });
+            }
+        }
+
+        $providerConfig = $this->resolveProviderForSync($firstItem, $airlineCode);
+
+        if (! $providerConfig) {
+            return null;
+        }
+
+        $provider = ProviderFactory::make($providerConfig);
+
+        return $provider->queryPnr($pnr);
+    }
+
+    protected function resolveProviderForSync(?OrderItem $item, string $airlineCode): ?TenantProvider
+    {
+        $providerId = data_get($item?->item_details, 'financial_provider_id');
+
+        if (is_numeric($providerId)) {
+            $provider = TenantProvider::query()->whereKey((int) $providerId)->where('is_active', true)->first();
+
+            if ($provider) {
+                return $provider;
+            }
+        }
+
+        return TenantProvider::query()
+            ->where('airline_code', $airlineCode)
+            ->where('is_active', true)
+            ->first();
     }
 
     protected function mapTicketStatus(string $providerStatus): string

@@ -136,8 +136,7 @@ class AgencyProviderResolver
         try {
             $agencySettings = AgencySetting::current();
         } catch (\Throwable) {
-            // Table doesn't exist - fallback to default agency
-            return $this->getAllDefaultAgencyProviders();
+            return $this->fallbackActiveProviders();
         }
 
         // If forced to use default agency, or not allowed to use own credentials...
@@ -146,8 +145,7 @@ class AgencyProviderResolver
                 return $this->getAllDefaultAgencyProviders();
             }
         } catch (\Throwable) {
-            // If settings check fails, try default agency
-            return $this->getAllDefaultAgencyProviders();
+            return $this->fallbackActiveProviders();
         }
 
         // Try to use agency's own providers
@@ -159,6 +157,17 @@ class AgencyProviderResolver
         }
 
         return $ownProviders;
+    }
+
+    protected function fallbackActiveProviders(): \Illuminate\Support\Collection
+    {
+        $ownProviders = $this->getAllAgencyProviders();
+
+        if ($ownProviders->isNotEmpty()) {
+            return $ownProviders;
+        }
+
+        return $this->getAllDefaultAgencyProviders();
     }
 
     /**

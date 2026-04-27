@@ -2,12 +2,20 @@
 
 namespace App\Http\Controllers\Tenant;
 
+use App\Actions\Finance\ApplyFinancialSourceAndCommission;
+use App\Actions\Finance\CreateAirlineTransactions;
+use App\Actions\Finance\DetermineFinancialSource;
+use App\Actions\Finance\InitializeTenantLedger;
+use App\Actions\Finance\PostToLedger;
+use App\Actions\Finance\ProcessWalletTransactions;
 use App\DTOs\Airline\RoundTripPriceRequest;
+use App\Exceptions\InsufficientWalletBalanceException;
 use App\Http\Controllers\Controller;
 use App\Models\Airport;
 use App\Models\Tenant\Order;
 use App\Models\Tenant\OrderItem;
 use App\Models\TenantProvider;
+use App\Models\User;
 use App\Services\Airline\AgencyProviderResolver;
 use App\Services\Airline\ProviderFactory;
 use App\Services\Airline\RoundTripPriceManager;
@@ -202,7 +210,7 @@ class BookingController extends Controller
             'provider_id' => 'required|integer',
         ]);
 
-        $searchParams = Cache::get("flight_search_{$validated['uuid']}");
+        $searchParams = Cache::get("flight_search_{$validated['uuid']}") ?? [];
 
         if (! $searchParams) {
             return response()->json(['error' => 'Search session expired'], 410);
@@ -335,7 +343,7 @@ class BookingController extends Controller
     {
         $validated = $request->validate([
             'uuid' => 'required|string',
-            'outbound_provider_id' => 'required|exists:tenant_providers,id',
+            'outbound_provider_id' => 'required|integer',
             'outbound_flight' => 'required|array',
             'reservation_type' => 'nullable|in:QQ,NN',
             'return_date' => 'nullable|date_format:Y-m-d',
@@ -343,6 +351,10 @@ class BookingController extends Controller
         ]);
 
         $searchParams = Cache::get("flight_search_{$validated['uuid']}");
+
+        if (! is_array($searchParams)) {
+            $searchParams = [];
+        }
         if (! $searchParams || ! filter_var($searchParams['is_return'] ?? false, FILTER_VALIDATE_BOOLEAN) || empty($searchParams['return_date'])) {
             return response()->json([
                 'return_options' => [],
@@ -476,44 +488,57 @@ class BookingController extends Controller
         ]);
     }
 
-    public function select(Request $request): Response
+    public function select(Request $request)
     {
         $validated = $request->validate([
             'uuid' => 'required|string',
-            'provider_id' => 'required|exists:tenant_providers,id',
-            'flight' => 'required|array',
-            'reservation_type' => 'required|in:QQ,NN',
+            'provider_id' => 'nullable|integer',
+            'flight' => 'nullable|array',
+            'reservation_type' => 'nullable|in:QQ,NN',
             'is_round_trip' => 'nullable|boolean',
-            'outbound_provider_id' => 'nullable|exists:tenant_providers,id',
-            'return_provider_id' => 'nullable|exists:tenant_providers,id',
+            'outbound_provider_id' => 'nullable|integer',
+            'return_provider_id' => 'nullable|integer',
         ]);
 
         $searchParams = Cache::get("flight_search_{$validated['uuid']}");
+        $cachedOffer = $searchParams['selected_offer'] ?? null;
 
-        // Use resolver to find provider
-        $providerConfig = $this->providerResolver->findProviderById((int) $validated['provider_id']);
+        // Try to load from cached offer if not provided in request (page refresh)
+        $providerId = $validated['provider_id'] ?? $cachedOffer['provider_id'] ?? null;
+        $flight = $validated['flight'] ?? $cachedOffer['flight'] ?? null;
+        $reservationType = $validated['reservation_type'] ?? $cachedOffer['reservation_type'] ?? null;
+        $isRoundTripRequested = $validated['is_round_trip'] ?? $cachedOffer['is_round_trip'] ?? false;
+        $outboundProviderId = $validated['outbound_provider_id'] ?? $cachedOffer['outbound_provider_id'] ?? null;
+        $returnProviderId = $validated['return_provider_id'] ?? $cachedOffer['return_provider_id'] ?? null;
+
+        if (! $providerId || ! $flight || ! $reservationType) {
+            return redirect()->route('flights.index')->with('error', 'Session expired. Please search again.');
+        }
+
+        // Use resolver to find provider (handles both local and master agency providers)
+        $providerConfig = $this->providerResolver->findProviderById((int) $providerId);
 
         if (! $providerConfig) {
-            return response()->json(['error' => 'Provider not found.'], 422);
+            return back()->with('error', 'Provider not found. Please search again.');
         }
 
         $provider = ProviderFactory::make($providerConfig);
 
-        $isRoundTrip = filter_var($validated['is_round_trip'] ?? false, FILTER_VALIDATE_BOOLEAN);
+        $isRoundTrip = filter_var($isRoundTripRequested, FILTER_VALIDATE_BOOLEAN);
         $ancillaryCatalogByOffer = [];
 
         // Get all providers for round trip lookup
         $allProviders = $this->providerResolver->getAllActiveProviders();
 
         if ($isRoundTrip) {
-            $outboundProviderId = (int) ($validated['outbound_provider_id'] ?? $validated['provider_id']);
-            $returnProviderId = (int) ($validated['return_provider_id'] ?? $validated['provider_id']);
+            $outboundProviderId = (int) ($outboundProviderId ?? $providerId);
+            $returnProviderId = (int) ($returnProviderId ?? $providerId);
 
             $outboundProvider = $allProviders->firstWhere('id', $outboundProviderId);
             $returnProvider = $allProviders->firstWhere('id', $returnProviderId);
 
-            $outboundFlight = data_get($validated, 'flight.round_trip.outbound_flight', $validated['flight']);
-            $returnFlight = data_get($validated, 'flight.round_trip.return_flight', $validated['flight']);
+            $outboundFlight = data_get($flight, 'round_trip.outbound_flight', $flight);
+            $returnFlight = data_get($flight, 'round_trip.return_flight', $flight);
 
             if ($outboundProvider instanceof TenantProvider) {
                 $outboundAirlineProvider = $outboundProvider->id === $providerConfig->id
@@ -531,21 +556,92 @@ class BookingController extends Controller
         }
 
         if ($ancillaryCatalogByOffer === []) {
-            $ancillaryCatalogByOffer['oneway'] = $provider->getAncillaryCatalog($validated['flight'], $searchParams ?? []);
+            $ancillaryCatalogByOffer['oneway'] = $provider->getAncillaryCatalog($flight, $searchParams ?? []);
         }
 
-        return Inertia::render('Tenant/Bookings/PassengerInfo', [
-            'uuid' => $validated['uuid'],
-            'provider_id' => $validated['provider_id'],
-            'flight' => $validated['flight'],
-            'reservation_type' => $validated['reservation_type'],
+        // Save selected offer to cache for potential page refresh
+        $selectedOffer = [
+            'provider_id' => $providerId,
+            'flight' => $flight,
+            'reservation_type' => $reservationType,
             'is_round_trip' => $isRoundTrip,
-            'outbound_provider_id' => $validated['outbound_provider_id'] ?? null,
-            'return_provider_id' => $validated['return_provider_id'] ?? null,
-            'passportRequired' => $this->isInternationalFlight($validated['flight']),
-            'searchParams' => $searchParams,
-            'ancillaryCatalog' => $ancillaryCatalogByOffer['oneway'] ?? $provider->getAncillaryCatalog($validated['flight'], $searchParams ?? []),
+            'outbound_provider_id' => $outboundProviderId,
+            'return_provider_id' => $returnProviderId,
+            'selected_at' => now()->toDateTimeString(),
+        ];
+        Cache::put(
+            "flight_search_{$validated['uuid']}",
+            array_merge(is_array($searchParams) ? $searchParams : [], ['selected_offer' => $selectedOffer]),
+            now()->addMinutes(60)
+        );
+
+        return redirect()->route('flights.passengers', ['uuid' => $validated['uuid']]);
+    }
+
+    public function passengers(string $uuid): Response
+    {
+        $searchParams = Cache::get("flight_search_{$uuid}");
+        $cachedOffer = $searchParams['selected_offer'] ?? null;
+
+        if (! $cachedOffer) {
+            return redirect()->route('flights.index')->with('error', 'Session expired. Please search again.');
+        }
+
+        $providerId = $cachedOffer['provider_id'];
+        $flight = $cachedOffer['flight'];
+        $reservationType = $cachedOffer['reservation_type'];
+        $isRoundTrip = filter_var($cachedOffer['is_round_trip'] ?? false, FILTER_VALIDATE_BOOLEAN);
+        $outboundProviderId = $cachedOffer['outbound_provider_id'] ?? null;
+        $returnProviderId = $cachedOffer['return_provider_id'] ?? null;
+
+        $providerConfig = $this->providerResolver->findProviderById((int) $providerId);
+
+        if (! $providerConfig) {
+            return back()->with('error', 'Provider not found. Please search again.');
+        }
+
+        $provider = ProviderFactory::make($providerConfig);
+        $searchParamsForCatalog = $searchParams ? array_diff_key($searchParams, array_flip(['selected_offer', 'passengers', 'customer', 'extras'])) : [];
+
+        $ancillaryCatalogByOffer = [];
+
+        if ($isRoundTrip) {
+            $allProviders = $this->providerResolver->getAllActiveProviders();
+            $outboundProvider = $allProviders->firstWhere('id', $outboundProviderId);
+            $returnProvider = $allProviders->firstWhere('id', $returnProviderId);
+
+            if ($outboundProvider instanceof TenantProvider && isset($flight['round_trip']['outbound_flight'])) {
+                $outboundAirlineProvider = ProviderFactory::make($outboundProvider);
+                $ancillaryCatalogByOffer['outbound'] = $outboundAirlineProvider->getAncillaryCatalog($flight['round_trip']['outbound_flight'], $searchParamsForCatalog);
+            }
+
+            if ($returnProvider instanceof TenantProvider && isset($flight['round_trip']['return_flight'])) {
+                $returnAirlineProvider = ProviderFactory::make($returnProvider);
+                $ancillaryCatalogByOffer['return'] = $returnAirlineProvider->getAncillaryCatalog($flight['round_trip']['return_flight'], $searchParamsForCatalog);
+            }
+        }
+
+        if ($ancillaryCatalogByOffer === []) {
+            $ancillaryCatalogByOffer['oneway'] = $provider->getAncillaryCatalog($flight, $searchParamsForCatalog);
+        }
+
+        $cachedPassengers = $searchParams['passengers'] ?? [];
+        $cachedCustomer = $searchParams['customer'] ?? null;
+
+        return Inertia::render('Tenant/Bookings/PassengerInfo', [
+            'uuid' => $uuid,
+            'provider_id' => $providerId,
+            'flight' => $flight,
+            'reservation_type' => $reservationType,
+            'is_round_trip' => $isRoundTrip,
+            'outbound_provider_id' => $outboundProviderId,
+            'return_provider_id' => $returnProviderId,
+            'passportRequired' => $this->isInternationalFlight($flight),
+            'searchParams' => $searchParamsForCatalog,
+            'ancillaryCatalog' => $ancillaryCatalogByOffer['oneway'] ?? [],
             'ancillaryCatalogByOffer' => $ancillaryCatalogByOffer,
+            'cached_passengers' => $cachedPassengers,
+            'cached_customer' => $cachedCustomer,
         ]);
     }
 
@@ -553,25 +649,25 @@ class BookingController extends Controller
     {
         $validated = $request->validate([
             'uuid' => 'required|string',
-            'provider_id' => 'required|exists:tenant_providers,id',
-            'flight' => 'required|array',
-            'reservation_type' => 'required|in:QQ,NN',
+            'provider_id' => 'nullable|integer',
+            'flight' => 'nullable|array',
+            'reservation_type' => 'nullable|in:QQ,NN',
             'is_round_trip' => 'nullable|boolean',
-            'outbound_provider_id' => 'nullable|exists:tenant_providers,id',
-            'return_provider_id' => 'nullable|exists:tenant_providers,id',
-            'passengers' => 'required|array|min:1',
-            'passengers.*.type' => 'required|in:adult,child,infant',
-            'passengers.*.first_name' => 'required|string|alpha:ascii',
-            'passengers.*.last_name' => 'required|string|alpha:ascii',
+            'outbound_provider_id' => 'nullable|integer',
+            'return_provider_id' => 'nullable|integer',
+            'passengers' => 'nullable|array|min:1',
+            'passengers.*.type' => 'nullable|in:adult,child,infant',
+            'passengers.*.first_name' => 'nullable|string|alpha:ascii',
+            'passengers.*.last_name' => 'nullable|string|alpha:ascii',
             'passengers.*.dob' => 'nullable|date',
-            'passengers.*.gender' => 'required|in:M,F',
+            'passengers.*.gender' => 'nullable|in:M,F',
             'passengers.*.passport_number' => 'nullable|string',
             'passengers.*.passport_expiry' => 'nullable|date',
             'passengers.*.passport_issue_country' => 'nullable|string|size:3',
             'passengers.*.nationality' => 'nullable|string|size:3',
-            'customer.first_name' => 'required|string',
-            'customer.last_name' => 'required|string',
-            'customer.email' => 'required|email',
+            'customer.first_name' => 'nullable|string',
+            'customer.last_name' => 'nullable|string',
+            'customer.email' => 'nullable|email',
             'customer.phone' => 'nullable|string',
             'extras' => 'nullable|array',
             'extras.seats' => 'nullable|array',
@@ -579,7 +675,7 @@ class BookingController extends Controller
             'extras.seats.*.*' => 'nullable|string|max:12',
             'extras.selected_services' => 'nullable|array',
             'extras.selected_services.*.offer_key' => 'nullable|string|in:oneway,outbound,return',
-            'extras.selected_services.*.code' => 'required|string',
+            'extras.selected_services.*.code' => 'nullable|string',
             'extras.selected_services.*.quantity' => 'nullable|integer|min:0',
             'extras.selected_services.*.passengers' => 'nullable|array',
             'extras.selected_services.*.passengers.*' => 'integer|min:0',
@@ -588,10 +684,47 @@ class BookingController extends Controller
             'passengers.*.last_name.alpha' => 'Passenger last name must contain letters only.',
         ]);
 
-        $passportRequired = $this->isInternationalFlight($validated['flight']);
+        // Load from cache if not provided in request (page refresh or retry)
+        $searchParams = Cache::get("flight_search_{$validated['uuid']}");
+        $cachedOffer = $searchParams['selected_offer'] ?? null;
+        $cachedPassengers = $searchParams['passengers'] ?? null;
+        $cachedCustomer = $searchParams['customer'] ?? null;
+        $cachedExtras = $searchParams['extras'] ?? null;
+
+        // Use cached data if not provided in request
+        $passengers = $validated['passengers'] ?? $cachedPassengers ?? null;
+        $customer = $validated['customer'] ?? $cachedCustomer ?? null;
+        $extras = $validated['extras'] ?? $cachedExtras ?? [];
+
+        // Must have passengers to proceed (either from request or cache)
+        if (empty($passengers) || empty($customer)) {
+            return redirect()->route('flights.index')->with('error', 'Session expired. Please search again.');
+        }
+
+        // Load offer data from cache
+        $providerId = $validated['provider_id'] ?? $cachedOffer['provider_id'] ?? null;
+        $flight = $validated['flight'] ?? $cachedOffer['flight'] ?? null;
+        $reservationType = $validated['reservation_type'] ?? $cachedOffer['reservation_type'] ?? null;
+        $isRoundTrip = filter_var($validated['is_round_trip'] ?? $cachedOffer['is_round_trip'] ?? false, FILTER_VALIDATE_BOOLEAN);
+        $outboundProviderId = $validated['outbound_provider_id'] ?? $cachedOffer['outbound_provider_id'] ?? null;
+        $returnProviderId = $validated['return_provider_id'] ?? $cachedOffer['return_provider_id'] ?? null;
+
+        // Save passengers and extras to cache for potential retry
+        Cache::put("flight_search_{$validated['uuid']}", array_merge(is_array($searchParams) ? $searchParams : [], [
+            'selected_offer' => $cachedOffer,
+            'passengers' => $passengers,
+            'customer' => $customer,
+            'extras' => $extras,
+        ]), now()->addMinutes(60));
+
+        if (! $providerId || ! $flight) {
+            return back()->with('error', 'Flight data not found. Please search again.');
+        }
+
+        $passportRequired = $this->isInternationalFlight($flight);
         $passportErrors = [];
 
-        foreach ($validated['passengers'] as $index => $passenger) {
+        foreach ($passengers as $index => $passenger) {
             $hasAnyPassportDetail = $this->passengerHasAnyPassportDetail($passenger);
             $mustProvidePassportDetails = $passportRequired || $hasAnyPassportDetail;
 
@@ -612,10 +745,8 @@ class BookingController extends Controller
             return back()->withErrors($passportErrors)->withInput();
         }
 
-        $searchParams = Cache::get("flight_search_{$validated['uuid']}") ?? [];
-
         // Use resolver to find provider
-        $providerConfig = $this->providerResolver->findProviderById((int) $validated['provider_id']);
+        $providerConfig = $this->providerResolver->findProviderById((int) $providerId);
 
         if (! $providerConfig) {
             return back()->withErrors(['error' => 'Provider not found.']);
@@ -624,7 +755,7 @@ class BookingController extends Controller
         $provider = ProviderFactory::make($providerConfig);
         $providerConfig->update(['last_used_at' => now()]);
 
-        $itinerary = $validated['flight']['segments'] ?? [$validated['flight']];
+        $itinerary = $flight['segments'] ?? [$flight];
         $mappedItinerary = array_map(function ($segment): array {
             return [
                 'flt_no' => $segment['flight_number'] ?? '000',
@@ -635,8 +766,6 @@ class BookingController extends Controller
             ];
         }, $itinerary);
 
-        $isRoundTrip = filter_var($validated['is_round_trip'] ?? false, FILTER_VALIDATE_BOOLEAN);
-
         $catalogByOffer = [];
         $flightByOffer = [];
 
@@ -644,14 +773,14 @@ class BookingController extends Controller
         $allProviders = $this->providerResolver->getAllActiveProviders();
 
         if ($isRoundTrip) {
-            $outboundProviderId = (int) ($validated['outbound_provider_id'] ?? $validated['provider_id']);
-            $returnProviderId = (int) ($validated['return_provider_id'] ?? $validated['provider_id']);
+            $outboundProviderId = (int) ($outboundProviderId ?? $providerId);
+            $returnProviderId = (int) ($returnProviderId ?? $providerId);
 
             $outboundProvider = $allProviders->firstWhere('id', $outboundProviderId);
             $returnProvider = $allProviders->firstWhere('id', $returnProviderId);
 
-            $flightByOffer['outbound'] = data_get($validated, 'flight.round_trip.outbound_flight', $validated['flight']);
-            $flightByOffer['return'] = data_get($validated, 'flight.round_trip.return_flight', $validated['flight']);
+            $flightByOffer['outbound'] = data_get($flight, 'round_trip.outbound_flight', $flight);
+            $flightByOffer['return'] = data_get($flight, 'round_trip.return_flight', $flight);
 
             if ($outboundProvider instanceof TenantProvider) {
                 $outboundAirlineProvider = $outboundProvider->id === $providerConfig->id
@@ -669,12 +798,12 @@ class BookingController extends Controller
         }
 
         if ($catalogByOffer === []) {
-            $catalogByOffer['oneway'] = $provider->getAncillaryCatalog($validated['flight'], $searchParams);
-            $flightByOffer['oneway'] = $validated['flight'];
+            $catalogByOffer['oneway'] = $provider->getAncillaryCatalog($flight, $searchParams);
+            $flightByOffer['oneway'] = $flight;
         }
 
-        $selectedServices = collect($validated['extras']['selected_services'] ?? []);
-        $passengerCount = count($validated['passengers']);
+        $selectedServices = collect($extras['selected_services'] ?? []);
+        $passengerCount = count($passengers);
         $ancillarySummary = [
             'lines' => [],
             'total' => 0.0,
@@ -736,17 +865,17 @@ class BookingController extends Controller
             ], $extras['selected_services']);
         }
 
-        $extras['include_docs'] = $passportRequired || $this->passengersContainPassportDetails($validated['passengers']);
+        $extras['include_docs'] = $passportRequired || $this->passengersContainPassportDetails($passengers);
 
         $providerPayload = [
-            'passengers' => $validated['passengers'],
-            'contact' => $validated['customer'],
+            'passengers' => $passengers,
+            'contact' => $customer,
             'itinerary' => $mappedItinerary,
             'extras' => $extras,
-            'reservation_type' => $validated['reservation_type'],
+            'reservation_type' => $reservationType,
         ];
 
-        $pricing = $validated['flight']['pricing'] ?? [];
+        $pricing = $flight['pricing'] ?? [];
         $baseTotal = is_array($pricing) && array_is_list($pricing)
             ? (float) collect($pricing)->sum(fn (array $price): float => (float) ($price['total'] ?? 0))
             : (float) ($pricing['total'] ?? 0);
@@ -755,8 +884,25 @@ class BookingController extends Controller
             ? (string) ($pricing[0]['currency'] ?? 'USD')
             : (string) ($pricing['currency'] ?? 'USD');
 
+        $issuer = $request->user();
+        if (! $issuer instanceof User) {
+            return back()->with('error', 'An authenticated user is required to issue a booking.');
+        }
+
         try {
-            $fareResponse = $provider->getPricing($mappedItinerary, $validated['passengers']);
+            $source = app(DetermineFinancialSource::class)->execute((string) $providerConfig->airline_code, $currency);
+
+            if ($source->usesMasterAgencySupply()) {
+                app(ProcessWalletTransactions::class)->assertCanIssueForAmounts([
+                    strtoupper($currency) => $totalPrice,
+                ], $issuer);
+            }
+        } catch (InsufficientWalletBalanceException $exception) {
+            return back()->withInput()->with('error', $exception->getMessage());
+        }
+
+        try {
+            $fareResponse = $provider->getPricing($mappedItinerary, $passengers);
             $this->ensureProviderResponseIsSuccessful($fareResponse, 'pricing');
 
             $previewIssueCommand = filter_var($request->input('preview_issue_command', false), FILTER_VALIDATE_BOOLEAN);
@@ -786,7 +932,7 @@ class BookingController extends Controller
                     : 'Failed to communicate with the airline: '.$exception->getMessage());
         }
 
-        $order = DB::transaction(function () use ($validated, $providerConfig, $totalPrice, $currency, $pnr, $providerPayload, $ancillaryCatalog, $ancillarySummary): Order {
+        $order = DB::transaction(function () use ($providerConfig, $totalPrice, $currency, $pnr, $providerPayload, $ancillaryCatalog, $ancillarySummary, $customer, $isRoundTrip, $outboundProviderId, $returnProviderId, $flight, $passengers, $baseTotal): Order {
             $order = Order::query()->create([
                 'owner_type' => get_class(request()->user()),
                 'owner_id' => request()->user()?->id,
@@ -800,33 +946,42 @@ class BookingController extends Controller
                 'currency' => strtoupper($currency),
                 'payment_method' => 'airline_token',
                 'payment_reference' => $pnr,
-                'contact' => $validated['customer'],
+                'contact' => $customer,
             ]);
 
             $order->items()->create([
                 'type' => 'flight',
-                'product_subtype' => filter_var($validated['is_round_trip'] ?? false, FILTER_VALIDATE_BOOLEAN) ? 'roundtrip' : 'oneway',
+                'product_type' => 'ticket',
+                'product_subtype' => $isRoundTrip ? 'roundtrip' : 'oneway',
                 'provider' => 'videcom',
                 'provider_reference' => $pnr,
                 'item_details' => [
                     'pnr' => $pnr,
                     'airline_code' => $providerConfig->airline_code,
-                    'outbound_provider_id' => $validated['outbound_provider_id'] ?? $validated['provider_id'],
-                    'return_provider_id' => $validated['return_provider_id'] ?? null,
-                    'segments' => $validated['flight']['segments'] ?? [$validated['flight']],
-                    'passengers' => $validated['passengers'],
-                    'customer' => $validated['customer'],
+                    'outbound_provider_id' => $outboundProviderId,
+                    'return_provider_id' => $returnProviderId,
+                    'segments' => $flight['segments'] ?? [$flight],
+                    'passengers' => $passengers,
+                    'customer' => $customer,
                     'raw_request' => [
                         'provider_payload' => $providerPayload,
                         'ancillary_catalog' => $ancillaryCatalog,
                         'ancillary_summary' => $ancillarySummary,
                     ],
                 ],
+                'product_details' => [
+                    'segments' => $flight['segments'] ?? [$flight],
+                    'currency' => strtoupper($currency),
+                ],
+                'net_fare' => $baseTotal,
                 'price' => $totalPrice,
-                'taxes' => 0,
+                'taxes' => [],
+                'total_tax' => 0,
                 'total' => $totalPrice,
+                'total_amount' => $totalPrice,
                 'currency' => strtoupper($currency),
                 'status' => 'confirmed',
+                'transaction_type' => 'issue',
                 'paid' => $totalPrice,
                 'remaining' => 0,
             ]);
@@ -834,7 +989,51 @@ class BookingController extends Controller
             return $order;
         });
 
+        $this->applyFinancialSourceAndCommission($order);
+
+        $financialSources = $order->items
+            ->pluck('item_details.financial_source')
+            ->filter(fn ($value): bool => is_string($value) && $value !== '')
+            ->unique();
+
+        $resolvedPaymentMethod = match (true) {
+            $financialSources->contains('master_agency_supply') && $financialSources->count() === 1 => 'default_agency_supply',
+            $financialSources->contains('master_agency_supply') && $financialSources->contains('own_credentials') => 'mixed_supply',
+            $financialSources->contains('own_credentials') && $financialSources->count() === 1 => 'own_credentials',
+            default => (string) ($order->payment_method ?? 'airline_token'),
+        };
+
+        $order->update(['payment_method' => $resolvedPaymentMethod]);
+
+        if ($financialSources->contains('master_agency_supply')) {
+            app(ProcessWalletTransactions::class)->execute($order, $request->user());
+        }
+
+        if ($financialSources->contains('own_credentials')) {
+            app(CreateAirlineTransactions::class)->execute($order);
+        }
+
+        try {
+            app(InitializeTenantLedger::class)->execute((string) $order->currency);
+            app(PostToLedger::class)->execute($order, includeOwnCredentials: true);
+        } catch (\Throwable $exception) {
+            report($exception);
+
+            Log::warning('Booking issuance completed but ledger posting failed.', [
+                'order_id' => $order->id,
+                'error' => $exception->getMessage(),
+            ]);
+        }
+
+        // Clear cached booking data after successful issuance
+        Cache::forget("flight_search_{$validated['uuid']}");
+
         return redirect()->route('tickets.completed', ['booking' => $order->id])->with('success', 'Booking created successfully.');
+    }
+
+    protected function applyFinancialSourceAndCommission(Order $order): void
+    {
+        app(ApplyFinancialSourceAndCommission::class)->execute($order);
     }
 
     public function show(Order $booking): Response

@@ -1,0 +1,124 @@
+.ltr {
+    direction: ltr;
+}
+
+[dir="ltr"] .dropdown-menu-content {
+    left: 0;
+    right: auto;
+}
+
+[dir="ltr"] .avatar {
+    margin-left: 0.5rem;
+    margin-right: 0;
+}
+
+[dir="ltr"] .lucide {
+    transform: none;
+}
+
+[dir="ltr"] [data-radix-popper-content-wrapper] {
+    transform-origin: left center !important;
+}
+
+[dir="ltr"] {
+    direction: ltr;
+    text-align: left;
+    font-family: 'IBM Plex Sans Variable', 'Instrument Sans', ui-sans-serif, system-ui, sans-serif;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+[dir="ltr"] * {
+    font-family: inherit;
+}
+
+.latin-text,
+[dir="ltr"] .latin-text {
+    font-family: 'IBM Plex Sans Variable', 'Instrument Sans', ui-sans-serif, system-ui, sans-serif !important;
+    font-weight: 400;
+    line-height: 1.5;
+}
+
+[dir="ltr"] h1,
+[dir="ltr"] h2,
+[dir="ltr"] h3,
+[dir="ltr"] h4,
+[dir="ltr"] h5,
+[dir="ltr"] h6 {
+    font-family: 'IBM Plex Sans Variable', 'Instrument Sans', ui-sans-serif, system-ui, sans-serif;
+    font-weight: 600;
+    line-height: 1.3;
+}
+
+[dir="ltr"] p {
+    line-height: 1.6;
+}
+
+[dir="ltr"] button,
+[dir="ltr"] input,
+[dir="ltr"] textarea,
+[dir="ltr"] select {
+    font-family: 'IBM Plex Sans Variable', 'Instrument Sans', ui-sans-serif, system-ui, sans-serif;
+}
+
+[dir="ltr"] .latin-numbers {
+    font-variant-numeric: tabular-nums;
+}
+
+[dir="ltr"] *::selection {
+    background-color: rgba(59, 130, 246, 0.3);
+}
+
+[dir="ltr"] .text-readable {
+    line-height: 1.7;
+}
+
+[dir="ltr"] input[type="text"],
+[dir="ltr"] input[type="email"],
+[dir="ltr"] input[type="password"],
+[dir="ltr"] input[type="number"],
+[dir="ltr"] textarea,
+[dir="ltr"] select {
+    text-align: left;
+    direction: ltr;
+}
+
+.latin-heading {
+    font-family: 'IBM Plex Sans Variable', 'Instrument Sans', ui-sans-serif, system-ui, sans-serif;
+    font-weight: 600;
+    line-height: 1.3;
+    letter-spacing: -0.025em;
+}
+
+.latin-body {
+    font-family: 'IBM Plex Sans Variable', 'Instrument Sans', ui-sans-serif, system-ui, sans-serif;
+    font-weight: 400;
+    line-height: 1.6;
+    letter-spacing: 0.01em;
+}
+
+[dir="ltr"] .latin-number {
+    font-variant-numeric: lining-nums;
+    font-feature-settings: "lnum";
+}
+
+[dir="ltr"] .btn-latin {
+    font-family: 'IBM Plex Sans Variable', 'Instrument Sans', ui-sans-serif, system-ui, sans-serif;
+    font-weight: 500;
+    padding: 0.5rem 1rem;
+    border-radius: 0.5rem;
+}
+
+[dir="ltr"] .form-control-latin {
+    font-family: 'IBM Plex Sans Variable', 'Instrument Sans', ui-sans-serif, system-ui, sans-serif;
+    padding: 0.5rem 0.75rem;
+    border-radius: 0.375rem;
+    border: 1px solid hsl(var(--border));
+    background-color: hsl(var(--background));
+}
+
+[dir="ltr"] a, .dropdown-menu-item {
+    text-align: left ;   
+    direction: ltr;
+}

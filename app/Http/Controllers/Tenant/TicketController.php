@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Tenant;
 
+use App\Actions\Finance\ApplyFinancialSourceAndCommission;
 use App\Actions\Finance\CreateAirlineTransactions;
 use App\Actions\Finance\CreateOrderFromBookingData;
 use App\Actions\Finance\DetermineFinancialSource;
@@ -10,8 +11,11 @@ use App\Actions\Finance\PostToLedger;
 use App\Actions\Finance\ProcessWalletTransactions;
 use App\DTOs\Videcom\OrderItemData;
 use App\DTOs\Videcom\ParsedBookingData;
+use App\Exceptions\InsufficientWalletBalanceException;
 use App\Http\Controllers\Controller;
 use App\Jobs\UpdateAirlineBalanceJob;
+use App\Models\Tenant\AgencySetting;
+use App\Models\Tenant as CentralTenant;
 use App\Models\Tenant\Order;
 use App\Models\Tenant\OrderItem;
 use App\Models\TenantProvider;
@@ -20,8 +24,8 @@ use App\Services\Airline\AgencyProviderResolver;
 use App\Services\Airline\ProviderFactory;
 use App\Services\Airline\Videcom\VidecomPnrParser;
 use App\Services\Commission\TenantProviderCommissionCalculator;
-use App\Services\Finance\CommissionCalculator;
 use App\Services\Videcom\VidecomOrderParser;
+use Bavix\Wallet\Models\Transaction as WalletTransaction;
 use Carbon\Carbon;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\RedirectResponse;
@@ -64,6 +68,12 @@ class TicketController extends Controller
         $issuer = $request->user();
         if (! $issuer instanceof User) {
             return back()->with('error', 'An authenticated user is required to issue a ticket.');
+        }
+
+        try {
+            $this->assertWalletBalanceBeforeIssue($booking, $issuer);
+        } catch (InsufficientWalletBalanceException $exception) {
+            return back()->with('error', $exception->getMessage());
         }
 
         $paymentType = strtolower((string) $request->input('payment_type', 'airline_token'));
@@ -251,11 +261,7 @@ class TicketController extends Controller
             return back()->with('error', 'PNR reference not found for this order item.');
         }
 
-        $airlineCode = (string) data_get($item->item_details, 'airline_code', data_get($item->item_details, 'iata', ''));
-        $providerConfig = TenantProvider::query()
-            ->where('is_active', true)
-            ->when($airlineCode !== '', fn ($query) => $query->where('airline_code', $airlineCode))
-            ->first();
+        $providerConfig = $this->resolveProviderForTicketAction($item);
 
         if (! $providerConfig) {
             return back()->with('error', 'No active provider found for this booking.');
@@ -292,15 +298,16 @@ class TicketController extends Controller
         $voidedAmount = (float) $voidedItems->sum(fn (OrderItem $orderItem): float => (float) $orderItem->total);
         $oldStatus = (string) $booking->status;
 
-        DB::transaction(function () use ($booking, $voidedItems, $voidSnapshot, $pnr, $voidedAmount, $oldStatus, $request): void {
+        DB::transaction(function () use ($booking, $voidedItems, $pnr, $voidedAmount, $oldStatus, $request): void {
             foreach ($voidedItems as $orderItem) {
-                $details = $voidSnapshot;
-                $details['pnr_synced_at'] = now()->toIso8601String();
+                $walletTransactionId = $this->depositVoidAmountToWallet($booking, $orderItem, $pnr, $request->user());
 
                 $orderItem->update([
-                    'provider_reference' => (string) ($voidSnapshot['rloc'] ?? $pnr),
-                    'ticket_number' => null,
-                    'item_details' => $details,
+                    // Keep original PNR reference stable for traceability after void.
+                    'provider_reference' => (string) ($orderItem->provider_reference ?: $pnr),
+                    // Keep original ticket number for historical visibility after void.
+                    'ticket_number' => $orderItem->ticket_number,
+                    'wallet_transaction_id' => $walletTransactionId ?: $orderItem->wallet_transaction_id,
                     'status' => 'voided',
                     'remaining' => 0,
                 ]);
@@ -310,8 +317,6 @@ class TicketController extends Controller
                 'status' => 'voided',
                 'amount_refunded' => (float) $booking->amount_refunded + $voidedAmount,
             ]);
-
-            $this->depositVoidAmountToWallet($booking, $voidedAmount, $pnr, $request->user());
 
             $booking->statusLogs()->create([
                 'old_status' => $oldStatus,
@@ -472,24 +477,141 @@ class TicketController extends Controller
         }
     }
 
-    protected function depositVoidAmountToWallet(Order $booking, float $amount, string $pnr, ?User $user): void
+    protected function resolveProviderForTicketAction(OrderItem $item): ?TenantProvider
     {
+        $airlineCode = (string) data_get(
+            $item->item_details,
+            'airline_code',
+            data_get($item->item_details, 'iata', data_get($item->product_details, 'airline_code', '')),
+        );
+        $airlineCode = strtoupper(trim($airlineCode));
+        $providerId = data_get($item->item_details, 'financial_provider_id');
+
+        $sourceTenantId = (string) (
+            data_get($item->item_details, 'financial_source_tenant_id')
+            ?: data_get($item->item_details, 'default_agency_tenant_id', '')
+        );
+
+        if ($sourceTenantId === '') {
+            $orderPaymentMethod = (string) ($item->relationLoaded('order')
+                ? data_get($item->order, 'payment_method', '')
+                : (string) $item->order()->value('payment_method'));
+
+            $isMasterSupply = (string) data_get($item->item_details, 'financial_source') === 'master_agency_supply'
+                || $orderPaymentMethod === 'default_agency_supply';
+
+            if ($isMasterSupply) {
+                $sourceTenantId = (string) (
+                    AgencySetting::current()->default_agency_tenant_id
+                    ?: CentralTenant::getDefaultAgency()?->id
+                    ?: ''
+                );
+            }
+        }
+
+        if ($sourceTenantId !== '') {
+            $sourceTenant = CentralTenant::query()->find($sourceTenantId);
+
+            if ($sourceTenant) {
+                return $sourceTenant->run(function () use ($airlineCode, $providerId): ?TenantProvider {
+                    if (! empty($providerId)) {
+                        $provider = TenantProvider::query()->whereKey($providerId)->where('is_active', true)->first();
+
+                        if ($provider) {
+                            return $provider;
+                        }
+                    }
+
+                    return TenantProvider::query()
+                        ->where('is_active', true)
+                        ->when($airlineCode !== '', fn ($query) => $query->where('airline_code', $airlineCode))
+                        ->first();
+                });
+            }
+        }
+
+        if (! empty($providerId)) {
+            $provider = TenantProvider::query()->whereKey($providerId)->where('is_active', true)->first();
+
+            if ($provider) {
+                return $provider;
+            }
+        }
+
+        return TenantProvider::query()
+            ->where('is_active', true)
+            ->when($airlineCode !== '', fn ($query) => $query->where('airline_code', $airlineCode))
+            ->first();
+    }
+
+    protected function depositVoidAmountToWallet(Order $booking, OrderItem $orderItem, string $pnr, ?User $user): ?string
+    {
+        $refundTarget = $this->resolveVoidRefundTarget($orderItem, $user);
+        if (! $refundTarget) {
+            return null;
+        }
+
+        $walletHolder = $refundTarget['holder'];
+        $amount = $refundTarget['amount'];
+
         if ($amount <= 0) {
-            return;
+            return null;
         }
 
-        if (! $user) {
-            return;
-        }
-
-        $walletHolder = $this->resolveAgencyWalletHolder($user);
         $wallet = $walletHolder->getOrCreateCurrencyWallet($booking->currency);
 
-        $wallet->deposit($this->toMinor((string) $amount), [
+        $transaction = $wallet->depositFloat($amount, [
             'order_id' => $booking->id,
+            'order_item_id' => $orderItem->id,
             'type' => 'ticket_void_refund',
             'description' => "Void refund for PNR {$pnr}",
         ]);
+
+        return $transaction?->uuid;
+    }
+
+    /**
+     * @return array{holder: User, amount: float}|null
+     */
+    protected function resolveVoidRefundTarget(OrderItem $orderItem, ?User $fallback): ?array
+    {
+        $originalWalletTxUuid = (string) ($orderItem->wallet_transaction_id ?? '');
+
+        if ($originalWalletTxUuid !== '') {
+            $originalWalletTx = WalletTransaction::query()
+                ->where('uuid', $originalWalletTxUuid)
+                ->first(['wallet_id', 'amount']);
+
+            if ($originalWalletTx?->wallet_id) {
+                $walletOwner = DB::table('wallets')
+                    ->where('id', (int) $originalWalletTx->wallet_id)
+                    ->first(['holder_type', 'holder_id']);
+
+                if ($walletOwner && (string) $walletOwner->holder_type === User::class) {
+                    $resolvedUser = User::query()->find((int) $walletOwner->holder_id);
+
+                    if ($resolvedUser) {
+                        // Amount is stored in minor units and issue withdraw is negative.
+                        $originalWithdrawAmount = abs((float) $originalWalletTx->amount) / 100;
+                        $fallbackAmount = (float) $orderItem->total;
+
+                        return [
+                            'holder' => $resolvedUser,
+                            'amount' => $originalWithdrawAmount > 0 ? $originalWithdrawAmount : $fallbackAmount,
+                        ];
+                    }
+                }
+            }
+        }
+
+        if ($fallback) {
+            return [
+                'holder' => $this->resolveAgencyWalletHolder($fallback),
+                'amount' => (float) $orderItem->total,
+            ];
+        }
+
+        return null;
     }
 
     protected function resolveAgencyWalletHolder(User $fallback): User
@@ -500,11 +622,6 @@ class TicketController extends Controller
             ->first() ?? $fallback;
     }
 
-    protected function toMinor(string $amount): int
-    {
-        return (int) round(((float) $amount) * 100);
-    }
-
     protected function dispatchDelayedAirlineBalanceUpdate(TenantProvider $provider): void
     {
         UpdateAirlineBalanceJob::dispatch($provider->id)
@@ -513,66 +630,39 @@ class TicketController extends Controller
 
     protected function applyFinancialSourceAndCommission(Order $order): void
     {
-        $order->loadMissing('items');
+        app(ApplyFinancialSourceAndCommission::class)->execute($order);
+    }
 
+    /**
+     * @throws InsufficientWalletBalanceException
+     */
+    protected function assertWalletBalanceBeforeIssue(Order $booking, User $issuer): void
+    {
+        $booking->loadMissing('items');
+
+        $requiredByCurrency = [];
         $financialSourceAction = app(DetermineFinancialSource::class);
-        $commissionCalculator = app(CommissionCalculator::class);
-        $providerResolver = app(AgencyProviderResolver::class);
 
-        foreach ($order->items as $item) {
-            $segment = (array) data_get($item->item_details, 'segment', data_get($item->product_details, 'segment', []));
-            $origin = (string) ($segment['departure_airport'] ?? '');
-            $destination = (string) ($segment['arrival_airport'] ?? '');
+        foreach ($booking->items as $item) {
             $airlineCode = (string) data_get($item->item_details, 'airline_code', data_get($item->product_details, 'airline_code', ''));
+            $currency = strtoupper((string) $item->currency);
+            $source = $financialSourceAction->execute($airlineCode, $currency);
 
-            // Resolve provider to check if using master agency
-            $resolved = $providerResolver->resolve($airlineCode);
-            $isUsingMasterAgency = $resolved['is_using_master_agency'];
-
-            $source = $financialSourceAction->execute($airlineCode, (string) $item->currency);
-            $commission = $commissionCalculator->calculate(
-                $source->provider ?? [],
-                $origin,
-                $destination,
-                (float) $item->net_fare,
-            );
-
-            $details = (array) $item->item_details;
-            $details['financial_source'] = $source->type;
-            $details['financial_provider_id'] = $source->provider?->id;
-
-            $commissionPercent = $commission['percent'];
-            $commissionAmount = $commission['amount'];
-            $netAfterCommission = $commission['net_after_commission'];
-            $agentCommission = $commission['amount'];
-
-            if ($source->usesMasterAgencySupply()) {
-                $masterCommissionAmount = round((float) $item->net_fare * ($source->masterCommissionRate / 100), 2);
-
-                $details['default_agency_tenant_id'] = $source->defaultAgencyTenantId;
-                $details['master_commission_rate'] = $source->masterCommissionRate;
-                $details['settlement_source'] = 'default_agency_supply';
-
-                // Buyer agency does not earn airline commission in master-supply mode.
-                $commissionPercent = 0;
-                $commissionAmount = 0;
-                $netAfterCommission = (float) $item->net_fare;
-                $agentCommission = $masterCommissionAmount;
-            } else {
-                $details['settlement_source'] = 'own_credentials';
+            if (! $source->usesMasterAgencySupply()) {
+                continue;
             }
 
-            $item->fill([
-                'commission_percent' => $commissionPercent,
-                'commission_amount' => $commissionAmount,
-                'net_after_commission' => $netAfterCommission,
-                'agent_commission' => $agentCommission,
-                'net_commission' => $agentCommission,
-                'used_master_agency_provider' => $isUsingMasterAgency,
-                'master_commission_percent' => $source->usesMasterAgencySupply() ? $source->masterCommissionRate : null,
-                'item_details' => $details,
-            ])->save();
+            $requiredByCurrency[$currency] = round(
+                ((float) ($requiredByCurrency[$currency] ?? 0)) + (float) ($item->total_amount ?? $item->total ?? 0),
+                2,
+            );
         }
+
+        if ($requiredByCurrency === []) {
+            return;
+        }
+
+        app(ProcessWalletTransactions::class)->assertCanIssueForAmounts($requiredByCurrency, $issuer);
     }
 
     protected function voidProviderPnrSafely(mixed $provider, string $pnr): void

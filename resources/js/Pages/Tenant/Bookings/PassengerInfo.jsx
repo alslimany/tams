@@ -11,12 +11,12 @@ import { Label } from '@/Components/ui/Label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/Components/ui/Tabs';
 import { Armchair, Briefcase, CheckCircle2, ChevronLeft, ChevronRight, Loader2, Settings2, Users } from 'lucide-react';
 
-export default function PassengerInfo({ uuid, provider_id, flight, reservation_type, is_round_trip = false, outbound_provider_id = null, return_provider_id = null, passportRequired = false, searchParams, ancillaryCatalog = [], ancillaryCatalogByOffer = {} }) {
-    const { t } = useTranslation();
+export default function PassengerInfo({ uuid, provider_id, flight, reservation_type, is_round_trip = false, outbound_provider_id = null, return_provider_id = null, passportRequired = false, searchParams, ancillaryCatalog = [], ancillaryCatalogByOffer = {}, cached_passengers = [], cached_customer = null }) {
+     const { t, getAirlineName, getCurrencyName, getCabinName } = useTranslation();
     const flash = usePage().props.flash ?? {};
     const issueCommandPreview = flash.issue_command_preview || '';
 
-    const initialPassengers = [];
+    const initialPassengers = cached_passengers?.length > 0 ? cached_passengers : [];
     const types = [
         { type: 'adult', count: searchParams?.adults || 1 },
         { type: 'child', count: searchParams?.children || 0 },
@@ -59,6 +59,16 @@ export default function PassengerInfo({ uuid, provider_id, flight, reservation_t
             seats: {},
         },
     });
+
+    // Initialize form with cached data if available
+    useEffect(() => {
+        if (cached_passengers?.length > 0) {
+            setData('passengers', cached_passengers);
+        }
+        if (cached_customer) {
+            setData('customer', cached_customer);
+        }
+    }, []);
 
     const [activeTab, setActiveTab] = useState('passengers');
     const [isSeatMapOpen, setIsSeatMapOpen] = useState(false);
@@ -103,7 +113,7 @@ export default function PassengerInfo({ uuid, provider_id, flight, reservation_t
         return [
             {
                 key: 'oneway',
-                label: t('common.offer'),
+                label: '',//t('common.offer'),
                 providerId: Number(provider_id),
                 flight,
                 segments: flight?.segments || [flight],
@@ -498,7 +508,7 @@ export default function PassengerInfo({ uuid, provider_id, flight, reservation_t
     };
 
     const providerPrice = Number(flight.pricing?.total || 0);
-    const currency = flight.pricing?.currency || 'USD';
+    const currency = getCurrencyName(flight.pricing?.currency);
     const grandTotal = providerPrice + ancillaryTotal;
     const selectedSeatLabels = offerContexts.flatMap((offer) => {
         const offerSeats = data.extras.seats?.[offer.key] ?? {};
@@ -643,12 +653,12 @@ export default function PassengerInfo({ uuid, provider_id, flight, reservation_t
                                                 {localErrors[`passengers.${index}.passport_expiry`] && <p className="text-xs text-destructive">{localErrors[`passengers.${index}.passport_expiry`]}</p>}
                                             </div>
                                             <div className="space-y-2">
-                                                <Label>{t('common.nationality')} (3-{t('common.letters_only').toLowerCase()})</Label>
+                                                <Label>{t('common.nationality')}</Label>
                                                 <Input required={passportRequired} maxLength={3} value={passenger.nationality} onChange={(event) => handlePassengerChange(index, 'nationality', event.target.value.toUpperCase())} placeholder="LBY" />
                                                 {(localErrors[`passengers.${index}.nationality`] || errors[`passengers.${index}.nationality`]) && <p className="text-xs text-destructive">{localErrors[`passengers.${index}.nationality`] || errors[`passengers.${index}.nationality`]}</p>}
                                             </div>
                                             <div className="space-y-2">
-                                                <Label>{t('common.passport_issue_country')} (3-{t('common.letters_only').toLowerCase()})</Label>
+                                                <Label>{t('common.passport_issue_country')}</Label>
                                                 <Input required={passportRequired} maxLength={3} value={passenger.passport_issue_country} onChange={(event) => handlePassengerChange(index, 'passport_issue_country', event.target.value.toUpperCase())} placeholder="LBY" />
                                                 {(localErrors[`passengers.${index}.passport_issue_country`] || errors[`passengers.${index}.passport_issue_country`]) && <p className="text-xs text-destructive">{localErrors[`passengers.${index}.passport_issue_country`] || errors[`passengers.${index}.passport_issue_country`]}</p>}
                                             </div>

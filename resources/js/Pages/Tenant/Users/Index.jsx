@@ -1,6 +1,6 @@
 import React from 'react';
 import { Head, Link, router } from '@inertiajs/react';
-import TenantNavbarLayout from '@/Layouts/TenantNavbarLayout';
+import TenantSidebarLayout from '@/Layouts/TenantSidebarLayout';
 import { Button } from '@/Components/ui/Button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/Components/ui/Table';
 import { Badge } from '@/Components/ui/Badge';
@@ -14,7 +14,7 @@ export default function Index({ users }) {
     };
 
     return (
-        <TenantNavbarLayout>
+        <TenantSidebarLayout>
             <Head title="Users" />
             
             <div className="flex justify-between items-center mb-6">
@@ -70,6 +70,6 @@ export default function Index({ users }) {
                     </TableBody>
                 </Table>
             </div>
-        </TenantNavbarLayout>
+        </TenantSidebarLayout>
     );
 }

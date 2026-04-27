@@ -5,6 +5,7 @@ use App\Models\Tenant\Order;
 use App\Models\Tenant\OrderItem;
 use App\Models\TenantProvider;
 use App\Models\User;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
 
 /** @var array<string, mixed> $state */
@@ -98,6 +99,10 @@ test('flight pages are available and booking data is stored in orders', function
                 'last_name' => 'Doe',
                 'dob' => '1990-01-01',
                 'gender' => 'M',
+                'passport_number' => 'A1234567',
+                'passport_expiry' => '2030-01-01',
+                'passport_issue_country' => 'LBY',
+                'nationality' => 'LBY',
             ],
         ],
         'extras' => [
@@ -174,4 +179,50 @@ test('open reservation availability endpoint returns provider eligibility', func
     ])->assertSuccessful()->assertJson([
         'allowed' => true,
     ]);
+});
+
+test('selected offer is cached and passengers page is reachable by uuid url', function () {
+    global $state;
+
+    $this->actingAs($state['user']);
+
+    $baseUrl = 'http://'.$state['tenant']->domains->first()->domain;
+    $uuid = Str::uuid()->toString();
+
+    Cache::put("flight_search_{$uuid}", [
+        'origin' => 'MJI',
+        'destination' => 'IST',
+        'date' => now()->addDays(2)->toDateString(),
+        'adults' => 1,
+        'children' => 0,
+        'infants' => 0,
+        'is_return' => false,
+    ], now()->addMinutes(30));
+
+    $selectResponse = $this->post($baseUrl.route('flights.select', [], false), [
+        'uuid' => $uuid,
+        'provider_id' => $state['provider']->id,
+        'reservation_type' => 'NN',
+        'flight' => [
+            'pricing' => ['total' => 500, 'currency' => 'LYD'],
+            'segments' => [[
+                'flight_number' => 'YI123',
+                'departure_airport' => 'MJI',
+                'arrival_airport' => 'IST',
+                'departure_time' => now()->addDays(2)->toDateTimeString(),
+                'arrival_time' => now()->addDays(2)->addHours(2)->toDateTimeString(),
+            ]],
+        ],
+    ]);
+
+    $selectResponse->assertRedirect(route('flights.passengers', ['uuid' => $uuid], false));
+
+    $this->get($baseUrl.route('flights.passengers', ['uuid' => $uuid], false))
+        ->assertSuccessful()
+        ->assertInertia(fn ($page) => $page
+            ->component('Tenant/Bookings/PassengerInfo')
+            ->where('uuid', $uuid)
+            ->where('provider_id', $state['provider']->id)
+            ->where('reservation_type', 'NN')
+        );
 });

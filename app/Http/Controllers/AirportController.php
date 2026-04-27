@@ -10,7 +10,7 @@ class AirportController extends Controller
     public function search(Request $request)
     {
         $query = strtoupper(trim((string) $request->input('q', '')));
-
+        $airports = [];
         $commonAirportCodes = ['MJI', 'TIP', 'BEN', 'SEB', 'IST', 'SAW', 'CAI', 'DXB', 'JED', 'TUN'];
 
         $baseQuery = Airport::query()
@@ -34,20 +34,32 @@ class AirportController extends Controller
             return response()->json([]);
         }
 
-        $airports = $baseQuery
-            ->where(function ($searchQuery) use ($query) {
-                $searchQuery
-                    ->where('iata_code', 'LIKE', $query.'%')
-                    ->orWhere('name->en', 'LIKE', '%'.$query.'%')
-                    ->orWhere('name->ar', 'LIKE', '%'.$query.'%')
-                    ->orWhere('city->en', 'LIKE', '%'.$query.'%')
-                    ->orWhere('city->ar', 'LIKE', '%'.$query.'%')
-                    ->orWhere('country->en', 'LIKE', '%'.$query.'%')
-                    ->orWhere('country->ar', 'LIKE', '%'.$query.'%');
-            })
-            ->orderBy('iata_code', 'asc')
-            ->limit(10)
-            ->get();
+        if (strlen($query) == 3) {
+            $airports = $baseQuery
+                ->where(function ($searchQuery) use ($query) {
+                    $searchQuery
+                        ->where('iata_code', 'LIKE', $query.'%');
+                })
+                ->orderBy('iata_code', 'asc')
+                ->limit(10)
+                ->get();
+        } else {
+
+            $airports = $baseQuery
+                ->where(function ($searchQuery) use ($query) {
+                    $searchQuery
+                        ->where('iata_code', 'LIKE', $query.'%')
+                        ->orWhere('name->en', 'LIKE', '%'.$query.'%')
+                        ->orWhere('name->ar', 'LIKE', '%'.$query.'%')
+                        ->orWhere('city->en', 'LIKE', '%'.$query.'%')
+                        ->orWhere('city->ar', 'LIKE', '%'.$query.'%')
+                        ->orWhere('country->en', 'LIKE', '%'.$query.'%')
+                        ->orWhere('country->ar', 'LIKE', '%'.$query.'%');
+                })
+                ->orderBy('iata_code', 'asc')
+                ->limit(10)
+                ->get();
+        }
 
         return response()->json($this->transformAirports($airports));
     }

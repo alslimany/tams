@@ -617,8 +617,8 @@ export default function SearchResults({ providers, query, uuid, searchDisplayMod
                                 </DialogTrigger>
                                 <DialogContent className="max-w-2xl sm:rounded-3xl p-0 overflow-hidden">
                                     <div className="bg-primary/5 p-6 border-b">
-                                        <h2 className="text-2xl font-black">Offer Summary</h2>
-                                        <p className="text-muted-foreground font-medium text-sm">Review your selected flight before proceeding</p>
+                                        <DialogTitle className="text-2xl font-black tracking-normal leading-tight">Offer Summary</DialogTitle>
+                                        <DialogDescription className="text-muted-foreground font-medium text-sm mt-2">Review your selected flight before proceeding</DialogDescription>
                                     </div>
                                     <div className="p-6 space-y-6 max-h-[60vh] overflow-y-auto">
                                         <div className="flex justify-between items-center bg-card border rounded-2xl p-4 shadow-sm">

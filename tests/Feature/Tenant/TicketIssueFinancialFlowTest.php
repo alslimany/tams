@@ -484,3 +484,34 @@ test('ProcessWalletTransactions only processes master_agency_supply items', func
     // own_credentials item should NOT have a wallet transaction.
     expect($ownItem->wallet_transaction_id)->toBeNull();
 });
+
+test('ticket issuance is rejected before provider call when wallet is insufficient', function () {
+    global $state;
+
+    $state['tenant']->update([
+        'settings' => [
+            'finance' => [
+                'use_own_airline_credentials' => false,
+            ],
+        ],
+    ]);
+
+    [$order] = seedPendingOrder($state['user'], 'INSUF1');
+
+    $providerMock = \Mockery::mock();
+    $providerMock->shouldNotReceive('issueTicket');
+
+    \Mockery::mock('alias:App\Services\Airline\ProviderFactory')
+        ->shouldReceive('make')
+        ->andReturn($providerMock);
+
+    $this->actingAs($state['user']);
+
+    $baseUrl = 'http://'.$state['tenant']->domains->first()->domain;
+
+    $this->post($baseUrl.route('tickets.issue', ['booking' => $order->id], false), [
+        'payment_type' => 'airline_token',
+    ])->assertRedirect()->assertSessionHas('error');
+
+    expect(Order::query()->where('parent_id', $order->id)->exists())->toBeFalse();
+});
