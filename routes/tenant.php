@@ -5,7 +5,13 @@ declare(strict_types=1);
 use App\Http\Controllers\LanguageController;
 use App\Http\Controllers\Tenant\AirlineConfigController;
 use App\Http\Controllers\Tenant\BookingController;
+use App\Http\Controllers\Tenant\CompulsoryInsuranceController;
 use App\Http\Controllers\Tenant\DashboardController;
+use App\Http\Controllers\Tenant\InsuranceBookController;
+use App\Http\Controllers\Tenant\InsuranceConfigController;
+use App\Http\Controllers\Tenant\InsurancePolicyController;
+use App\Http\Controllers\Tenant\InsuranceQuoteController;
+use App\Http\Controllers\Tenant\InsuranceSearchController;
 use App\Http\Controllers\Tenant\OrderController;
 use App\Http\Controllers\Tenant\ReportController;
 use App\Http\Controllers\Tenant\TicketController;
@@ -70,6 +76,32 @@ Route::middleware([
         Route::get('orders', [OrderController::class, 'index'])->name('orders.index');
         Route::get('orders/{order}', [OrderController::class, 'show'])->name('orders.show');
 
+        // Insurance
+        Route::middleware('role:admin,manager,agent')->group(function () {
+            Route::get('insurance/search', [InsuranceSearchController::class, 'index'])->name('insurance.search');
+
+            Route::get('insurance/compulsory/search', [CompulsoryInsuranceController::class, 'searchPage'])->name('insurance.compulsory.search');
+            Route::get('insurance/compulsory/beneficiary/{quoteToken}', [CompulsoryInsuranceController::class, 'beneficiaryPage'])->name('insurance.compulsory.beneficiary');
+            Route::get('insurance/compulsory/issued/{order}', [CompulsoryInsuranceController::class, 'issuedPage'])->name('insurance.compulsory.issued');
+
+            Route::get('insurance/compulsory/references/durations', [CompulsoryInsuranceController::class, 'durationsReference'])->name('insurance.compulsory.references.durations');
+            Route::get('insurance/compulsory/references/document-types', [CompulsoryInsuranceController::class, 'documentTypesReference'])->name('insurance.compulsory.references.document-types');
+            Route::get('insurance/compulsory/references/vehicle-types', [CompulsoryInsuranceController::class, 'vehicleTypesReference'])->name('insurance.compulsory.references.vehicle-types');
+            Route::get('insurance/compulsory/references/colors', [CompulsoryInsuranceController::class, 'colorsReference'])->name('insurance.compulsory.references.colors');
+            Route::get('insurance/compulsory/references/licensing-authorities', [CompulsoryInsuranceController::class, 'licensingAuthoritiesReference'])->name('insurance.compulsory.references.licensing-authorities');
+            Route::post('insurance/compulsory/price', [CompulsoryInsuranceController::class, 'price'])->name('insurance.compulsory.price');
+            Route::post('insurance/compulsory/issue', [CompulsoryInsuranceController::class, 'issue'])->name('insurance.compulsory.issue');
+
+            Route::get('api/insurance/lookups/{productType}/{lookupKey}', [InsuranceSearchController::class, 'lookup'])->name('insurance.lookups');
+            Route::post('insurance/quote', [InsuranceQuoteController::class, 'store'])->name('insurance.quote');
+            Route::post('insurance/book', [InsuranceBookController::class, 'store'])->name('insurance.book');
+            Route::get('insurance/report', [InsurancePolicyController::class, 'report'])->name('insurance.report');
+            Route::post('insurance/cancel', [InsurancePolicyController::class, 'cancel'])->name('insurance.cancel');
+            Route::post('orders/{order}/insurance-items/{item}/cancel', [InsurancePolicyController::class, 'submitCancellation'])->name('insurance.order-items.cancel');
+            Route::post('orders/{order}/insurance-items/{item}/finalize-cancellation', [InsurancePolicyController::class, 'finalizeCancellation'])->name('insurance.order-items.finalize-cancellation');
+            Route::get('orders/{order}/insurance-items/{item}/report', [InsurancePolicyController::class, 'itemReport'])->name('insurance.order-items.report');
+        });
+
         // Reports
         Route::get('reports/sales', [ReportController::class, 'dailySales'])->name('reports.sales');
         Route::get('reports/commissions', [ReportController::class, 'commissions'])->name('reports.commissions');
@@ -99,6 +131,10 @@ Route::middleware([
             // General Tenant Settings
             Route::get('settings/general', [\App\Http\Controllers\Tenant\SettingController::class, 'index'])->name('settings.general.index');
             Route::post('settings/general', [\App\Http\Controllers\Tenant\SettingController::class, 'update'])->name('settings.general.update');
+
+            // Insurance Provider Configuration
+            Route::get('settings/insurance', [InsuranceConfigController::class, 'index'])->name('settings.insurance.index');
+            Route::post('settings/insurance', [InsuranceConfigController::class, 'store'])->name('settings.insurance.store');
         });
 
     });

@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Tenant;
 
+use App\Actions\Orders\SyncInsuranceCancellationStatus;
 use App\Http\Controllers\Controller;
 use App\Models\Tenant\AgencySetting;
 use App\Models\Tenant\AirlineTransaction;
@@ -12,6 +13,7 @@ use App\Models\TenantProvider;
 use App\Models\User;
 use App\Services\Airline\ProviderFactory;
 use App\Services\Airline\Videcom\VidecomPnrParser;
+use App\Services\Insurance\InsuranceProviderManager;
 use Bavix\Wallet\Models\Transaction as WalletTransaction;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Collection;
@@ -21,6 +23,11 @@ use SimpleXMLElement;
 
 class OrderController extends Controller
 {
+    public function __construct(
+        protected InsuranceProviderManager $insuranceProviderManager,
+        protected SyncInsuranceCancellationStatus $syncInsuranceCancellationStatus,
+    ) {}
+
     public function index(): Response
     {
         $orders = Order::query()
@@ -42,6 +49,7 @@ class OrderController extends Controller
     public function show(Order $order): Response
     {
         $this->syncOrderItemsFromPnrQuery($order);
+        $this->syncInsuranceCancellationItems($order);
 
         $order->load(['owner', 'items.airlineTransaction.account', 'statusLogs.user']);
 
@@ -90,7 +98,9 @@ class OrderController extends Controller
         $order->loadMissing('items');
 
         $pnrGroups = $order->items
-            ->filter(fn (OrderItem $item): bool => filled($item->provider_reference) && ! in_array($item->status, ['voided', 'refunded'], true))
+            ->filter(fn (OrderItem $item): bool => (string) $item->type !== 'insurance'
+                && filled($item->provider_reference)
+                && ! in_array($item->status, ['voided', 'refunded', 'cancellation', 'cancelled'], true))
             ->groupBy('provider_reference');
 
         foreach ($pnrGroups as $pnr => $items) {
@@ -204,6 +214,24 @@ class OrderController extends Controller
         $provider = ProviderFactory::make($providerConfig);
 
         return $provider->queryPnr($pnr);
+    }
+
+    protected function syncInsuranceCancellationItems(Order $order): void
+    {
+        $order->loadMissing('items');
+
+        $insuranceItems = $order->items->filter(
+            fn (OrderItem $item): bool => (string) $item->type === 'insurance'
+                && (string) $item->status === 'cancellation'
+        );
+
+        foreach ($insuranceItems as $item) {
+            try {
+                $this->syncInsuranceCancellationStatus->execute($item);
+            } catch (\Throwable $exception) {
+                report($exception);
+            }
+        }
     }
 
     protected function resolveProviderForSync(?OrderItem $item, string $airlineCode): ?TenantProvider

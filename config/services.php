@@ -35,4 +35,12 @@ return [
         ],
     ],
 
+    'albaraka' => [
+        'base_url' => env('ALBARAKA_BASE_URL', 'https://tameen.webapi.ly'),
+        'token' => env('ALBARAKA_TOKEN'),
+        'email' => env('ALBARAKA_EMAIL'),
+        'password' => env('ALBARAKA_PASSWORD'),
+        'agent_id' => env('ALBARAKA_AGENT_ID'),
+    ],
+
 ];

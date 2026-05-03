@@ -12,6 +12,7 @@ import {
     SettingsIcon,
     ShieldCheckIcon,
     ShoppingCartIcon,
+    ShieldIcon,
     UserIcon,
     UsersIcon,
     WalletIcon,
@@ -74,16 +75,19 @@ export default function TenantLayout({ children }) {
     const mainLinks = [
         { name: 'Dashboard', route: 'dashboard', icon: LayoutDashboardIcon },
         { name: 'Flights', route: 'flights.index', icon: BookOpenCheckIcon },
-        { name: 'Orders', route: 'orders.index', icon: ShoppingCartIcon },
+        { name: 'Compulsory Insurance', route: 'insurance.compulsory.search', icon: ShieldCheckIcon },
+        { name: 'Insurance Search', route: 'insurance.search', icon: ShieldIcon },
     ].filter((item) => hasRoute(item.route));
 
     const adminLinks = [
         { name: 'Users', route: 'users.index', icon: UsersIcon },
         { name: 'Air Config', route: 'settings.airlines.index', icon: PlaneTakeoffIcon, showWhen: canManageProviders },
+        { name: 'Insurance Config', route: 'settings.insurance.index', icon: ShieldIcon },
         { name: 'General Settings', route: 'settings.general.index', icon: SettingsIcon },
     ].filter((item) => isAdmin && hasRoute(item.route) && (item.showWhen !== false));
 
     const financeLinks = [
+        { name: 'Orders', route: 'orders.index', icon: ShoppingCartIcon },
         { name: 'Sales', route: 'reports.sales', icon: BarChart3Icon },
         { name: 'Commissions', route: 'reports.commissions', icon: ReceiptTextIcon },
         { name: 'Taxes', route: 'reports.taxes', icon: PlaneLandingIcon },

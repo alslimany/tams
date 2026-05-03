@@ -1,5 +1,5 @@
 import React from 'react';
-import { Head, Link, useForm, usePage } from '@inertiajs/react';
+import { Head, Link, router, useForm, usePage } from '@inertiajs/react';
 import TenantSidebarLayout from '@/Layouts/TenantSidebarLayout';
 import { Button } from '@/Components/ui/Button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/Components/ui/Card';
@@ -15,14 +15,17 @@ import {
 } from '@/Components/ui/dropdown-menu';
 import { formatMoney } from '@/lib/currency';
 import {
+    AlertTriangle,
     CalendarDays,
     Clock3,
     CreditCard,
     Mail,
     MapPin,
+    RefreshCcw,
     Phone,
     Plane,
     ReceiptText,
+    ShieldCheck,
     Ticket,
     UserRound,
     MoreHorizontal,
@@ -30,9 +33,21 @@ import {
 
 export default function Show({ order, itemTransactions, voidRefundAccount }) {
     const { auth } = usePage().props;
-    const { post, processing } = useForm({});
-    const canManageItems = ['admin', 'manager'].includes(String(auth?.user?.role ?? ''));
+    const voidForm = useForm({});
+    const cancelForm = useForm({ remarks: '' });
+    const finalizeCancellationForm = useForm({});
+    const currentUserRole = String(auth?.user?.role ?? auth?.landlordUser?.role ?? '').trim().toLowerCase();
+    const canManageItems = ['admin', 'manager'].includes(currentUserRole);
+    const canManageInsurance = ['admin', 'manager', 'agent'].includes(currentUserRole);
     const [voidTarget, setVoidTarget] = React.useState(null);
+    const [cancelTarget, setCancelTarget] = React.useState(null);
+    const [finalizeTarget, setFinalizeTarget] = React.useState(null);
+
+    const primaryItem = order.items?.[0] ?? null;
+    const primaryReferenceLabel = primaryItem?.type === 'insurance' ? 'Policy Reference' : 'PNR';
+    const primaryReferenceValue = primaryItem?.type === 'insurance'
+        ? (primaryItem.provider_reference ?? primaryItem.ticket_number ?? '-')
+        : (primaryItem?.provider_reference ?? '-');
 
     const formatDateTime = (value) => {
         if (!value) {
@@ -167,7 +182,7 @@ export default function Show({ order, itemTransactions, voidRefundAccount }) {
     };
 
     const closeVoidModal = () => {
-        if (processing) {
+        if (voidForm.processing) {
             return;
         }
 
@@ -179,11 +194,113 @@ export default function Show({ order, itemTransactions, voidRefundAccount }) {
             return;
         }
 
-        post(route('tickets.void', { booking: order.id, ticket: voidTarget.id }), {
+        voidForm.post(route('tickets.void', { booking: order.id, ticket: voidTarget.id }), {
             preserveScroll: true,
             onSuccess: () => setVoidTarget(null),
         });
     };
+
+    const getInsurancePayload = (item) => item?.product_details?.policy_details ?? {};
+
+    const getInsuranceBeneficiary = (item) => item?.item_details?.beneficiary ?? {};
+
+    const getInsuranceCancellation = (item) => item?.item_details?.insurance?.cancellation ?? {};
+
+    const getInsuranceRemark = (item) => String(getInsuranceCancellation(item)?.latest_remark ?? '');
+
+    const isInsuranceCancellationApproved = (item) => getInsuranceRemark(item) === 'تم الالغاء';
+
+    const openCancelModal = (item) => {
+        setCancelTarget(item);
+        cancelForm.setData('remarks', '');
+        cancelForm.clearErrors();
+    };
+
+    const openPolicyReport = (item) => {
+        const url = route('insurance.order-items.report', { order: order.id, item: item.id });
+
+        window.open(url, '_blank', 'noopener,noreferrer');
+    };
+
+    const closeCancelModal = () => {
+        if (cancelForm.processing) {
+            return;
+        }
+
+        setCancelTarget(null);
+        cancelForm.reset('remarks');
+    };
+
+    const submitCancellation = () => {
+        if (!cancelTarget) {
+            return;
+        }
+
+        cancelForm.post(route('insurance.order-items.cancel', { order: order.id, item: cancelTarget.id }), {
+            preserveScroll: true,
+            onSuccess: () => {
+                setCancelTarget(null);
+                cancelForm.reset('remarks');
+            },
+        });
+    };
+
+    const closeFinalizeModal = () => {
+        if (finalizeCancellationForm.processing) {
+            return;
+        }
+
+        setFinalizeTarget(null);
+    };
+
+    const confirmCancellationFinalization = () => {
+        if (!finalizeTarget) {
+            return;
+        }
+
+        finalizeCancellationForm.post(route('insurance.order-items.finalize-cancellation', { order: order.id, item: finalizeTarget.id }), {
+            preserveScroll: true,
+            onSuccess: () => setFinalizeTarget(null),
+        });
+    };
+
+    const refreshCancellationStatus = () => {
+        router.reload({
+            only: ['order', 'itemTransactions'],
+            preserveScroll: true,
+            preserveState: true,
+        });
+    };
+
+    React.useEffect(() => {
+        const pendingCancellationItems = (order.items ?? []).filter((item) => item.type === 'insurance' && item.status === 'cancellation');
+
+        if (pendingCancellationItems.length === 0) {
+            return undefined;
+        }
+
+        const timerId = window.setInterval(() => {
+            router.reload({
+                only: ['order', 'itemTransactions'],
+                preserveScroll: true,
+                preserveState: true,
+            });
+        }, 30000);
+
+        return () => window.clearInterval(timerId);
+    }, [order.items]);
+
+    React.useEffect(() => {
+        const approvedItem = (order.items ?? []).find((item) => item.type === 'insurance' && item.status === 'cancellation' && isInsuranceCancellationApproved(item));
+
+        if (!approvedItem) {
+            setFinalizeTarget((current) => (current && current.status === 'cancellation' ? null : current));
+
+            return;
+        }
+
+        setFinalizeTarget((current) => (current?.id === approvedItem.id ? current : approvedItem));
+    }, [order.items]);
 
     const depositAccountName = voidRefundAccount?.name ?? auth?.user?.name ?? 'Agency Account';
     const depositAccountEmail = voidRefundAccount?.email ?? auth?.user?.email ?? '-';
@@ -204,7 +321,7 @@ export default function Show({ order, itemTransactions, voidRefundAccount }) {
                                     </Badge>
                                 </div>
                                 <div className="grid gap-2 text-sm text-slate-600 sm:grid-cols-2 lg:grid-cols-4">
-                                    <p><span className="font-semibold text-slate-900">PNR:</span> {order.items?.[0]?.provider_reference ?? '-'}</p>
+                                    <p className='w-50 truncate'><span className="font-semibold text-slate-900 ">{primaryReferenceLabel}:</span> {primaryReferenceValue}</p>
                                     <p><span className="font-semibold text-slate-900">Issued:</span> {formatDateTime(order.issued_at)}</p>
                                     <p><span className="font-semibold text-slate-900">Payment:</span> {order.payment_method}</p>
                                     <p><span className="font-semibold text-slate-900">Items:</span> {order.items?.length ?? 0}</p>
@@ -250,6 +367,141 @@ export default function Show({ order, itemTransactions, voidRefundAccount }) {
                     <CardContent className="space-y-6 bg-[linear-gradient(180deg,rgba(248,250,252,0.95),rgba(255,255,255,1))] p-0">
                         {order.items?.map((item) => {
                             const tx = itemTransactions?.find((entry) => entry.order_item_id === item.id);
+
+                            if (item.type === 'insurance') {
+                                const policyDetails = getInsurancePayload(item);
+                                const beneficiary = getInsuranceBeneficiary(item);
+                                const cancellation = getInsuranceCancellation(item);
+                                const latestRemark = getInsuranceRemark(item);
+                                const netWalletEffect = Number(cancellation?.financials?.net_wallet_effect ?? 0);
+
+                                return (
+                                    <div key={item.id}>
+                                        <div className="flex flex-col gap-4 border-b border-slate-200 bg-slate-50/70 px-5 py-5 md:flex-row md:items-start md:justify-between">
+                                            <div className="space-y-2">
+                                                <div className="flex flex-wrap items-center gap-3">
+                                                    <p className="text-2xl font-black tracking-tight text-slate-950 w-120 truncate">Policy: {item.provider_reference ?? item.ticket_number ?? '-'}</p>
+                                                    <Badge variant={itemStatusVariant(item.status)} className="px-3 py-1 font-black uppercase text-white tracking-wider">
+                                                        {item.status}
+                                                    </Badge>
+                                                    {item.status === 'cancellation' ? (
+                                                        <Badge variant={isInsuranceCancellationApproved(item) ? 'success' : 'secondary'}>
+                                                            {isInsuranceCancellationApproved(item) ? 'Insurance Company Approved' : 'Waiting For Approval'}
+                                                        </Badge>
+                                                    ) : null}
+                                                </div>
+                                                <p className="text-sm text-slate-500">Compulsory Insurance • Item #{item.id}</p>
+                                            </div>
+
+                                            <div className="flex flex-col items-start gap-3 md:items-end">
+                                                <div className="text-left md:text-right">
+                                                    <p className="text-xs font-bold uppercase tracking-[0.2em] text-slate-500">Policy Total</p>
+                                                    <p className="text-2xl font-black text-slate-950">{formatAmount(item.total_amount ?? item.total, item.currency)}</p>
+                                                </div>
+
+                                                {canManageInsurance ? (
+                                                    <DropdownMenu>
+                                                        <DropdownMenuTrigger asChild>
+                                                            <Button variant="outline" size="sm" className="border-slate-300 bg-white/90 font-semibold text-slate-700 hover:bg-slate-100">
+                                                                Manage
+                                                                <MoreHorizontal className="ml-1.5 h-4 w-4" />
+                                                            </Button>
+                                                        </DropdownMenuTrigger>
+                                                        <DropdownMenuContent align="end" className="w-52">
+                                                            <DropdownMenuLabel>Manage Policy</DropdownMenuLabel>
+                                                            <DropdownMenuSeparator />
+                                                            {item.status === 'issued' ? (
+                                                                <DropdownMenuItem
+                                                                    className="text-rose-600 focus:text-rose-700"
+                                                                    onSelect={(event) => {
+                                                                        event.preventDefault();
+                                                                        openCancelModal(item);
+                                                                    }}
+                                                                >
+                                                                    Request Cancellation
+                                                                </DropdownMenuItem>
+                                                            ) : (
+                                                                <DropdownMenuItem disabled>
+                                                                    Request Cancellation
+                                                                </DropdownMenuItem>
+                                                            )}
+                                                            <DropdownMenuItem
+                                                                onSelect={(event) => {
+                                                                    event.preventDefault();
+                                                                    openPolicyReport(item);
+                                                                }}
+                                                            >
+                                                                Print Policy
+                                                            </DropdownMenuItem>
+                                                        </DropdownMenuContent>
+                                                    </DropdownMenu>
+                                                ) : null}
+                                            </div>
+                                        </div>
+
+                                        <div className="space-y-5 p-5">
+                                            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                                                <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4">
+                                                    <p className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-[0.2em] text-slate-500">
+                                                        <ShieldCheck className="h-3.5 w-3.5" /> Beneficiary
+                                                    </p>
+                                                    <p className="text-lg font-black text-slate-950">{beneficiary.name ?? '-'}</p>
+                                                    <p className="mt-1 text-sm text-slate-600">{beneficiary.phone ?? '-'}</p>
+                                                    <p className="mt-1 text-sm text-slate-600">{beneficiary.address ?? '-'}</p>
+                                                </div>
+                                                <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4">
+                                                    <p className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-[0.2em] text-slate-500">
+                                                        <CalendarDays className="h-3.5 w-3.5" /> Coverage
+                                                    </p>
+                                                    <p className="text-lg font-black text-slate-950">{policyDetails.policy_date_from ?? policyDetails.PolicyDateFrom ?? '-'}</p>
+                                                    <p className="mt-1 text-sm text-slate-600">to {policyDetails.policy_date_to ?? policyDetails.PolicyDateTo ?? '-'}</p>
+                                                    <p className="mt-1 text-sm text-slate-600">Policy ID: {policyDetails.policy_id ?? cancellation.insurance_policy_id ?? '-'}</p>
+                                                </div>
+                                                <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4">
+                                                    <p className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-[0.2em] text-slate-500">
+                                                        <CreditCard className="h-3.5 w-3.5" /> Premiums
+                                                    </p>
+                                                    <p className="text-sm text-slate-600">Net premium</p>
+                                                    <p className="text-lg font-black text-slate-950">{formatAmount(item.net_fare ?? item.price, item.currency)}</p>
+                                                    <p className="mt-2 text-sm text-slate-600">Commission</p>
+                                                    <p className="text-base font-bold text-slate-950">{formatAmount(item.commission_amount ?? 0, item.currency)}</p>
+                                                </div>
+                                                <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4">
+                                                    <p className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-[0.2em] text-slate-500">
+                                                        <ReceiptText className="h-3.5 w-3.5" /> Transactions
+                                                    </p>
+                                                    <p className="text-sm text-slate-600">Issue wallet transaction</p>
+                                                    <p className="mt-1 break-all font-mono text-xs text-slate-700">{tx?.wallet_transaction?.uuid ?? item.wallet_transaction_id ?? '-'}</p>
+                                                    {item.status === 'cancelled' ? (
+                                                        <>
+                                                            <p className="mt-3 text-sm text-slate-600">Net wallet effect</p>
+                                                            <p className="text-base font-bold text-slate-950">{formatAmount(netWalletEffect, item.currency)}</p>
+                                                        </>
+                                                    ) : null}
+                                                </div>
+                                            </div>
+
+                                            {item.status === 'cancellation' || item.status === 'cancelled' ? (
+                                                <div className="rounded-2xl border border-amber-200 bg-amber-50/80 p-4 text-sm text-amber-950">
+                                                    <div className="flex flex-wrap items-start justify-between gap-3">
+                                                        <div>
+                                                            <p className="font-black uppercase tracking-[0.2em] text-amber-700">Cancellation Status</p>
+                                                            <p className="mt-2 font-semibold">Latest insurance company remark: {latestRemark || '-'}</p>
+                                                            <p className="mt-1 text-amber-800">Customer note: {cancellation.note ?? '-'}</p>
+                                                        </div>
+                                                        {isInsuranceCancellationApproved(item) ? (
+                                                            <Badge variant="success" className="bg-emerald-600 text-white">Ready To Confirm</Badge>
+                                                        ) : (
+                                                            <Badge variant="secondary">Pending Insurance Company</Badge>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            ) : null}
+                                        </div>
+                                    </div>
+                                );
+                            }
+
                             const pnr = item.item_details ?? {};
                             const itineraries = pnr.itineraries ?? [];
                             const passengers = pnr.passengers ?? [];
@@ -496,11 +748,118 @@ export default function Show({ order, itemTransactions, voidRefundAccount }) {
                         </div>
 
                         <DialogFooter>
-                            <Button type="button" variant="outline" onClick={closeVoidModal} disabled={processing}>
+                            <Button type="button" variant="outline" onClick={closeVoidModal} disabled={voidForm.processing}>
                                 Keep Ticket
                             </Button>
-                            <Button type="button" variant="destructive" onClick={confirmVoid} disabled={processing}>
-                                {processing ? 'Voiding...' : 'Confirm Void'}
+                            <Button type="button" variant="destructive" onClick={confirmVoid} disabled={voidForm.processing}>
+                                {voidForm.processing ? 'Voiding...' : 'Confirm Void'}
+                            </Button>
+                        </DialogFooter>
+                    </DialogContent>
+                </Dialog>
+
+                <Dialog open={Boolean(cancelTarget)} onOpenChange={(open) => (open ? null : closeCancelModal())}>
+                    <DialogContent className="sm:max-w-2xl">
+                        <DialogHeader>
+                            <DialogTitle>Cancel Insurance Policy</DialogTitle>
+                            <DialogDescription>
+                                This operation is not reversible. Once the cancellation request is sent, the insurance company will review it before the policy can be finalized as cancelled.
+                            </DialogDescription>
+                        </DialogHeader>
+
+                        <div className="space-y-4">
+                            <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
+                                <div className="flex items-start gap-3">
+                                    <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
+                                    <p>Please confirm carefully before continuing. After approval from the insurance company, the user will still need to confirm the final cancellation.</p>
+                                </div>
+                            </div>
+
+                            <div className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm sm:grid-cols-2">
+                                <div>
+                                    <p className="text-xs font-bold uppercase tracking-[0.2em] text-slate-500">Policy Reference</p>
+                                    <p className="mt-2 font-semibold text-slate-900">{cancelTarget?.provider_reference ?? cancelTarget?.ticket_number ?? '-'}</p>
+                                </div>
+                                <div>
+                                    <p className="text-xs font-bold uppercase tracking-[0.2em] text-slate-500">Policy Amount</p>
+                                    <p className="mt-2 font-semibold text-slate-900">
+                                        {cancelTarget ? formatAmount(cancelTarget.total_amount ?? cancelTarget.total, cancelTarget.currency) : '-'}
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div className="space-y-2">
+                                <label htmlFor="insurance-cancellation-remarks" className="text-sm font-semibold text-slate-900">
+                                    Cancellation Note
+                                </label>
+                                <textarea
+                                    id="insurance-cancellation-remarks"
+                                    rows={5}
+                                    value={cancelForm.data.remarks}
+                                    onChange={(event) => cancelForm.setData('remarks', event.target.value)}
+                                    className="w-full rounded-xl border border-slate-300 bg-white px-3 py-3 text-sm outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
+                                    placeholder="Explain why the policy should be cancelled."
+                                />
+                                {cancelForm.errors.remarks ? <p className="text-sm text-rose-600">{cancelForm.errors.remarks}</p> : null}
+                            </div>
+                        </div>
+
+                        <DialogFooter>
+                            <Button type="button" variant="outline" onClick={closeCancelModal} disabled={cancelForm.processing}>
+                                Keep Policy
+                            </Button>
+                            <Button type="button" variant="destructive" onClick={submitCancellation} disabled={cancelForm.processing}>
+                                {cancelForm.processing ? 'Sending...' : 'Send Cancellation Request'}
+                            </Button>
+                        </DialogFooter>
+                    </DialogContent>
+                </Dialog>
+
+                <Dialog open={Boolean(finalizeTarget)} onOpenChange={(open) => (open ? null : closeFinalizeModal())}>
+                    <DialogContent className="sm:max-w-2xl">
+                        <DialogHeader>
+                            <DialogTitle>Confirm Insurance Cancellation</DialogTitle>
+                            <DialogDescription>
+                                The insurance company has approved this cancellation. Confirming now will finalize the policy cancellation, deposit the policy amount, and reverse the commission.
+                            </DialogDescription>
+                        </DialogHeader>
+
+                        <div className="space-y-4">
+                            <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-950">
+                                <div className="flex items-start gap-3">
+                                    <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0" />
+                                    <p>The latest insurance company remark is <span className="font-black">تم الالغاء</span>. Final confirmation is required from the user.</p>
+                                </div>
+                            </div>
+
+                            <div className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm sm:grid-cols-3">
+                                <div>
+                                    <p className="text-xs font-bold uppercase tracking-[0.2em] text-slate-500">Policy Amount</p>
+                                    <p className="mt-2 font-semibold text-slate-900">
+                                        {finalizeTarget ? formatAmount(finalizeTarget.total_amount ?? finalizeTarget.total, finalizeTarget.currency) : '-'}
+                                    </p>
+                                </div>
+                                <div>
+                                    <p className="text-xs font-bold uppercase tracking-[0.2em] text-slate-500">Commission Reversal</p>
+                                    <p className="mt-2 font-semibold text-slate-900">
+                                        {finalizeTarget ? formatAmount(finalizeTarget.commission_amount ?? 0, finalizeTarget.currency) : '-'}
+                                    </p>
+                                </div>
+                                <div>
+                                    <p className="text-xs font-bold uppercase tracking-[0.2em] text-slate-500">Net Wallet Effect</p>
+                                    <p className="mt-2 font-semibold text-slate-900">
+                                        {finalizeTarget ? formatAmount((finalizeTarget.total_amount ?? finalizeTarget.total ?? 0) - (finalizeTarget.commission_amount ?? 0), finalizeTarget.currency) : '-'}
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <DialogFooter>
+                            <Button type="button" variant="outline" onClick={closeFinalizeModal} disabled={finalizeCancellationForm.processing}>
+                                Not Now
+                            </Button>
+                            <Button type="button" onClick={confirmCancellationFinalization} disabled={finalizeCancellationForm.processing}>
+                                {finalizeCancellationForm.processing ? 'Confirming...' : 'Confirm Cancellation'}
                             </Button>
                         </DialogFooter>
                     </DialogContent>

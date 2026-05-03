@@ -16,8 +16,12 @@ class ProcessWalletTransactions
      *
      * @throws InsufficientWalletBalanceException
      */
-    public function assertCanIssueForAmounts(array $requiredByCurrency, User $issuer): void
+    public function assertCanIssueForAmounts(array $requiredByCurrency, User $issuer, bool $allowNegativeBalance = false): void
     {
+        if ($allowNegativeBalance) {
+            return;
+        }
+
         $walletHolder = $this->resolveWalletHolder($issuer);
 
         foreach ($requiredByCurrency as $currency => $requiredAmount) {
@@ -42,7 +46,7 @@ class ProcessWalletTransactions
     /**
      * @throws InsufficientWalletBalanceException
      */
-    public function assertSufficientBalances(Order $order, User $issuer): void
+    public function assertSufficientBalances(Order $order, User $issuer, bool $allowNegativeBalance = false): void
     {
         $order->loadMissing('items');
 
@@ -59,7 +63,7 @@ class ProcessWalletTransactions
             $requiredByCurrency[$currency] = round(((float) ($requiredByCurrency[$currency] ?? 0)) + (float) ($item->total_amount ?? 0), 2);
         }
 
-        $this->assertCanIssueForAmounts($requiredByCurrency, $issuer);
+        $this->assertCanIssueForAmounts($requiredByCurrency, $issuer, $allowNegativeBalance);
     }
 
     /**
@@ -76,7 +80,7 @@ class ProcessWalletTransactions
      *
      * @throws InsufficientWalletBalanceException
      */
-    public function execute(Order $order, User $issuer): void
+    public function execute(Order $order, User $issuer, bool $allowNegativeBalance = false): void
     {
         $order->loadMissing('items');
 
@@ -90,25 +94,32 @@ class ProcessWalletTransactions
             return;
         }
 
-        $this->assertSufficientBalances($order, $issuer);
+        $this->assertSufficientBalances($order, $issuer, $allowNegativeBalance);
 
-        DB::transaction(function () use ($order, $pendingItems, $issuer): void {
+        DB::transaction(function () use ($order, $pendingItems, $issuer, $allowNegativeBalance): void {
             $walletHolder = $this->resolveWalletHolder($issuer);
 
             foreach ($pendingItems as $item) {
                 $wallet = $walletHolder->getOrCreateCurrencyWallet((string) $item->currency);
 
-                $withdrawalTransaction = $wallet->withdrawFloat((float) $item->total_amount, [
-                    'order_id' => $order->id,
-                    'order_item_id' => $item->id,
-                    'type' => 'ticket_purchase',
-                    'description' => 'Ticket for '.($item->item_details['passenger_name'] ?? 'Passenger'),
-                ]);
+                $withdrawalTransaction = $allowNegativeBalance
+                    ? $wallet->forceWithdrawFloat((float) $item->total_amount, [
+                        'order_id' => $order->id,
+                        'order_item_id' => $item->id,
+                        'type' => 'ticket_purchase',
+                        'description' => 'Ticket for '.($item->item_details['passenger_name'] ?? 'Passenger'),
+                    ])
+                    : $wallet->withdrawFloat((float) $item->total_amount, [
+                        'order_id' => $order->id,
+                        'order_item_id' => $item->id,
+                        'type' => 'ticket_purchase',
+                        'description' => 'Ticket for '.($item->item_details['passenger_name'] ?? 'Passenger'),
+                    ]);
 
                 $item->update(['wallet_transaction_id' => $withdrawalTransaction->uuid]);
 
                 // Record landlord-level agency wallet transactions for settlement reporting.
-                $this->recordLandlordTransactions($order, $item);
+                $this->recordLandlordTransactions($order, $item, $allowNegativeBalance);
             }
         });
     }
@@ -116,7 +127,7 @@ class ProcessWalletTransactions
     /**
      * Record ticket cost deduction and master commission in the landlord DB.
      */
-    protected function recordLandlordTransactions(Order $order, OrderItem $item): void
+    protected function recordLandlordTransactions(Order $order, OrderItem $item, bool $allowNegativeBalance = false): void
     {
         $financialSource = data_get($item->item_details, 'financial_source');
         $defaultAgencyTenantId = data_get($item->item_details, 'default_agency_tenant_id');
@@ -130,7 +141,9 @@ class ProcessWalletTransactions
 
         // Record ticket cost deduction from the agency's landlord wallet.
         $currentBalance = $this->getLandlordWalletBalance($tenantId, $currency);
-        $newBalance = max(0, $currentBalance - $ticketCost);
+        $newBalance = $allowNegativeBalance
+            ? $currentBalance - $ticketCost
+            : max(0, $currentBalance - $ticketCost);
 
         AgencyWalletTransaction::recordTicketDeduction(
             tenantId: $tenantId,

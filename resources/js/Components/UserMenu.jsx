@@ -1,5 +1,5 @@
 import React from 'react';
-import { usePage } from '@inertiajs/react';
+import { router, usePage } from '@inertiajs/react';
 import { useTranslation } from '@/hooks/useTranslation';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/Components/ui/Button';

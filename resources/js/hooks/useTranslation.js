@@ -12,13 +12,27 @@ export const useTranslation = () => {
         const loadTranslations = async () => {
             try {
                 setLoading(true);
-                // Use Vite's dynamic import to load the translation file
-                const module = await import(`../../lang/${currentLocale}.json`);
-                setTranslations(module.default || {});
+                const response = await fetch(`/lang/${currentLocale}.json`, {
+                    headers: { Accept: 'application/json' },
+                });
+
+                if (!response.ok) {
+                    throw new Error(`Failed to fetch /lang/${currentLocale}.json`);
+                }
+
+                const payload = await response.json();
+                setTranslations(payload || {});
             } catch (error) {
-                console.warn(`Failed to load translations for locale: ${currentLocale}`, error);
-                // Fallback to empty translations
-                setTranslations({});
+                console.warn(`Failed to load translations from /lang for locale: ${currentLocale}`, error);
+
+                try {
+                    // Fallback for local/dev scenarios if public assets are stale.
+                    const module = await import(`../../lang/${currentLocale}.json`);
+                    setTranslations(module.default || {});
+                } catch (fallbackError) {
+                    console.warn(`Fallback import also failed for locale: ${currentLocale}`, fallbackError);
+                    setTranslations({});
+                }
             } finally {
                 setLoading(false);
             }

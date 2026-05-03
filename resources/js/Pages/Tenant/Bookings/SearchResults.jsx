@@ -390,7 +390,7 @@ export default function SearchResults({ providers, query, uuid, searchDisplayMod
                 </DialogTrigger>
                 <DialogContent className="max-w-2xl">
                     <DialogHeader>
-                        <DialogTitle className="text-2xl font-black">Flight Information</DialogTitle>
+                        <DialogTitle className="text-2xl font-black">{t('common.flight_information')}</DialogTitle>
                         <DialogDescription className="font-medium">
                             Detailed itinerary for {flight.airline_name} {flight.airline_code}{flight.flight_number}
                         </DialogDescription>
@@ -400,17 +400,17 @@ export default function SearchResults({ providers, query, uuid, searchDisplayMod
                             <div key={idx} className="bg-muted/30 rounded-2xl p-6 border border-dashed border-primary/20">
                                 <div className="flex justify-between items-start mb-6">
                                     <div>
-                                        <p className="text-xs font-bold uppercase tracking-widest text-primary mb-1">Carrier</p>
+                                        <p className="text-xs font-bold uppercase tracking-widest text-primary mb-1">{t('common.carrier')}</p>
                                         <p className="text-lg font-black">{flight.airline_name.split(' (')[0]}</p>
                                     </div>
                                     <div className="text-right">
-                                        <p className="text-xs font-bold uppercase tracking-widest text-primary mb-1">Aircraft</p>
+                                        <p className="text-xs font-bold uppercase tracking-widest text-primary mb-1">{t('common.aircraft')}</p>
                                         <p className="text-lg font-black">{segment.aircraft || 'Standard'}</p>
                                     </div>
                                 </div>
                                 <div className="grid grid-cols-3 items-center gap-4">
                                     <div className="text-left">
-                                        <p className="text-sm font-bold text-muted-foreground mb-1">Departure</p>
+                                        <p className="text-sm font-bold text-muted-foreground mb-1">{t('common.departure')}</p>
                                         <p className="text-2xl font-black">{segment.departure_airport}</p>
                                         <p className="text-xs font-medium text-muted-foreground">{segment.departure_time}</p>
                                     </div>
@@ -424,10 +424,10 @@ export default function SearchResults({ providers, query, uuid, searchDisplayMod
                                                 <Plane className="h-3 w-3 text-primary" />
                                             </div>
                                         </div>
-                                        <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-tighter">Non-stop</p>
+                                        <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-tighter">{t('common.non_stop')}</p>
                                     </div>
                                     <div className="text-right">
-                                        <p className="text-sm font-bold text-muted-foreground mb-1">Arrival</p>
+                                        <p className="text-sm font-bold text-muted-foreground mb-1">{t('common.arrival')}</p>
                                         <p className="text-2xl font-black">{segment.arrival_airport}</p>
                                         <p className="text-xs font-medium text-muted-foreground">{segment.arrival_time}</p>
                                     </div>
@@ -455,7 +455,7 @@ export default function SearchResults({ providers, query, uuid, searchDisplayMod
                 </DialogTrigger>
                 <DialogContent className="max-w-2xl">
                     <DialogHeader>
-                        <DialogTitle className="text-2xl font-black">Offer Details</DialogTitle>
+                        <DialogTitle className="text-2xl font-black">{t('common.offer_details')}</DialogTitle>
                         <DialogDescription className="font-medium">
                             Pricing breakdown and fare conditions for <strong>{flight.pricing.brand_name || 'Selected fare'}</strong>
                         </DialogDescription>
@@ -466,7 +466,7 @@ export default function SearchResults({ providers, query, uuid, searchDisplayMod
                             <div className="bg-primary/5 rounded-2xl p-6 border-l-4 border-primary">
                                 <div className="flex items-center gap-3 mb-3">
                                     <Briefcase className="h-5 w-5 text-primary" />
-                                    <p className="text-sm font-black uppercase tracking-widest text-primary">Fare Features</p>
+                                    <p className="text-sm font-black uppercase tracking-widest text-primary">{t('common.fare_features')}</p>
                                 </div>
                                 <p className="text-sm font-medium leading-relaxed whitespace-pre-line text-muted-foreground">
                                     {flight.pricing.brand_details}
@@ -477,16 +477,16 @@ export default function SearchResults({ providers, query, uuid, searchDisplayMod
                         <div>
                             <div className="flex items-center gap-3 mb-6">
                                 <ReceiptText className="h-5 w-5 text-primary" />
-                                <p className="text-sm font-black uppercase tracking-widest">Passenger Breakdown</p>
+                                <p className="text-sm font-black uppercase tracking-widest">{t('common.passenger_breakdown')}</p>
                             </div>
                             <div className="border rounded-2xl overflow-hidden bg-muted/10 shadow-sm">
                                 <Table>
                                     <TableHeader>
                                         <TableRow className="bg-muted/30">
-                                            <TableHead className="font-bold text-foreground">Type</TableHead>
-                                            <TableHead className="text-right font-bold text-foreground">Fare</TableHead>
-                                            <TableHead className="text-right font-bold text-foreground">Tax</TableHead>
-                                            <TableHead className="text-right font-bold text-foreground">Total</TableHead>
+<TableHead className="font-bold text-foreground">{t('common.type')}</TableHead>
+                                                <TableHead className="text-right font-bold text-foreground">{t('common.fare')}</TableHead>
+                                                <TableHead className="text-right font-bold text-foreground">{t('common.tax')}</TableHead>
+                                                <TableHead className="text-right font-bold text-foreground">{t('common.total')}</TableHead>
                                         </TableRow>
                                     </TableHeader>
                                     <TableBody>
@@ -504,7 +504,7 @@ export default function SearchResults({ providers, query, uuid, searchDisplayMod
                                             </TableRow>
                                         ))}
                                         <TableRow className="bg-primary/10 hover:bg-primary/20 transition-colors">
-                                            <TableCell colSpan={3} className="font-black text-lg py-4">Grand Total</TableCell>
+                                            <TableCell colSpan={3} className="font-black text-lg py-4">{t('common.grand_total')}</TableCell>
                                             <TableCell className="text-right font-black text-2xl text-primary">{formatMoney(flight.pricing.total, flight.pricing.currency)}</TableCell>
                                         </TableRow>
                                     </TableBody>
@@ -524,7 +524,7 @@ export default function SearchResults({ providers, query, uuid, searchDisplayMod
 
         return (
             <div className="rounded-2xl border bg-muted/10 p-4">
-                <p className="text-sm font-bold text-foreground">Selected one-way offer</p>
+                <p className="text-sm font-bold text-foreground">{t('common.selected_offer')}</p>
                 <div className="mt-3 space-y-3">
                     <div className="rounded-xl border bg-background/70 p-3">
                         <div className="flex items-center justify-between gap-3">
@@ -594,7 +594,7 @@ export default function SearchResults({ providers, query, uuid, searchDisplayMod
 
                         <div className="bg-muted/30 md:w-64 p-6 flex flex-col items-center justify-center border-t md:border-t-0 md:border-l space-y-3">
                             <div className="text-center">
-                                <p className="text-xs text-muted-foreground font-semibold uppercase">From</p>
+                                <p className="text-xs text-muted-foreground font-semibold uppercase">{t('common.from')}</p>
                                 <p className="text-2xl font-black text-primary">
                                     {formatMoneyValue(flight?.pricing?.total || 0)} <span className="text-sm">{flight?.pricing?.currency || 'LYD'}</span>
                                 </p>
@@ -617,24 +617,24 @@ export default function SearchResults({ providers, query, uuid, searchDisplayMod
                                 </DialogTrigger>
                                 <DialogContent className="max-w-2xl sm:rounded-3xl p-0 overflow-hidden">
                                     <div className="bg-primary/5 p-6 border-b">
-                                        <DialogTitle className="text-2xl font-black tracking-normal leading-tight">Offer Summary</DialogTitle>
-                                        <DialogDescription className="text-muted-foreground font-medium text-sm mt-2">Review your selected flight before proceeding</DialogDescription>
+                                        <DialogTitle className="text-2xl font-black tracking-normal leading-tight">{t('common.offer_summary')}</DialogTitle>
+                                        <DialogDescription className="text-muted-foreground font-medium text-sm mt-2">{t('common.review_selected_flight')}</DialogDescription>
                                     </div>
                                     <div className="p-6 space-y-6 max-h-[60vh] overflow-y-auto">
                                         <div className="flex justify-between items-center bg-card border rounded-2xl p-4 shadow-sm">
                                             <div>
-                                                <p className="text-sm font-bold text-muted-foreground">Itinerary</p>
+                                                <p className="text-sm font-bold text-muted-foreground">{t('common.itinerary_fare')}</p>
                                                 <p className="text-xl font-black">{flight.departure_airport} <ArrowRightLeft className="inline shrink-0 h-4 w-4 mx-1" /> {flight.arrival_airport}</p>
                                                 <p className="text-sm font-medium">{flight.airline_name} • {flight.airline_code}{flight.flight_number}</p>
                                             </div>
                                             <div className="text-right">
-                                                <p className="text-sm font-bold text-muted-foreground">Grand Total</p>
+                                                <p className="text-sm font-bold text-muted-foreground">{t('common.grand_total')}</p>
                                                 <p className="text-2xl font-black text-primary">{formatMoneyValue(flight.pricing.total)} <span className="text-sm">{flight.pricing.currency}</span></p>
                                             </div>
                                         </div>
 
                                         <div>
-                                            <p className="font-bold mb-3 uppercase tracking-widest text-xs text-muted-foreground">Flight Segments</p>
+                                            <p className="font-bold mb-3 uppercase tracking-widest text-xs text-muted-foreground">{t('common.flight_segments')}</p>
                                             <div className="space-y-3">
                                                 {flight.segments.map((seg, i) => (
                                                     <div key={i} className="flex gap-4 p-4 border rounded-xl bg-muted/10 items-center">
@@ -644,7 +644,7 @@ export default function SearchResults({ providers, query, uuid, searchDisplayMod
                                                                 <span>{seg.departure_airport} ({seg.departure_time.split(' ')[1].substring(0, 5)})</span>
                                                                 <span>{seg.arrival_airport} ({seg.arrival_time.split(' ')[1].substring(0, 5)})</span>
                                                             </div>
-                                                            <p className="text-xs text-muted-foreground font-medium mt-1">Duration: {formatDuration(seg.duration)} • {seg.aircraft || 'Standard'}</p>
+                                                            <p className="text-xs text-muted-foreground font-medium mt-1">{t('common.duration')}: {formatDuration(seg.duration)} • {seg.aircraft || t('common.standard')}</p>
                                                         </div>
                                                     </div>
                                                 ))}
@@ -788,7 +788,7 @@ export default function SearchResults({ providers, query, uuid, searchDisplayMod
                                 <div className="mt-3 space-y-3">
                                     <div className="grid gap-3 md:grid-cols-2">
                                         <div className="rounded-xl border bg-background/70 p-3">
-                                            <p className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">Outbound</p>
+                                            <p className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">{t('common.outbound')}</p>
                                             <div className="mt-2 flex items-center justify-between gap-3">
                                                 <div className="flex items-center gap-2">
                                                     <img src={route('api.airlines.logo', { code: selectedOutboundFlight.airline_code, variant: 'icon', radius: 4 })} alt={selectedOutboundFlight.airline_name} className="h-7 w-7 object-contain" />
@@ -802,7 +802,7 @@ export default function SearchResults({ providers, query, uuid, searchDisplayMod
                                         </div>
 
                                         <div className="rounded-xl border bg-background/70 p-3">
-                                            <p className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">Return</p>
+                                            <p className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">{t('common.return')}</p>
                                             {selectedReturnFlight ? (
                                                 <div className="mt-2 flex items-center justify-between gap-3">
                                                     <div className="flex items-center gap-2">
@@ -815,7 +815,7 @@ export default function SearchResults({ providers, query, uuid, searchDisplayMod
                                                     <p className="text-sm font-black text-primary">{formatMoney(selectedReturnFlight?.pricing?.total || 0, selectedReturnFlight?.pricing?.currency || 'LYD')}</p>
                                                 </div>
                                             ) : (
-                                                <p className="mt-2 text-xs text-muted-foreground">Select a return offer to complete your itinerary.</p>
+                                                <p className="mt-2 text-xs text-muted-foreground">{t('common.select_return_offer')}</p>
                                             )}
                                         </div>
                                     </div>
@@ -858,7 +858,7 @@ export default function SearchResults({ providers, query, uuid, searchDisplayMod
                         <div className="space-y-4">
                             <div className="flex items-center gap-3">
                                 <div className="h-2 w-2 rounded-full bg-primary"></div>
-                                <h3 className="text-lg font-bold">Best Offer</h3>
+                                <h3 className="text-lg font-bold">{t('common.best_offer')}</h3>
                                 <div className="h-px bg-border flex-1"></div>
                             </div>
                             {renderOfferCard(bestOffer)}
@@ -888,7 +888,7 @@ export default function SearchResults({ providers, query, uuid, searchDisplayMod
                                 <h3 className="text-xl font-bold">{selectedOutboundFlight ? 'No Return Flights Found' : 'No Flights Found'}</h3>
                                 <p className="text-muted-foreground max-w-xs mx-auto">{selectedOutboundFlight ? 'No return options were found for your selected outbound flight. Change outbound flight or adjust dates.' : "We couldn't find any flights for your selected route and date. Try adjusting your search."}</p>
                                 <Link href={route('flights.index')} data={query} className="mt-6 inline-block">
-                                    <Button variant="outline" className="font-bold">Modify Search</Button>
+                                    <Button variant="outline" className="font-bold">{t('common.modify_search')}</Button>
                                 </Link>
                             </div>
                         )
@@ -899,14 +899,14 @@ export default function SearchResults({ providers, query, uuid, searchDisplayMod
                     <div className="fixed inset-x-0 bottom-0 z-40 border-t bg-background/95 backdrop-blur supports-backdrop-filter:bg-background/85">
                         <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-4">
                             <div className="min-w-0">
-                                <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Selected itinerary</p>
+                                <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">{t('common.selected_itinerary')}</p>
                                 <p className="truncate text-sm font-semibold">
                                     {selectedOutboundFlight.departure_airport} → {selectedOutboundFlight.arrival_airport} • {selectedReturnFlight.departure_airport} → {selectedReturnFlight.arrival_airport}
                                 </p>
                             </div>
                             <div className="flex items-center gap-4">
                                 <div className="text-right">
-                                    <p className="text-xs text-muted-foreground">Total</p>
+                                    <p className="text-xs text-muted-foreground">{t('common.total')}</p>
                                     <p className="text-xl font-black text-primary">{formatMoney(selectedRoundTripTotal, selectedRoundTripCurrency)}</p>
                                 </div>
                                 <Button type="button" size="lg" className="font-bold" onClick={continueRoundTrip}>
@@ -922,14 +922,14 @@ export default function SearchResults({ providers, query, uuid, searchDisplayMod
                     <div className="fixed inset-x-0 bottom-0 z-40 border-t bg-background/95 backdrop-blur supports-backdrop-filter:bg-background/85">
                         <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-4">
                             <div className="min-w-0">
-                                <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Selected itinerary</p>
+                                <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">{t('common.selected_itinerary')}</p>
                                 <p className="truncate text-sm font-semibold">
                                     {selectedOneWayFlight.departure_airport} → {selectedOneWayFlight.arrival_airport} • {selectedOneWayFlight.airline_code}{selectedOneWayFlight.flight_number}
                                 </p>
                             </div>
                             <div className="flex items-center gap-4">
                                 <div className="text-right">
-                                    <p className="text-xs text-muted-foreground">Total</p>
+                                    <p className="text-xs text-muted-foreground">{t('common.total')}</p>
                                     <p className="text-xl font-black text-primary">{formatMoney(selectedOneWayTotal, selectedOneWayCurrency)}</p>
                                 </div>
                                 <Button type="button" variant="outline" size="lg" className="font-bold" onClick={resetOneWaySelection}>
