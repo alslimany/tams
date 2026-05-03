@@ -18,6 +18,30 @@ class AlBarakaProvider implements InsuranceProviderInterface
     /**
      * @return array<int, array<string, mixed>>
      */
+    public function travelZones(): array
+    {
+        return $this->normalizeLookupItems($this->requestLookup('/api/Travelers/ZonesLookup'));
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    public function travelDurations(): array
+    {
+        return $this->normalizeLookupItems($this->requestLookup('/api/Travelers/DurationsLookup'));
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    public function travelNationalities(): array
+    {
+        return $this->normalizeLookupItems($this->requestLookup('/api/ClientProfilePaxes/NationalityLookup'));
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
     public function compulsoryDurations(): array
     {
         return $this->normalizeLookupItems($this->requestLookup('/api/Compulsories/DurationsLookup'));
@@ -218,6 +242,126 @@ class AlBarakaProvider implements InsuranceProviderInterface
             currency: $this->extractStringValue($normalized['data'], ['Currency', 'Curr']),
             raw: $normalized['raw'],
         );
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @return array{total_premium:float,net_premium:float,tax_amount:float,currency:string,raw:array<string,mixed>}
+     */
+    public function calculateTravelPolicyAgePrice(array $payload): array
+    {
+        $response = $this->request('POST', '/api/Travelers/CheckPolicyAgePrices', [
+            'BirthDate' => (string) ($payload['BirthDate'] ?? ''),
+            'ZoneID' => (int) ($payload['ZoneID'] ?? 0),
+            'InsuranceDurationID' => (int) ($payload['InsuranceDurationID'] ?? 0),
+        ]);
+
+        $normalized = $this->normalizeMainResponse($response);
+
+        $totalPremium = $this->extractNumericValue($normalized['data'], ['TotalPrice', 'TotalPremium', 'PolicyPrice', 'Price', 'Premium'])
+            ?? $this->extractNumericValue($normalized['raw'], ['TotalPrice', 'TotalPremium', 'PolicyPrice', 'Price', 'Premium'])
+            ?? 0.0;
+
+        $netPremium = $this->extractNumericValue($normalized['data'], ['NetPremium', 'NetPrice', 'Net'])
+            ?? $this->extractNumericValue($normalized['raw'], ['NetPremium', 'NetPrice', 'Net'])
+            ?? 0.0;
+
+        $taxAmount = $this->extractNumericValue($normalized['data'], ['Tax', 'Taxes', 'TaxAmount'])
+            ?? $this->extractNumericValue($normalized['raw'], ['Tax', 'Taxes', 'TaxAmount'])
+            ?? max(0.0, $totalPremium - $netPremium);
+
+        if ($netPremium <= 0 && $totalPremium > 0) {
+            $netPremium = max(0.0, $totalPremium - $taxAmount);
+        }
+
+        return [
+            'total_premium' => round($totalPremium, 2),
+            'net_premium' => round($netPremium, 2),
+            'tax_amount' => round($taxAmount, 2),
+            'currency' => strtoupper((string) ($this->extractStringValue($normalized['data'], ['Currency', 'Curr'])
+                ?? $this->extractStringValue($normalized['raw'], ['Currency', 'Curr'])
+                ?? 'LYD')),
+            'raw' => $normalized['raw'],
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @return array{id:int,raw:array<string,mixed>}
+     */
+    public function createClientProfilePax(array $payload): array
+    {
+        $response = $this->request('POST', '/api/ClientProfilePaxes/Post', [
+            'FirstName' => (string) ($payload['FirstName'] ?? ''),
+            'LastName' => (string) ($payload['LastName'] ?? ''),
+            'GenderId' => (int) ($payload['GenderId'] ?? 0),
+            'BirthDate' => (string) ($payload['BirthDate'] ?? ''),
+            'BirthPlace' => (string) ($payload['BirthPlace'] ?? ''),
+            'PassportNo' => (string) ($payload['PassportNo'] ?? ''),
+            'NationalityId' => (string) ($payload['NationalityId'] ?? ''),
+            'ClientProfileId' => (int) ($payload['ClientProfileId'] ?? 0),
+        ]);
+
+        $normalized = $this->normalizeMainResponse($response);
+
+        return [
+            'id' => $this->extractPrimaryId($normalized),
+            'raw' => $normalized['raw'],
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @return array{policy_id:int,policy_number:string,report_reference:string,total_premium:float,net_premium:float,tax_amount:float,currency:string,raw:array<string,mixed>}
+     */
+    public function createTravelPolicy(array $payload): array
+    {
+        $response = $this->request('POST', '/api/Travelers/Post', [
+            'ClientProfileId' => (int) ($payload['ClientProfileId'] ?? 0),
+            'ClientProfilePaxeId' => (int) ($payload['ClientProfilePaxeId'] ?? 0),
+            'ZoneID' => (string) ($payload['ZoneID'] ?? ''),
+            'InsuranceDurationID' => (string) ($payload['InsuranceDurationID'] ?? ''),
+            'PolicyDateFrom' => (string) ($payload['PolicyDateFrom'] ?? ''),
+            'IsPolicyPaid' => (bool) ($payload['IsPolicyPaid'] ?? false),
+            'VoucherCode' => $payload['VoucherCode'] ?? null,
+            'Check' => $payload['Check'] ?? null,
+        ]);
+
+        $normalized = $this->normalizeMainResponse($response);
+        $data = is_array($normalized['data']) ? $normalized['data'] : [];
+
+        $totalPremium = $this->extractNumericValue($data, ['TotalPrice', 'TotalPremium', 'PolicyPrice', 'Price', 'Premium'])
+            ?? $this->extractNumericValue($normalized['raw'], ['TotalPrice', 'TotalPremium', 'PolicyPrice', 'Price', 'Premium'])
+            ?? 0.0;
+
+        $netPremium = $this->extractNumericValue($data, ['NetPremium', 'NetPrice', 'Net'])
+            ?? $this->extractNumericValue($normalized['raw'], ['NetPremium', 'NetPrice', 'Net'])
+            ?? 0.0;
+
+        $taxAmount = $this->extractNumericValue($data, ['Tax', 'Taxes', 'TaxAmount'])
+            ?? $this->extractNumericValue($normalized['raw'], ['Tax', 'Taxes', 'TaxAmount'])
+            ?? max(0.0, $totalPremium - $netPremium);
+
+        if ($netPremium <= 0 && $totalPremium > 0) {
+            $netPremium = max(0.0, $totalPremium - $taxAmount);
+        }
+
+        return [
+            'policy_id' => $this->extractPrimaryId($normalized),
+            'policy_number' => (string) ($this->extractStringValue($data, ['PolicyNo', 'PolicyNumber', 'policyNumber'])
+                ?? $this->extractStringValue($normalized['raw'], ['policyNumber'])
+                ?? ''),
+            'report_reference' => (string) ($this->extractStringValue($data, ['EncryptedId', 'CardNumber'])
+                ?? $this->extractStringValue($normalized['raw'], ['EncryptedId', 'CardNumber'])
+                ?? ''),
+            'total_premium' => round($totalPremium, 2),
+            'net_premium' => round($netPremium, 2),
+            'tax_amount' => round($taxAmount, 2),
+            'currency' => strtoupper((string) ($this->extractStringValue($data, ['Currency', 'Curr'])
+                ?? $this->extractStringValue($normalized['raw'], ['Currency', 'Curr'])
+                ?? 'LYD')),
+            'raw' => $normalized['raw'],
+        ];
     }
 
     public function book(InsuranceBookingRequest $request): InsuranceBookingResult
@@ -471,6 +615,7 @@ class AlBarakaProvider implements InsuranceProviderInterface
             'travel' => match ($lookupKey) {
                 'zones' => '/api/Travelers/ZonesLookup',
                 'durations' => '/api/Travelers/DurationsLookup',
+                'nationalities' => '/api/ClientProfilePaxes/NationalityLookup',
                 default => throw new InsuranceApiException('Unsupported travel lookup key.'),
             },
             'orange' => match ($lookupKey) {

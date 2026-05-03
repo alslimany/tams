@@ -96,6 +96,129 @@ class CreateOrderFromInsuranceBooking
     }
 
     /**
+     * @param  array<string, mixed>  $clientProfileData
+     * @param  array<int, array<string, mixed>>  $policyItems
+     * @param  array<string, mixed>  $requestPayload
+     */
+    public function createFromTravelPolicies(
+        int $userId,
+        array $clientProfileData,
+        array $policyItems,
+        array $requestPayload = [],
+        ?TenantInsuranceProvider $insuranceProvider = null,
+    ): Order {
+        $issuer = User::query()->find($userId);
+
+        if (! $issuer instanceof User) {
+            throw (new ModelNotFoundException)->setModel(User::class, [$userId]);
+        }
+
+        return DB::transaction(function () use ($issuer, $clientProfileData, $policyItems, $requestPayload, $insuranceProvider): Order {
+            $commissionPercent = $insuranceProvider?->commissionForProductType('travel') ?? 0.0;
+            $defaultAgencyTenantId = $this->resolveDefaultAgencyTenantId();
+            $currency = strtoupper((string) ($policyItems[0]['currency'] ?? 'LYD'));
+
+            $subtotal = 0.0;
+            $taxTotal = 0.0;
+            $grandTotal = 0.0;
+
+            foreach ($policyItems as $item) {
+                $subtotal += (float) ($item['net_amount'] ?? $item['net_premium'] ?? 0);
+                $taxTotal += (float) ($item['tax_amount'] ?? 0);
+                $grandTotal += (float) ($item['total_amount'] ?? $item['total_premium'] ?? 0);
+            }
+
+            $order = Order::query()->create([
+                'owner_type' => $issuer::class,
+                'owner_id' => $issuer->id,
+                'number' => $this->generateUniqueOrderNumber(),
+                'status' => 'issued',
+                'issued_at' => now(),
+                'subtotal' => round($subtotal, 2),
+                'tax_total' => round($taxTotal, 2),
+                'grand_total' => round($grandTotal, 2),
+                'amount_paid' => round($grandTotal, 2),
+                'currency' => $currency,
+                'payment_method' => 'wallet',
+                'payment_reference' => (string) ($policyItems[0]['policy_number'] ?? $policyItems[0]['report_reference'] ?? ''),
+                'contact' => [
+                    'full_name' => (string) ($clientProfileData['name'] ?? ''),
+                    'phone' => (string) ($clientProfileData['phone'] ?? ''),
+                    'email' => (string) ($clientProfileData['email'] ?? ''),
+                    'address' => (string) ($clientProfileData['address'] ?? ''),
+                ],
+            ]);
+
+            foreach ($policyItems as $item) {
+                $netPremium = round((float) ($item['net_amount'] ?? $item['net_premium'] ?? 0), 2);
+                $totalPremium = round((float) ($item['total_amount'] ?? $item['total_premium'] ?? 0), 2);
+                $taxAmount = round((float) ($item['tax_amount'] ?? max(0, $totalPremium - $netPremium)), 2);
+                $commissionAmount = round(($netPremium * $commissionPercent) / 100, 2);
+                $passenger = is_array($item['passenger'] ?? null) ? $item['passenger'] : [];
+                $policyDetails = is_array($item['policy_details'] ?? null) ? $item['policy_details'] : [];
+
+                $order->items()->create([
+                    'type' => 'insurance',
+                    'product_type' => 'insurance',
+                    'product_subtype' => 'travel',
+                    'provider' => $insuranceProvider?->provider_type ?? 'albaraka',
+                    'provider_reference' => (string) ($policyDetails['policy_number'] ?? ''),
+                    'ticket_number' => (string) ($policyDetails['policy_number'] ?? ''),
+                    'item_details' => [
+                        'passenger_name' => trim(((string) ($passenger['first_name'] ?? '')).' '.((string) ($passenger['last_name'] ?? ''))),
+                        'financial_source' => 'master_agency_supply',
+                        'default_agency_tenant_id' => $defaultAgencyTenantId,
+                        'beneficiary' => $clientProfileData,
+                        'insurance' => [
+                            'passenger' => $passenger,
+                            'policy_number' => (string) ($policyDetails['policy_number'] ?? ''),
+                            'report_reference' => (string) ($policyDetails['report_reference'] ?? ''),
+                            'provider_response' => $policyDetails['raw'] ?? $policyDetails,
+                            'request_payload' => $requestPayload,
+                        ],
+                    ],
+                    'product_details' => [
+                        'provider' => $insuranceProvider?->name ?? 'Al Baraka Insurance',
+                        'product_subtype' => 'travel',
+                        'beneficiary' => $clientProfileData,
+                        'passenger' => $passenger,
+                        'policy_details' => $policyDetails,
+                    ],
+                    'price' => $netPremium,
+                    'net_fare' => $netPremium,
+                    'taxes' => [
+                        [
+                            'code' => 'INS_TAX',
+                            'amount' => $taxAmount,
+                            'currency' => strtoupper((string) ($item['currency'] ?? $currency)),
+                        ],
+                    ],
+                    'total_tax' => $taxAmount,
+                    'total' => $totalPremium,
+                    'total_amount' => $totalPremium,
+                    'currency' => strtoupper((string) ($item['currency'] ?? $currency)),
+                    'exchange_rate' => 1,
+                    'status' => 'issued',
+                    'transaction_type' => 'issue',
+                    'commission_percent' => $commissionPercent,
+                    'commission_amount' => $commissionAmount,
+                    'net_after_commission' => round($netPremium - $commissionAmount, 2),
+                    'agent_commission' => $commissionAmount,
+                    'net_commission' => $commissionAmount,
+                    'paid' => $totalPremium,
+                    'remaining' => 0,
+                ]);
+            }
+
+            $this->processWalletTransactions->execute($order, $issuer, allowNegativeBalance: true);
+            $this->initializeTenantLedger->execute();
+            $this->postToLedger->execute($order, includeOwnCredentials: false);
+
+            return $order->fresh('items');
+        });
+    }
+
+    /**
      * @param  array<string, mixed>  $requestPayload
      * @param  array<string, mixed>|null  $beneficiaryData
      * @param  array<string, mixed>|null  $policyDetails

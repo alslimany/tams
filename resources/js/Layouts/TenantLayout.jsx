@@ -75,7 +75,6 @@ export default function TenantLayout({ children }) {
     const mainLinks = [
         { name: 'Dashboard', route: 'dashboard', icon: LayoutDashboardIcon },
         { name: 'Flights', route: 'flights.index', icon: BookOpenCheckIcon },
-        { name: 'Compulsory Insurance', route: 'insurance.compulsory.search', icon: ShieldCheckIcon },
         { name: 'Insurance Search', route: 'insurance.search', icon: ShieldIcon },
     ].filter((item) => hasRoute(item.route));
 

@@ -105,6 +105,20 @@ export default function Show({ order, itemTransactions, voidRefundAccount }) {
         return 'outline';
     };
 
+    const insuranceProductLabel = (subtype) => {
+        const normalized = String(subtype ?? '').toLowerCase();
+
+        if (normalized === 'travel') {
+            return 'Travel Insurance';
+        }
+
+        if (normalized === 'orange') {
+            return 'Orange Insurance';
+        }
+
+        return 'Compulsory Insurance';
+    };
+
     const flightNumberMatches = (ticketFlightNumber, itinerary) => {
         if (!ticketFlightNumber) {
             return false;
@@ -390,7 +404,7 @@ export default function Show({ order, itemTransactions, voidRefundAccount }) {
                                                         </Badge>
                                                     ) : null}
                                                 </div>
-                                                <p className="text-sm text-slate-500">Compulsory Insurance • Item #{item.id}</p>
+                                                <p className="text-sm text-slate-500">{insuranceProductLabel(item.product_subtype)} • Item #{item.id}</p>
                                             </div>
 
                                             <div className="flex flex-col items-start gap-3 md:items-end">

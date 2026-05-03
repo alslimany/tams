@@ -28,7 +28,7 @@ import {
 } from 'lucide-react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/Components/ui/Table';
 import { Popover, PopoverContent, PopoverTrigger } from '@/Components/ui/popover';
-import { Calendar } from '@/Components/ui/calendar';
+import { Calendar, CalendarDayButton } from '@/Components/ui/calendar';
 import { AsyncAirportSelect } from '@/Components/ui/AsyncAirportSelect';
 import { useTranslation } from '@/hooks/useTranslation';
 
@@ -149,14 +149,14 @@ export default function Search({ searchDisplayMode, bookings, filters, airlines,
         const hasHint = hint && typeof hint.price === 'number';
 
         return (
-            <button {...dayButtonProps} type="button" className={`${dayButtonProps.className || ''} h-12`}>
-                <span>{children}</span>
+            <CalendarDayButton {...dayButtonProps} day={day} className={`${dayButtonProps.className || ''} `}>
+                <span className="leading-none">{children}</span>
                 {hasHint ? (
                     <span className="mt-0.5 flex items-center text-[10px] leading-none text-emerald-600">
-                        {Math.round(hint.price)} {hint.currency}
+                        {Math.round(hint.price)}
                     </span>
                 ) : null}
-            </button>
+            </CalendarDayButton>
         );
     };
 

@@ -15,6 +15,7 @@ use App\Http\Controllers\Tenant\InsuranceSearchController;
 use App\Http\Controllers\Tenant\OrderController;
 use App\Http\Controllers\Tenant\ReportController;
 use App\Http\Controllers\Tenant\TicketController;
+use App\Http\Controllers\Tenant\TravelInsuranceController;
 use App\Http\Controllers\Tenant\UserController;
 use Illuminate\Support\Facades\Route;
 use Laravel\Sanctum\Http\Controllers\CsrfCookieController;
@@ -83,6 +84,11 @@ Route::middleware([
             Route::get('insurance/compulsory/search', [CompulsoryInsuranceController::class, 'searchPage'])->name('insurance.compulsory.search');
             Route::get('insurance/compulsory/beneficiary/{quoteToken}', [CompulsoryInsuranceController::class, 'beneficiaryPage'])->name('insurance.compulsory.beneficiary');
             Route::get('insurance/compulsory/issued/{order}', [CompulsoryInsuranceController::class, 'issuedPage'])->name('insurance.compulsory.issued');
+
+            Route::get('insurance/travel/beneficiary/{quoteToken}', [TravelInsuranceController::class, 'beneficiaryPage'])->name('insurance.travel.beneficiary');
+            Route::get('insurance/travel/references', [TravelInsuranceController::class, 'references'])->name('insurance.travel.references');
+            Route::post('insurance/travel/price', [TravelInsuranceController::class, 'price'])->name('insurance.travel.price');
+            Route::post('insurance/travel/issue', [TravelInsuranceController::class, 'issue'])->name('insurance.travel.issue');
 
             Route::get('insurance/compulsory/references/durations', [CompulsoryInsuranceController::class, 'durationsReference'])->name('insurance.compulsory.references.durations');
             Route::get('insurance/compulsory/references/document-types', [CompulsoryInsuranceController::class, 'documentTypesReference'])->name('insurance.compulsory.references.document-types');
