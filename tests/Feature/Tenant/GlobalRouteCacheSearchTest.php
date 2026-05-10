@@ -91,6 +91,9 @@ test('results page filters out provider marked unavailable for route', function 
             ->component('Tenant/Bookings/SearchResults')
             ->has('providers', 1)
             ->where('providers.0.id', $state['providerUZ']->id)
+            ->where("providerSources.{$state['providerUZ']->id}.provider_selector", 'own:'.$state['providerUZ']->id)
+            ->where("providerSources.{$state['providerUZ']->id}.source_type", 'own')
+            ->where("providerSources.{$state['providerUZ']->id}.source_provider_id", $state['providerUZ']->id)
         );
 });
 

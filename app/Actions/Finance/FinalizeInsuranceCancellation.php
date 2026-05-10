@@ -4,6 +4,7 @@ namespace App\Actions\Finance;
 
 use App\Models\Tenant\Order;
 use App\Models\Tenant\OrderItem;
+use App\Models\Tenant\TenantInsuranceProvider;
 use App\Models\User;
 use Bavix\Wallet\Models\Transaction as WalletTransaction;
 use Illuminate\Support\Facades\DB;
@@ -18,7 +19,9 @@ class FinalizeInsuranceCancellation
         $walletHolder = $this->resolveWalletHolderForRefund($item, $actor);
         $wallet = $walletHolder->getOrCreateCurrencyWallet((string) $item->currency);
         $refundAmount = round((float) ($item->total_amount ?? $item->total ?? 0), 2);
-        $commissionAmount = round((float) ($item->commission_amount ?? 0), 2);
+        $commissionAmount = $walletHolder instanceof TenantInsuranceProvider
+            ? 0.0
+            : round((float) ($item->commission_amount ?? 0), 2);
 
         return DB::transaction(function () use ($order, $item, $wallet, $refundAmount, $commissionAmount): array {
             $refundTransaction = $wallet->depositFloat($refundAmount, [
@@ -71,7 +74,7 @@ class FinalizeInsuranceCancellation
         });
     }
 
-    protected function resolveWalletHolderForRefund(OrderItem $item, User $fallback): User
+    protected function resolveWalletHolderForRefund(OrderItem $item, User $fallback): User|TenantInsuranceProvider
     {
         $originalWalletTransactionId = (string) ($item->wallet_transaction_id ?? '');
 
@@ -85,11 +88,23 @@ class FinalizeInsuranceCancellation
                     ->where('id', (int) $transaction->wallet_id)
                     ->first(['holder_type', 'holder_id']);
 
-                if ($walletOwner && (string) $walletOwner->holder_type === User::class) {
+                if (! $walletOwner) {
+                    return $fallback;
+                }
+
+                if ((string) $walletOwner->holder_type === User::class) {
                     $resolvedUser = User::query()->find((int) $walletOwner->holder_id);
 
                     if ($resolvedUser) {
                         return $resolvedUser;
+                    }
+                }
+
+                if ((string) $walletOwner->holder_type === TenantInsuranceProvider::class) {
+                    $resolvedProvider = TenantInsuranceProvider::query()->find((int) $walletOwner->holder_id);
+
+                    if ($resolvedProvider) {
+                        return $resolvedProvider;
                     }
                 }
             }

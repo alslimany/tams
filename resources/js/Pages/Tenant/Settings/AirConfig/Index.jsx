@@ -19,6 +19,7 @@ export default function Index({ airlines }) {
     const [selectedConfigTab, setSelectedConfigTab] = useState('connection');
     const [testing, setTesting] = useState(false);
     const [testResult, setTestResult] = useState(null);
+    const [depositAmounts, setDepositAmounts] = useState({});
 
     const { data, setData, post, processing, errors, reset } = useForm({
         provider_type: '',
@@ -104,6 +105,32 @@ export default function Index({ airlines }) {
         router.patch(route('settings.airlines.toggle', id));
     };
 
+    const submitDeposit = (account) => {
+        if (!account?.config_id) {
+            return;
+        }
+
+        const amount = depositAmounts[account.config_id] ?? '';
+
+        if (!amount) {
+            return;
+        }
+
+        router.post(route('settings.airlines.deposit'), {
+            tenant_provider_id: account.config_id,
+            currency: account.currency,
+            amount,
+        }, {
+            preserveScroll: true,
+            onSuccess: () => {
+                setDepositAmounts((prev) => ({
+                    ...prev,
+                    [account.config_id]: '',
+                }));
+            },
+        });
+    };
+
     const isVidecomProvider = selectedAirline?.provider_type === 'videcom';
 
     return (
@@ -157,6 +184,26 @@ export default function Index({ airlines }) {
                                                 <div className="mt-1 text-xs text-muted-foreground">
                                                     Balance: <span className="font-medium text-foreground">{formatMoney(account.remaining_balance, account.currency)}</span>
                                                 </div>
+                                                {account.config_id && (
+                                                    <div className="mt-2 grid grid-cols-[1fr_auto] gap-2">
+                                                        <Input
+                                                            type="number"
+                                                            min="0"
+                                                            step="0.01"
+                                                            placeholder="Deposit"
+                                                            value={depositAmounts[account.config_id] ?? ''}
+                                                            onChange={(event) =>
+                                                                setDepositAmounts((prev) => ({
+                                                                    ...prev,
+                                                                    [account.config_id]: event.target.value,
+                                                                }))
+                                                            }
+                                                        />
+                                                        <Button type="button" size="sm" variant="secondary" onClick={() => submitDeposit(account)}>
+                                                            Deposit
+                                                        </Button>
+                                                    </div>
+                                                )}
                                                 {airline.provider_type === 'videcom' && (
                                                     <div className="mt-1 text-xs text-muted-foreground">
                                                         Domestic Commission <span className="font-medium text-foreground">{account.domestic_commission_rate || '0.00'}%</span>

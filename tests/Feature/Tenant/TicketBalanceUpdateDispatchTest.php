@@ -9,6 +9,7 @@ use App\Models\Tenant\OrderItem;
 use App\Models\TenantProvider;
 use App\Models\User;
 use App\Services\Airline\AirlineProviderInterface;
+use Bavix\Wallet\Models\Transaction as WalletTransaction;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
 
@@ -174,6 +175,30 @@ test('refund ticket dispatches delayed airline balance update job', function () 
 
     [$order, $item] = seedIssuedOrderForBalanceDispatch($state['user']);
 
+    $customerWallet = $state['user']->getOrCreateCurrencyWallet('LYD');
+    $customerWallet->depositFloat(700, ['type' => 'seed_customer_balance']);
+    $customerWithdrawal = $customerWallet->withdrawFloat(500, [
+        'order_id' => $order->id,
+        'order_item_id' => $item->id,
+        'type' => 'ticket_purchase',
+    ]);
+
+    $providerWallet = $state['provider']->getOrCreateCurrencyWallet('LYD');
+    $providerWallet->depositFloat(1000, ['type' => 'seed_provider_balance']);
+    $providerWithdrawal = $providerWallet->withdrawFloat(450, [
+        'order_id' => $order->id,
+        'order_item_id' => $item->id,
+        'type' => 'provider_issuance_cost',
+    ]);
+
+    $item->update([
+        'wallet_transaction_id' => $customerWithdrawal->uuid,
+        'item_details' => array_merge((array) $item->item_details, [
+            'provider_wallet_transaction_id' => $providerWithdrawal->uuid,
+            'provider_wallet_withdrawal_amount' => 450,
+        ]),
+    ]);
+
     $providerMock = \Mockery::mock(AirlineProviderInterface::class);
     $providerMock->shouldReceive('refund')->once()->with('6071234567890')->andReturn('<PNR RLOC="ABC123"></PNR>');
 
@@ -185,9 +210,34 @@ test('refund ticket dispatches delayed airline balance update job', function () 
 
     $baseUrl = 'http://'.$state['tenant']->domains->first()->domain;
 
-    $this->post($baseUrl.route('tickets.refund', ['booking' => $order->id, 'ticket' => $item->id], false))
+    $this->post($baseUrl.route('tickets.refund', ['booking' => $order->id, 'ticket' => $item->id], false), [
+        'penalty_amount' => 50,
+    ])
         ->assertRedirect()
         ->assertSessionHas('success');
+
+    $refreshedItem = $item->fresh();
+    $refundTransaction = WalletTransaction::query()
+        ->where('uuid', (string) data_get($refreshedItem->item_details, 'refund.customer_wallet_transaction_id'))
+        ->first();
+    $penaltyTransaction = WalletTransaction::query()
+        ->where('uuid', (string) data_get($refreshedItem->item_details, 'refund.penalty_wallet_transaction_id'))
+        ->first();
+    $providerRefundTransaction = WalletTransaction::query()
+        ->where('uuid', (string) data_get($refreshedItem->item_details, 'refund.provider_wallet_transaction_id'))
+        ->first();
+
+    expect($refreshedItem->status)->toBe('refunded')
+        ->and($refundTransaction)->not->toBeNull()
+        ->and((int) $refundTransaction->amount)->toBe(50000)
+        ->and($penaltyTransaction)->not->toBeNull()
+        ->and((int) $penaltyTransaction->amount)->toBe(-5000)
+        ->and($providerRefundTransaction)->not->toBeNull()
+        ->and((int) $providerRefundTransaction->wallet_id)->toBe((int) $providerWallet->id)
+        ->and((int) $providerRefundTransaction->amount)->toBe(45000)
+        ->and((float) $order->fresh()->amount_refunded)->toBe(450.0)
+        ->and((float) $customerWallet->fresh()->balanceFloat)->toBe(650.0)
+        ->and((float) $providerWallet->fresh()->balanceFloat)->toBe(1000.0);
 
     Queue::assertPushed(UpdateAirlineBalanceJob::class, function (UpdateAirlineBalanceJob $job) use ($state): bool {
         if ($job->tenantProviderId !== $state['provider']->id) {

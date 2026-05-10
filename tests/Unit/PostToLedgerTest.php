@@ -216,7 +216,7 @@ test('it posts ledger entries for master supply items and stores ledger_entry_id
         ]);
 });
 
-test('it can skip own credentials items when includeOwnCredentials is false', function () {
+test('it skips legacy airline transaction items without wallet transactions', function () {
     global $state;
 
     /** @var User $user */
@@ -231,12 +231,38 @@ test('it can skip own credentials items when includeOwnCredentials is false', fu
     $driver = new TestLedgerDriver;
     app()->instance(LedgerDriver::class, $driver);
 
-    app(PostToLedger::class)->execute($order, includeOwnCredentials: false);
+    app(PostToLedger::class)->execute($order, includeOwnCredentials: true);
 
     $item->refresh();
 
     expect($item->ledger_entry_id)->toBeNull()
         ->and($driver->calls)->toHaveCount(0);
+});
+
+test('it posts own credentials items after provider wallet transaction is linked', function () {
+    global $state;
+
+    /** @var User $user */
+    $user = $state['user'];
+
+    $order = makeOrderForLedger($user);
+    $walletTransactionUuid = seedWalletTransactionUuid($user, 'USD');
+
+    $item = makeOrderItemForLedger($order, [
+        'wallet_transaction_id' => $walletTransactionUuid,
+        'item_details' => ['financial_source' => 'own_credentials'],
+        'airline_transaction_id' => null,
+    ]);
+
+    $driver = new TestLedgerDriver;
+    app()->instance(LedgerDriver::class, $driver);
+
+    app(PostToLedger::class)->execute($order, includeOwnCredentials: true);
+
+    $item->refresh();
+
+    expect($item->ledger_entry_id)->toBe(9001)
+        ->and($driver->calls)->toHaveCount(1);
 });
 
 test('it posts commission payable for master supply using agent_commission', function () {

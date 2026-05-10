@@ -5,7 +5,6 @@ namespace App\Http\Controllers\Tenant;
 use App\Actions\Orders\SyncInsuranceCancellationStatus;
 use App\Http\Controllers\Controller;
 use App\Models\Tenant\AgencySetting;
-use App\Models\Tenant\AirlineTransaction;
 use App\Models\Tenant as CentralTenant;
 use App\Models\Tenant\Order;
 use App\Models\Tenant\OrderItem;
@@ -51,11 +50,19 @@ class OrderController extends Controller
         $this->syncOrderItemsFromPnrQuery($order);
         $this->syncInsuranceCancellationItems($order);
 
-        $order->load(['owner', 'items.airlineTransaction.account', 'statusLogs.user']);
+        $order->load(['owner', 'items', 'statusLogs.user']);
 
         $walletTransactionUuids = $order->items
-            ->pluck('wallet_transaction_id')
+            ->flatMap(fn (OrderItem $item): array => [
+                $item->wallet_transaction_id,
+                data_get($item->item_details, 'provider_wallet_transaction_id'),
+                data_get($item->item_details, 'provider_wallet_void_transaction_id'),
+                data_get($item->item_details, 'refund.customer_wallet_transaction_id'),
+                data_get($item->item_details, 'refund.penalty_wallet_transaction_id'),
+                data_get($item->item_details, 'refund.provider_wallet_transaction_id'),
+            ])
             ->filter()
+            ->unique()
             ->values()
             ->all();
 
@@ -64,19 +71,26 @@ class OrderController extends Controller
             ->get(['id', 'uuid', 'type', 'amount', 'meta', 'created_at'])
             ->keyBy('uuid');
 
-        $airlineTransactions = AirlineTransaction::query()
-            ->whereIn('id', $order->items->pluck('airline_transaction_id')->filter()->all())
-            ->get(['id', 'type', 'amount', 'balance_after', 'external_reference', 'description', 'created_at'])
-            ->keyBy('id');
-
-        $itemTransactions = $order->items->map(function ($item) use ($walletTransactions, $airlineTransactions): array {
+        $itemTransactions = $order->items->map(function ($item) use ($walletTransactions): array {
             return [
                 'order_item_id' => $item->id,
                 'wallet_transaction' => $item->wallet_transaction_id
                     ? $walletTransactions->get($item->wallet_transaction_id)
                     : null,
-                'airline_transaction' => $item->airline_transaction_id
-                    ? $airlineTransactions->get($item->airline_transaction_id)
+                'provider_wallet_transaction' => data_get($item->item_details, 'provider_wallet_transaction_id')
+                    ? $walletTransactions->get(data_get($item->item_details, 'provider_wallet_transaction_id'))
+                    : null,
+                'provider_wallet_void_transaction' => data_get($item->item_details, 'provider_wallet_void_transaction_id')
+                    ? $walletTransactions->get(data_get($item->item_details, 'provider_wallet_void_transaction_id'))
+                    : null,
+                'refund_wallet_transaction' => data_get($item->item_details, 'refund.customer_wallet_transaction_id')
+                    ? $walletTransactions->get(data_get($item->item_details, 'refund.customer_wallet_transaction_id'))
+                    : null,
+                'refund_penalty_transaction' => data_get($item->item_details, 'refund.penalty_wallet_transaction_id')
+                    ? $walletTransactions->get(data_get($item->item_details, 'refund.penalty_wallet_transaction_id'))
+                    : null,
+                'provider_wallet_refund_transaction' => data_get($item->item_details, 'refund.provider_wallet_transaction_id')
+                    ? $walletTransactions->get(data_get($item->item_details, 'refund.provider_wallet_transaction_id'))
                     : null,
             ];
         })->values();

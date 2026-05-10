@@ -2,10 +2,17 @@
 
 namespace App\Models\Tenant;
 
+use Bavix\Wallet\Interfaces\Wallet as WalletInterface;
+use Bavix\Wallet\Models\Wallet;
+use Bavix\Wallet\Traits\HasWallet;
+use Bavix\Wallet\Traits\HasWallets;
 use Illuminate\Database\Eloquent\Model;
 
-class TenantInsuranceProvider extends Model
+class TenantInsuranceProvider extends Model implements WalletInterface
 {
+    use HasWallet;
+    use HasWallets;
+
     protected $guarded = [];
 
     protected function casts(): array
@@ -27,5 +34,25 @@ class TenantInsuranceProvider extends Model
             'orange' => (float) $this->commission_orange,
             default => 0.0,
         };
+    }
+
+    public function getOrCreateCurrencyWallet(string $currency = 'LYD'): Wallet
+    {
+        $normalizedCurrency = strtoupper($currency);
+        $slug = 'INS_'.$normalizedCurrency;
+
+        return $this->getWallet($slug) ?? $this->createWallet([
+            'name' => $this->name.' '.$normalizedCurrency.' Wallet',
+            'slug' => $slug,
+            'meta' => [
+                'currency' => $normalizedCurrency,
+                'provider_type' => $this->provider_type,
+            ],
+        ]);
+    }
+
+    public function getBalance(string $currency = 'LYD'): float
+    {
+        return (float) $this->getOrCreateCurrencyWallet($currency)->balanceFloat;
     }
 }

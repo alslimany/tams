@@ -235,7 +235,7 @@ test('it skips items that already have a wallet_transaction_id', function () {
     ]);
 });
 
-test('it skips items that already have an airline_transaction_id', function () {
+test('it processes items with only a legacy airline_transaction_id', function () {
     global $state;
 
     /** @var User $user */
@@ -247,22 +247,32 @@ test('it skips items that already have an airline_transaction_id', function () {
     $order = makeOrder($user, 'USD');
     $item = makeOrderItem($order, 50.0, 0.0, 'USD');
 
-    // Create a real AirlineAccount + AirlineTransaction so the FK is satisfied
     $provider = TenantProvider::create([
-        'airline_code' => 'YI', 'airline_name' => 'Yemenia', 'account_name' => 'Default',
-        'provider_type' => 'videcom', 'is_active' => true, 'credentials' => [],
+        'airline_code' => 'YI',
+        'airline_name' => 'Yemenia',
+        'account_name' => 'Default',
+        'provider_type' => 'videcom',
+        'is_active' => true,
+        'credentials' => [],
     ]);
     $account = AirlineAccount::create(['tenant_provider_id' => $provider->id, 'currency' => 'USD', 'balance' => 0]);
-    $airlineTx = AirlineTransaction::create([
-        'airline_account_id' => $account->id, 'type' => 'ticket_cost',
-        'amount' => -50, 'balance_after' => -50,
+    $airlineTransaction = AirlineTransaction::create([
+        'airline_account_id' => $account->id,
+        'type' => 'ticket_cost',
+        'amount' => -50,
+        'balance_after' => -50,
     ]);
-    $item->update(['airline_transaction_id' => $airlineTx->id]);
+    $item->update(['airline_transaction_id' => $airlineTransaction->id]);
 
     app(ProcessWalletTransactions::class)->execute($order, $user);
 
-    $this->assertDatabaseMissing('transactions', [
+    $item->refresh();
+
+    expect($item->wallet_transaction_id)->not->toBeNull();
+
+    $this->assertDatabaseHas('transactions', [
         'wallet_id' => $wallet->id,
         'type' => 'withdraw',
+        'amount' => -5000,
     ]);
 });

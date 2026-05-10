@@ -3,10 +3,17 @@
 namespace App\Http\Controllers\Tenant;
 
 use App\Actions\Finance\CreateOrderFromInsuranceBooking;
+use App\Actions\Finance\InitializeTenantLedger;
+use App\Actions\Finance\PostToLedger;
+use App\Actions\Finance\ProcessInsuranceProviderWalletTransactions;
+use App\Actions\Finance\ProcessWalletTransactions;
+use App\Exceptions\InsufficientWalletBalanceException;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Tenant\Insurance\TravelIssueRequest;
 use App\Http\Requests\Tenant\Insurance\TravelPriceRequest;
+use App\Models\Tenant\TenantInsuranceProvider;
 use App\Models\User;
+use App\Services\Airline\AgencyProviderResolver;
 use App\Services\Insurance\InsuranceProviderManager;
 use App\Services\Insurance\Providers\AlBarakaProvider;
 use Carbon\CarbonImmutable;
@@ -14,6 +21,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -25,6 +33,9 @@ class TravelInsuranceController extends Controller
         protected AlBarakaProvider $provider,
         protected InsuranceProviderManager $providerManager,
         protected CreateOrderFromInsuranceBooking $createOrderFromInsuranceBooking,
+        protected ProcessWalletTransactions $processWalletTransactions,
+        protected ProcessInsuranceProviderWalletTransactions $insuranceProviderWalletTransactions,
+        protected AgencyProviderResolver $agencyProviderResolver,
     ) {}
 
     public function beneficiaryPage(string $quoteToken): Response|RedirectResponse
@@ -188,7 +199,7 @@ class TravelInsuranceController extends Controller
         }
     }
 
-    public function issue(TravelIssueRequest $request): RedirectResponse
+    public function issue(TravelIssueRequest $request): RedirectResponse|JsonResponse
     {
         $validated = $request->validated();
         $quote = $this->pullQuote((string) $validated['quote_token'], keepInSession: true);
@@ -203,16 +214,50 @@ class TravelInsuranceController extends Controller
             return back()->with('error', 'Authentication is required to issue travel insurance.');
         }
 
+        $insuranceProvider = $this->providerManager->activeProvider();
+        $useProviderWallet = $this->shouldUseInsuranceProviderWallet($insuranceProvider);
+
         try {
-            $order = DB::transaction(function () use ($validated, $quote, $issuer) {
+            $this->assertTravelWalletBalance($quote, $issuer, $insuranceProvider, $useProviderWallet);
+        } catch (InsufficientWalletBalanceException $exception) {
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'error' => 'Insufficient wallet balance',
+                    'message' => $exception->getMessage(),
+                ], 422);
+            }
+
+            return back()->with('error', $exception->getMessage());
+        }
+
+        try {
+            Log::info('Travel insurance issuance started.', [
+                'quote_token' => (string) $validated['quote_token'],
+                'user_id' => $issuer->id,
+                'passenger_count' => count($validated['passengers'] ?? []),
+                'total_premium' => (float) ($quote['total_premium'] ?? 0),
+                'currency' => (string) ($quote['currency'] ?? 'LYD'),
+            ]);
+
+            $order = DB::transaction(function () use ($validated, $quote, $issuer, $insuranceProvider, $useProviderWallet) {
                 $normalizedPhone = $this->normalizePhone((string) $validated['client_phone']);
-                $existingClientProfileId = $this->provider->findClientProfileByPhone($normalizedPhone);
+                $existingClientProfileId = $this->resolveExistingClientProfileId($normalizedPhone);
+
+                Log::info('Travel insurance client profile lookup completed.', [
+                    'client_profile_found' => $existingClientProfileId !== null,
+                    'phone' => $normalizedPhone,
+                ]);
 
                 $clientProfileId = $existingClientProfileId ?? $this->provider->createClientProfile([
                     'Name' => (string) $validated['client_name'],
-                    'Phone' => $normalizedPhone,
+                    'Phone' => $this->normalizePhoneForProvider($normalizedPhone),
                     'Address' => (string) ($validated['client_address'] ?? 'Not provided'),
                     'Email' => $validated['client_email'] ?? null,
+                ]);
+
+                Log::info('Travel insurance client profile resolved.', [
+                    'client_profile_id' => $clientProfileId,
+                    'created' => $existingClientProfileId === null,
                 ]);
 
                 $quotedPassengers = collect($quote['passengers'] ?? [])->values();
@@ -237,6 +282,12 @@ class TravelInsuranceController extends Controller
                         'ClientProfileId' => $clientProfileId,
                     ]);
 
+                    Log::info('Travel insurance passenger profile created.', [
+                        'client_profile_id' => $clientProfileId,
+                        'passenger_index' => $index,
+                        'pax_id' => (int) $clientProfilePax['id'],
+                    ]);
+
                     $policy = $this->provider->createTravelPolicy([
                         'ClientProfileId' => $clientProfileId,
                         'ClientProfilePaxeId' => (int) $clientProfilePax['id'],
@@ -246,6 +297,12 @@ class TravelInsuranceController extends Controller
                         'IsPolicyPaid' => false,
                         'VoucherCode' => null,
                         'Check' => null,
+                    ]);
+
+                    Log::info('Travel insurance policy issued for passenger.', [
+                        'passenger_index' => $index,
+                        'policy_id' => (int) $policy['policy_id'],
+                        'policy_number' => (string) $policy['policy_number'],
                     ]);
 
                     $policyItems[] = [
@@ -275,7 +332,7 @@ class TravelInsuranceController extends Controller
                     ];
                 }
 
-                return $this->createOrderFromInsuranceBooking->createFromTravelPolicies(
+                $order = $this->createOrderFromInsuranceBooking->createFromTravelPolicies(
                     userId: $issuer->id,
                     clientProfileData: [
                         'name' => (string) $validated['client_name'],
@@ -289,17 +346,55 @@ class TravelInsuranceController extends Controller
                         'quote' => $quote,
                         'issue_request' => $validated,
                     ],
-                    insuranceProvider: $this->providerManager->activeProvider(),
+                    insuranceProvider: $insuranceProvider,
+                    processAgencyWallet: ! $useProviderWallet,
                 );
+
+                if ($useProviderWallet && $insuranceProvider instanceof TenantInsuranceProvider) {
+                    $this->insuranceProviderWalletTransactions->execute($order, $insuranceProvider);
+
+                    try {
+                        app(InitializeTenantLedger::class)->execute((string) $order->currency);
+                        app(PostToLedger::class)->execute($order, includeOwnCredentials: false);
+                    } catch (Throwable $exception) {
+                        report($exception);
+
+                        Log::warning('Travel insurance ledger posting failed after successful issuance.', [
+                            'order_id' => (string) $order->id,
+                            'order_number' => (string) $order->number,
+                            'error' => $exception->getMessage(),
+                        ]);
+                    }
+                }
+
+                return $order;
             });
 
             $this->forgetQuote((string) $validated['quote_token']);
+
+            Log::info('Travel insurance issuance completed successfully.', [
+                'quote_token' => (string) $validated['quote_token'],
+                'order_id' => (string) $order->id,
+                'order_number' => (string) $order->number,
+            ]);
 
             return redirect()
                 ->route('orders.show', $order)
                 ->with('success', 'Travel insurance policies were issued successfully.');
         } catch (Throwable $exception) {
             report($exception);
+
+            Log::error('Travel insurance issuance failed.', [
+                'quote_token' => (string) $validated['quote_token'],
+                'user_id' => $issuer->id,
+                'error' => $exception->getMessage(),
+            ]);
+
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'error' => $exception->getMessage() !== '' ? $exception->getMessage() : 'Unable to issue travel insurance policies at the moment.',
+                ], 422);
+            }
 
             return back()->with('error', 'Unable to issue travel insurance policies at the moment. Please try again.');
         }
@@ -552,6 +647,96 @@ class TravelInsuranceController extends Controller
         }
 
         return $hasLeadingPlus ? '+'.$digitsOnly : $digitsOnly;
+    }
+
+    protected function normalizePhoneForProvider(string $phone): string
+    {
+        [$localPhone, $internationalPhone] = $this->phoneLookupCandidates($phone);
+
+        return $internationalPhone !== '' ? $internationalPhone : $localPhone;
+    }
+
+    protected function resolveExistingClientProfileId(string $phone): ?int
+    {
+        [$localPhone, $internationalPhone] = $this->phoneLookupCandidates($phone);
+
+        foreach (array_values(array_unique(array_filter([$localPhone, $internationalPhone], fn (string $value): bool => $value !== ''))) as $candidate) {
+            $clientProfileId = $this->provider->findClientProfileByPhone($candidate);
+
+            if ($clientProfileId !== null) {
+                return $clientProfileId;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @return array{string,string}
+     */
+    protected function phoneLookupCandidates(string $phone): array
+    {
+        $normalized = $this->normalizePhone($phone);
+        $digits = preg_replace('/\D+/', '', $normalized) ?: '';
+
+        if ($digits === '') {
+            return ['', ''];
+        }
+
+        if (str_starts_with($digits, '218') && strlen($digits) >= 12) {
+            $digits = substr($digits, 3);
+        }
+
+        if (strlen($digits) === 9 && str_starts_with($digits, '9')) {
+            $digits = '0'.$digits;
+        }
+
+        if (! str_starts_with($digits, '0') && strlen($digits) > 0) {
+            $digits = '0'.$digits;
+        }
+
+        $localPhone = $digits;
+        $internationalPhone = '+218'.ltrim($digits, '0');
+
+        return [$localPhone, $internationalPhone];
+    }
+
+    /**
+     * @param  array<string, mixed>  $quote
+     *
+     * @throws InsufficientWalletBalanceException
+     */
+    protected function assertTravelWalletBalance(
+        array $quote,
+        User $issuer,
+        ?TenantInsuranceProvider $insuranceProvider,
+        bool $useProviderWallet,
+    ): void {
+        $requiredAmount = round((float) ($quote['total_premium'] ?? 0), 2);
+        $currency = strtoupper((string) ($quote['currency'] ?? 'LYD'));
+
+        if ($requiredAmount <= 0) {
+            return;
+        }
+
+        if ($useProviderWallet && $insuranceProvider instanceof TenantInsuranceProvider) {
+            $this->insuranceProviderWalletTransactions->assertCanWithdraw($insuranceProvider, $currency, $requiredAmount);
+
+            return;
+        }
+
+        $this->processWalletTransactions->assertCanIssueForAmounts([
+            $currency => $requiredAmount,
+        ], $issuer);
+    }
+
+    protected function shouldUseInsuranceProviderWallet(?TenantInsuranceProvider $insuranceProvider): bool
+    {
+        if (! $insuranceProvider instanceof TenantInsuranceProvider) {
+            return false;
+        }
+
+        return $this->agencyProviderResolver->canManageOwnProviders();
     }
 
     /**

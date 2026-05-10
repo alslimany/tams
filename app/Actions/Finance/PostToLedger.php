@@ -17,9 +17,9 @@ class PostToLedger
     {
         $order->loadMissing('items');
 
-        DB::transaction(function () use ($order, $includeOwnCredentials): void {
+        DB::transaction(function () use ($order): void {
             foreach ($order->items as $item) {
-                if (! $this->shouldPostItem($item, $includeOwnCredentials)) {
+                if (! $this->shouldPostItem($item)) {
                     continue;
                 }
 
@@ -36,17 +36,13 @@ class PostToLedger
         });
     }
 
-    protected function shouldPostItem(OrderItem $item, bool $includeOwnCredentials): bool
+    protected function shouldPostItem(OrderItem $item): bool
     {
         if ($item->ledger_entry_id !== null) {
             return false;
         }
 
-        if ($item->wallet_transaction_id !== null) {
-            return true;
-        }
-
-        return $includeOwnCredentials && $item->airline_transaction_id !== null;
+        return $item->wallet_transaction_id !== null;
     }
 
     /**

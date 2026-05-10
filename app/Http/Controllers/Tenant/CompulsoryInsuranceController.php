@@ -3,6 +3,10 @@
 namespace App\Http\Controllers\Tenant;
 
 use App\Actions\Finance\CreateOrderFromInsuranceBooking;
+use App\Actions\Finance\InitializeTenantLedger;
+use App\Actions\Finance\PostToLedger;
+use App\Actions\Finance\ProcessInsuranceProviderWalletTransactions;
+use App\Exceptions\InsufficientWalletBalanceException;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Tenant\Insurance\CompulsoryIssueRequest;
 use App\Http\Requests\Tenant\Insurance\CompulsoryPriceRequest;
@@ -24,6 +28,7 @@ class CompulsoryInsuranceController extends Controller
         protected AlBarakaProvider $provider,
         protected InsuranceProviderManager $providerManager,
         protected CreateOrderFromInsuranceBooking $createOrderFromInsuranceBooking,
+        protected ProcessInsuranceProviderWalletTransactions $insuranceProviderWalletTransactions,
     ) {}
 
     public function searchPage(): Response
@@ -152,6 +157,16 @@ class CompulsoryInsuranceController extends Controller
             return back()->with('error', 'Authentication is required to issue compulsory insurance.');
         }
 
+        $insuranceProvider = $this->providerManager->activeProvider();
+        $totalPremium = round((float) ($quote['total_premium'] ?? 0), 2);
+        $currency = strtoupper((string) ($quote['currency'] ?? 'LYD'));
+
+        try {
+            $this->insuranceProviderWalletTransactions->assertCanWithdraw($insuranceProvider, $currency, $totalPremium);
+        } catch (InsufficientWalletBalanceException $exception) {
+            return back()->with('error', $exception->getMessage());
+        }
+
         try {
             $beneficiaryAddress = (string) ($validated['beneficiary_address'] ?? 'Not provided');
             $existingClientProfileId = $this->provider->findClientProfileByPhone((string) $validated['beneficiary_phone']);
@@ -239,8 +254,13 @@ class CompulsoryInsuranceController extends Controller
                     'client_profile_id' => $clientProfileId,
                     'client_profile_vehicle_id' => $vehicleId,
                 ],
-                insuranceProvider: $this->providerManager->activeProvider(),
+                insuranceProvider: $insuranceProvider,
+                processAgencyWallet: false,
             );
+
+            $this->insuranceProviderWalletTransactions->execute($order, $insuranceProvider);
+            app(InitializeTenantLedger::class)->execute((string) $order->currency);
+            app(PostToLedger::class)->execute($order, includeOwnCredentials: false);
 
             $this->forgetQuote((string) $validated['quote_token']);
 

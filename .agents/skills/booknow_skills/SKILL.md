@@ -9,7 +9,8 @@ This file lists all project skill files, their purpose, and when an AI agent sho
 | Skill File | Purpose | Read When |
 |------------|---------|-----------|
 | `booknow_architecture.md` | Overall platform architecture, multi‑tenancy, tech stack, directory structure, key workflows. | Starting any task; understanding the big picture. |
-| `ui_and_frontend_patterns.md` | Inertia + React + Shadcn UI patterns, layouts, form handling, RTL, navigation. | Building any UI page or component. |
+| `ui_and_frontend_patterns.md` | Inertia + React + Shadcn UI patterns, layouts, booking UX, form handling, RTL, navigation. | Building any UI page or component. |
+| `booking_ux_patterns.md` | Canonical booking journey: search, offer display, offer selection, two-column completion form, sticky summary, confirmation, cache recovery. | Building or changing flights, insurance, hotels, eSIM, or any bookable product. |
 | `testing_guidelines.md` | Unit, feature, and E2E testing patterns; mocking APIs; database transactions; tenancy context. | Writing or modifying tests. |
 | `error_handling_and_logging.md` | Standardised error responses (API/web), logging levels, exception handling per service. | Adding error handling or logging. |
 | `caching_strategies.md` | Multi‑level caching (shared, private, session); route availability cache; flight schedule cache; cache keys, TTL, invalidation. | Implementing caching for performance. |
@@ -37,7 +38,8 @@ This file lists all project skill files, their purpose, and when an AI agent sho
 
 | Skill File | Purpose | Read When |
 |------------|---------|-----------|
-| `financial_process.md` | Wallets (`bavix/laravel-wallet`), orders, order_items, commission calculation, ledger posting (`abivia/ledger`), reconciliation, reporting. | Implementing financial actions (wallet deduction, order creation, ledger, reports). |
+| `financial_process.md` | Financial overview for wallets, wallet transactions, orders, order_items, commission calculation, tenant ledger posting, reconciliation, reporting. | Implementing financial actions (wallet deduction, order creation, ledger, reports). |
+| `financial_and_wallet_system.md` | Canonical wallet rules: all wallets use `bavix/laravel-wallet`, provider wallet deposits/deductions, dual-wallet merchant issuance, metadata, ledger posting, reversals. | Implementing or reviewing wallet/provider balance/payment/refund/ledger logic. |
 | `report_generation.md` | PDF generation for invoices, commission statements, settlement reports; using Laravel PDF packages; queued generation. | Building report downloads or scheduled reports. |
 | `subscription_billing.md` | SaaS subscription plans, active user counting, invoice generation, seasonal freeze. | Implementing agency subscription billing. |
 
@@ -66,6 +68,7 @@ This file lists all project skill files, their purpose, and when an AI agent sho
 | Skill File | Purpose | Read When |
 |------------|---------|-----------|
 | `default_agency_and_merchant_model.md` | Current default agency (master agency) feature: central admin toggles, `agency_settings`, commission tracking, settlement. Also outlines future network/merchant model (design only). | Implementing default agency features or understanding future merchant model. |
+| `agency_network_and_merchant_model.md` | Future agency network and merchant model: invitation tokens, central memberships, provider allocations, source metadata, merchant issuance through agency providers. | Designing or implementing merchant network/provider-allocation behavior. |
 
 ---
 
@@ -88,4 +91,3 @@ This file lists all project skill files, their purpose, and when an AI agent sho
 Task: “Implement compulsory insurance beneficiary form.”  
 Relevant skills: `insurance_integration_albaraka.md` (API details), `ui_and_frontend_patterns.md` (form building), `financial_process.md` (order creation and wallet deduction).  
 AI should read all three before implementing.
-

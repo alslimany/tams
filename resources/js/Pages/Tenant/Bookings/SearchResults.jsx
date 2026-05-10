@@ -20,7 +20,7 @@ import { formatMoney, formatMoneyValue } from '@/lib/currency';
 import FlightGroupCard from '@/Components/FlightGroupCard';
 import { useTranslation } from '@/hooks/useTranslation';
 
-export default function SearchResults({ providers, query, uuid, searchDisplayMode }) {
+export default function SearchResults({ providers, providerSources = {}, query, uuid, searchDisplayMode }) {
     const { t, loading: translationsLoading, locale } = useTranslation();
 
     const isRoundTripSearch = Boolean(query?.is_return);
@@ -201,6 +201,23 @@ export default function SearchResults({ providers, query, uuid, searchDisplayMod
             || providers.find((p) => (flight.airline_name || '').includes(p.airline_name));
     };
 
+    const providerSourcePayload = (providerId) => {
+        const source = providerSources?.[providerId] || providerSources?.[String(providerId)] || {};
+
+        return Object.fromEntries(
+            Object.entries({
+                provider_selector: source.provider_selector,
+                provider_source_type: source.source_type,
+                source_agency_tenant_id: source.source_agency_tenant_id,
+                merchant_tenant_id: source.merchant_tenant_id,
+                network_membership_id: source.network_membership_id,
+                provider_allocation_id: source.provider_allocation_id,
+                source_provider_model: source.source_provider_model,
+                source_provider_id: source.source_provider_id,
+            }).filter(([, value]) => value !== null && value !== undefined && value !== '')
+        );
+    };
+
     const buildRoundTripFlightPayload = (outboundFlight, returnFlight) => {
         const outboundSegments = outboundFlight?.segments || [outboundFlight];
         const returnSegments = returnFlight?.segments || [returnFlight];
@@ -229,6 +246,7 @@ export default function SearchResults({ providers, query, uuid, searchDisplayMod
             provider_id: providerId,
             reservation_type: reservationType,
             flight,
+            ...providerSourcePayload(providerId),
             ...extraPayload,
         });
     };

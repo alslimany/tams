@@ -61,6 +61,7 @@ class CreateOrderFromInsuranceBooking
         array $beneficiaryData,
         array $requestPayload = [],
         ?TenantInsuranceProvider $insuranceProvider = null,
+        bool $processAgencyWallet = true,
     ): Order {
         $issuer = User::query()->find($userId);
 
@@ -92,6 +93,7 @@ class CreateOrderFromInsuranceBooking
             insuranceProvider: $insuranceProvider,
             beneficiaryData: $beneficiaryData,
             policyDetails: $policyDetails,
+            processAgencyWallet: $processAgencyWallet,
         );
     }
 
@@ -106,6 +108,7 @@ class CreateOrderFromInsuranceBooking
         array $policyItems,
         array $requestPayload = [],
         ?TenantInsuranceProvider $insuranceProvider = null,
+        bool $processAgencyWallet = true,
     ): Order {
         $issuer = User::query()->find($userId);
 
@@ -113,7 +116,7 @@ class CreateOrderFromInsuranceBooking
             throw (new ModelNotFoundException)->setModel(User::class, [$userId]);
         }
 
-        return DB::transaction(function () use ($issuer, $clientProfileData, $policyItems, $requestPayload, $insuranceProvider): Order {
+        return DB::transaction(function () use ($issuer, $clientProfileData, $policyItems, $requestPayload, $insuranceProvider, $processAgencyWallet): Order {
             $commissionPercent = $insuranceProvider?->commissionForProductType('travel') ?? 0.0;
             $defaultAgencyTenantId = $this->resolveDefaultAgencyTenantId();
             $currency = strtoupper((string) ($policyItems[0]['currency'] ?? 'LYD'));
@@ -139,7 +142,7 @@ class CreateOrderFromInsuranceBooking
                 'grand_total' => round($grandTotal, 2),
                 'amount_paid' => round($grandTotal, 2),
                 'currency' => $currency,
-                'payment_method' => 'wallet',
+                'payment_method' => $processAgencyWallet ? 'wallet' : 'provider_wallet',
                 'payment_reference' => (string) ($policyItems[0]['policy_number'] ?? $policyItems[0]['report_reference'] ?? ''),
                 'contact' => [
                     'full_name' => (string) ($clientProfileData['name'] ?? ''),
@@ -156,21 +159,26 @@ class CreateOrderFromInsuranceBooking
                 $commissionAmount = round(($netPremium * $commissionPercent) / 100, 2);
                 $passenger = is_array($item['passenger'] ?? null) ? $item['passenger'] : [];
                 $policyDetails = is_array($item['policy_details'] ?? null) ? $item['policy_details'] : [];
+                $passengerName = trim(((string) ($passenger['first_name'] ?? '')).' '.((string) ($passenger['last_name'] ?? '')));
 
                 $order->items()->create([
                     'type' => 'insurance',
                     'product_type' => 'insurance',
                     'product_subtype' => 'travel',
                     'provider' => $insuranceProvider?->provider_type ?? 'albaraka',
-                    'provider_reference' => (string) ($policyDetails['policy_number'] ?? ''),
+                    'provider_reference' => (string) ($policyDetails['policy_id'] ?? ''),
                     'ticket_number' => (string) ($policyDetails['policy_number'] ?? ''),
                     'item_details' => [
-                        'passenger_name' => trim(((string) ($passenger['first_name'] ?? '')).' '.((string) ($passenger['last_name'] ?? ''))),
-                        'financial_source' => 'master_agency_supply',
+                        'passenger_name' => $passengerName,
+                        'financial_source' => $processAgencyWallet ? 'master_agency_supply' : 'own_provider_wallet',
                         'default_agency_tenant_id' => $defaultAgencyTenantId,
                         'beneficiary' => $clientProfileData,
                         'insurance' => [
                             'passenger' => $passenger,
+                            'zone_id' => $policyDetails['zone_id'] ?? null,
+                            'duration_id' => $policyDetails['duration_id'] ?? null,
+                            'policy_date_from' => $policyDetails['policy_date_from'] ?? null,
+                            'policy_date_to' => $policyDetails['policy_date_to'] ?? null,
                             'policy_number' => (string) ($policyDetails['policy_number'] ?? ''),
                             'report_reference' => (string) ($policyDetails['report_reference'] ?? ''),
                             'provider_response' => $policyDetails['raw'] ?? $policyDetails,
@@ -181,6 +189,11 @@ class CreateOrderFromInsuranceBooking
                         'provider' => $insuranceProvider?->name ?? 'Al Baraka Insurance',
                         'product_subtype' => 'travel',
                         'beneficiary' => $clientProfileData,
+                        'passenger_name' => $passengerName,
+                        'zone_id' => $policyDetails['zone_id'] ?? null,
+                        'duration_id' => $policyDetails['duration_id'] ?? null,
+                        'policy_date_from' => $policyDetails['policy_date_from'] ?? null,
+                        'policy_date_to' => $policyDetails['policy_date_to'] ?? null,
                         'passenger' => $passenger,
                         'policy_details' => $policyDetails,
                     ],
@@ -199,7 +212,7 @@ class CreateOrderFromInsuranceBooking
                     'currency' => strtoupper((string) ($item['currency'] ?? $currency)),
                     'exchange_rate' => 1,
                     'status' => 'issued',
-                    'transaction_type' => 'issue',
+                    'transaction_type' => 'purchase',
                     'commission_percent' => $commissionPercent,
                     'commission_amount' => $commissionAmount,
                     'net_after_commission' => round($netPremium - $commissionAmount, 2),
@@ -210,9 +223,14 @@ class CreateOrderFromInsuranceBooking
                 ]);
             }
 
-            $this->processWalletTransactions->execute($order, $issuer, allowNegativeBalance: true);
-            $this->initializeTenantLedger->execute();
-            $this->postToLedger->execute($order, includeOwnCredentials: false);
+            if ($processAgencyWallet) {
+                $this->processWalletTransactions->execute($order, $issuer, allowNegativeBalance: false);
+            }
+
+            if ($processAgencyWallet) {
+                $this->initializeTenantLedger->execute();
+                $this->postToLedger->execute($order, includeOwnCredentials: false);
+            }
 
             return $order->fresh('items');
         });
@@ -231,8 +249,9 @@ class CreateOrderFromInsuranceBooking
         ?TenantInsuranceProvider $insuranceProvider,
         ?array $beneficiaryData,
         ?array $policyDetails,
+        bool $processAgencyWallet = true,
     ): Order {
-        return DB::transaction(function () use ($issuer, $productSubtype, $bookingResult, $requestPayload, $insuranceProvider, $beneficiaryData, $policyDetails): Order {
+        return DB::transaction(function () use ($issuer, $productSubtype, $bookingResult, $requestPayload, $insuranceProvider, $beneficiaryData, $policyDetails, $processAgencyWallet): Order {
             $commissionPercent = $insuranceProvider?->commissionForProductType($productSubtype) ?? 0.0;
             $commissionAmount = round(($bookingResult->netPremium * $commissionPercent) / 100, 2);
             $defaultAgencyTenantId = $this->resolveDefaultAgencyTenantId();
@@ -249,7 +268,7 @@ class CreateOrderFromInsuranceBooking
                 'grand_total' => $bookingResult->totalPremium,
                 'amount_paid' => $bookingResult->totalPremium,
                 'currency' => $currency,
-                'payment_method' => 'wallet',
+                'payment_method' => $processAgencyWallet ? 'wallet' : 'provider_wallet',
                 'payment_reference' => $bookingResult->policyNumber ?: $bookingResult->reportReference,
                 'contact' => null,
             ]);
@@ -262,7 +281,7 @@ class CreateOrderFromInsuranceBooking
                 'provider_reference' => $bookingResult->policyNumber ?: $bookingResult->reportReference,
                 'ticket_number' => $bookingResult->policyNumber,
                 'item_details' => [
-                    'financial_source' => 'master_agency_supply',
+                    'financial_source' => $processAgencyWallet ? 'master_agency_supply' : 'own_provider_wallet',
                     'default_agency_tenant_id' => $defaultAgencyTenantId,
                     'beneficiary' => $beneficiaryData,
                     'insurance' => [
@@ -303,9 +322,14 @@ class CreateOrderFromInsuranceBooking
                 'remaining' => 0,
             ]);
 
-            $this->processWalletTransactions->execute($order, $issuer, allowNegativeBalance: true);
-            $this->initializeTenantLedger->execute();
-            $this->postToLedger->execute($order, includeOwnCredentials: false);
+            if ($processAgencyWallet) {
+                $this->processWalletTransactions->execute($order, $issuer, allowNegativeBalance: false);
+            }
+
+            if ($processAgencyWallet) {
+                $this->initializeTenantLedger->execute();
+                $this->postToLedger->execute($order, includeOwnCredentials: false);
+            }
 
             return $order->fresh('items');
         });

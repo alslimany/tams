@@ -5,6 +5,9 @@ namespace App\Models\Tenant;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
+/**
+ * @deprecated Migration source only; use Bavix provider wallet transactions instead.
+ */
 class AirlineTransaction extends Model
 {
     protected $guarded = [];

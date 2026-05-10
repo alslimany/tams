@@ -1,0 +1,18 @@
+{
+  "version": "1.0",
+  "last_updated": "2026-05-06T00:00:00Z",
+  "libraries": {
+    "3t-hotel-api": {
+      "files": [
+        {
+          "filename": "hotels-content-countries-cities-autocomplete.md",
+          "topic": "hotels-content countries/cities and autocomplete response shape",
+          "tech_stack": "Postman Documenter API",
+          "fetched": "2026-05-06T00:00:00Z",
+          "source": "Postman Documenter API",
+          "official_docs": "https://documenter.getpostman.com/view/5722171/2sB34hHLYX"
+        }
+      ]
+    }
+  }
+}

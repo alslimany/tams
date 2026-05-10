@@ -3,13 +3,13 @@
 namespace App\Http\Controllers\Tenant;
 
 use App\Http\Controllers\Controller;
-use App\Models\Tenant\AirlineAccount;
 use App\Models\TenantProvider;
 use App\Services\Airline\AgencyProviderResolver;
 use App\Services\Airline\ProviderFactory;
 use App\Services\Airline\Videcom\BaseVidecomAirline;
 use Exception;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 
 class AirlineConfigController extends Controller
@@ -145,10 +145,7 @@ class AirlineConfigController extends Controller
                 $remainingBalance = null;
 
                 if ($existing) {
-                    $accountBalance = AirlineAccount::query()
-                        ->where('tenant_provider_id', $existing->id)
-                        ->where('currency', $account['currency'])
-                        ->value('balance');
+                    $accountBalance = $existing->getBalance((string) $account['currency']);
 
                     if ($accountBalance !== null) {
                         $remainingBalance = number_format((float) $accountBalance, 2, '.', '');
@@ -344,6 +341,37 @@ class AirlineConfigController extends Controller
         return back()->with('success', $provider->airline_name.' '.($provider->is_active ? 'enabled' : 'disabled'));
     }
 
+    public function deposit(Request $request)
+    {
+        // Redirect if agency is not allowed to manage its own providers
+        if (! $this->providerResolver->canManageOwnProviders()) {
+            return back()->with('error', 'Airline providers are managed by the system.');
+        }
+
+        $validated = $request->validate([
+            'tenant_provider_id' => ['required', 'integer', 'exists:tenant_providers,id'],
+            'currency' => ['required', 'string', 'size:3'],
+            'amount' => ['required', 'numeric', 'gt:0'],
+            'description' => ['nullable', 'string', 'max:255'],
+        ]);
+
+        $provider = TenantProvider::query()->findOrFail((int) $validated['tenant_provider_id']);
+        $currency = strtoupper((string) $validated['currency']);
+        $depositAmount = round((float) $validated['amount'], 2);
+
+        DB::transaction(function () use ($provider, $currency, $depositAmount, $validated): void {
+            $wallet = $provider->getOrCreateCurrencyWallet($currency);
+
+            $wallet->depositFloat($depositAmount, [
+                'type' => 'deposit',
+                'airline_code' => $provider->airline_code,
+                'description' => (string) ($validated['description'] ?? 'Manual airline provider deposit from settings.'),
+            ]);
+        });
+
+        return back()->with('success', 'Airline provider wallet balance updated.');
+    }
+
     protected function syncOpeningBalance(TenantProvider $provider): void
     {
         try {
@@ -359,15 +387,25 @@ class AirlineConfigController extends Controller
             $balanceCurrency = strtoupper((string) ($balanceResult['currency'] ?? $currency));
             $balanceAmount = (float) ($balanceResult['balance'] ?? 0);
 
-            AirlineAccount::query()->updateOrCreate(
-                [
-                    'tenant_provider_id' => $provider->id,
-                    'currency' => $balanceCurrency,
-                ],
-                [
-                    'balance' => $balanceAmount,
-                ]
-            );
+            $wallet = $provider->getOrCreateCurrencyWallet($balanceCurrency);
+            $currentBalance = (float) $wallet->balanceFloat;
+            $delta = round($balanceAmount - $currentBalance, 2);
+
+            if ($delta > 0) {
+                $wallet->depositFloat($delta, [
+                    'type' => 'provider_sync_adjustment',
+                    'airline_code' => $provider->airline_code,
+                    'description' => 'Synced provider balance from API.',
+                ]);
+            }
+
+            if ($delta < 0) {
+                $wallet->forceWithdrawFloat(abs($delta), [
+                    'type' => 'provider_sync_adjustment',
+                    'airline_code' => $provider->airline_code,
+                    'description' => 'Synced provider balance from API.',
+                ]);
+            }
         } catch (\Throwable $exception) {
             report($exception);
         }

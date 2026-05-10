@@ -11,6 +11,7 @@ import { Settings, Shield } from 'lucide-react';
 
 export default function InsuranceSettings({ providers = [] }) {
     const [selectedProvider, setSelectedProvider] = React.useState(null);
+    const [depositAmounts, setDepositAmounts] = React.useState({});
 
     const form = useForm({
         provider_type: '',
@@ -21,6 +22,14 @@ export default function InsuranceSettings({ providers = [] }) {
         commission_compulsory: 0,
         commission_travel: 0,
         commission_orange: 0,
+        initial_balance: '',
+    });
+
+    const depositForm = useForm({
+        provider_type: '',
+        currency: 'LYD',
+        amount: '',
+        description: '',
     });
 
     const openConfig = (provider) => {
@@ -34,6 +43,7 @@ export default function InsuranceSettings({ providers = [] }) {
             commission_compulsory: provider.commission_compulsory ?? 0,
             commission_travel: provider.commission_travel ?? 0,
             commission_orange: provider.commission_orange ?? 0,
+            initial_balance: '',
         });
     };
 
@@ -42,6 +52,31 @@ export default function InsuranceSettings({ providers = [] }) {
         form.post(route('settings.insurance.store'), {
             onSuccess: () => {
                 setSelectedProvider(null);
+            },
+        });
+    };
+
+    const submitDeposit = (provider) => {
+        const amount = depositAmounts[provider.provider_type] ?? '';
+
+        if (!amount) {
+            return;
+        }
+
+        depositForm.setData({
+            provider_type: provider.provider_type,
+            currency: provider.currency || 'LYD',
+            amount,
+            description: '',
+        });
+
+        depositForm.post(route('settings.insurance.deposit'), {
+            preserveScroll: true,
+            onSuccess: () => {
+                setDepositAmounts((prev) => ({
+                    ...prev,
+                    [provider.provider_type]: '',
+                }));
             },
         });
     };
@@ -77,10 +112,41 @@ export default function InsuranceSettings({ providers = [] }) {
                             </CardHeader>
                             <CardContent className="space-y-3">
                                 <div className="text-xs text-muted-foreground">Base URL: {provider.base_url}</div>
+                                <div className="text-xs text-muted-foreground">
+                                    Wallet Balance: <span className="font-medium text-foreground">{provider.remaining_balance?.toFixed(2)} {provider.currency || 'LYD'}</span>
+                                </div>
                                 <div className="grid gap-1 text-xs text-muted-foreground">
                                     <div>Compulsory: {provider.commission_compulsory}%</div>
                                     <div>Travel: {provider.commission_travel}%</div>
                                     <div>Orange: {provider.commission_orange}%</div>
+                                </div>
+                                {provider.requires_initial_balance && (
+                                    <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                                        This provider does not expose a balance API. Add an initial balance before issuing policies.
+                                    </div>
+                                )}
+                                <div className="grid grid-cols-[1fr_auto] gap-2">
+                                    <Input
+                                        type="number"
+                                        min="0"
+                                        step="0.01"
+                                        placeholder="Deposit amount"
+                                        value={depositAmounts[provider.provider_type] ?? ''}
+                                        onChange={(event) =>
+                                            setDepositAmounts((prev) => ({
+                                                ...prev,
+                                                [provider.provider_type]: event.target.value,
+                                            }))
+                                        }
+                                    />
+                                    <Button
+                                        type="button"
+                                        variant="secondary"
+                                        onClick={() => submitDeposit(provider)}
+                                        disabled={depositForm.processing}
+                                    >
+                                        Deposit
+                                    </Button>
                                 </div>
                                 <div className="flex items-center justify-between rounded-md border px-3 py-2">
                                     <span className="text-sm">Active</span>
@@ -166,6 +232,21 @@ export default function InsuranceSettings({ providers = [] }) {
                                             />
                                             {form.errors.commission_orange && <p className="text-xs text-destructive">{form.errors.commission_orange}</p>}
                                         </div>
+                                    </div>
+
+                                    <div className="grid gap-2">
+                                        <Label htmlFor="initial_balance">Initial Provider Wallet Balance (optional)</Label>
+                                        <Input
+                                            id="initial_balance"
+                                            type="number"
+                                            min="0"
+                                            step="0.01"
+                                            value={form.data.initial_balance}
+                                            onChange={(event) => form.setData('initial_balance', event.target.value)}
+                                            placeholder="0.00"
+                                        />
+                                        <p className="text-xs text-muted-foreground">Applied only when current provider wallet balance is zero.</p>
+                                        {form.errors.initial_balance && <p className="text-xs text-destructive">{form.errors.initial_balance}</p>}
                                     </div>
 
                                     <div className="flex items-center justify-between rounded-md border px-3 py-2">

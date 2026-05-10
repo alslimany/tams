@@ -2,7 +2,7 @@
 
 namespace App\Actions\Orders;
 
-use App\Models\Tenant\AirlineAccount;
+use App\Actions\Finance\ProcessProviderWalletTransactions;
 use App\Models\Tenant\Order;
 use App\Models\Tenant\OrderItem;
 use App\Models\TenantProvider;
@@ -20,7 +20,7 @@ class ProcessFinancialTransactions
             $resolvedPaymentMethod = null;
 
             foreach ($order->items as $item) {
-                if ($item->wallet_transaction_id || $item->airline_transaction_id) {
+                if ($item->wallet_transaction_id) {
                     continue;
                 }
 
@@ -31,7 +31,7 @@ class ProcessFinancialTransactions
                 $usesAirlineWallet = in_array((string) $order->payment_method, ['airline_account', 'airline_token'], true);
 
                 if ($provider && ($usesOwnCredentials || $usesAirlineWallet)) {
-                    $this->createAirlineAccountTransaction($order, $item, $provider);
+                    $this->createProviderWalletTransaction($order, $item, $provider);
                     $resolvedPaymentMethod ??= 'airline_account';
 
                     continue;
@@ -49,29 +49,9 @@ class ProcessFinancialTransactions
         });
     }
 
-    protected function createAirlineAccountTransaction(Order $order, OrderItem $item, TenantProvider $provider): void
+    protected function createProviderWalletTransaction(Order $order, OrderItem $item, TenantProvider $provider): void
     {
-        $account = AirlineAccount::query()->firstOrCreate([
-            'tenant_provider_id' => $provider->id,
-            'currency' => $item->currency,
-        ]);
-
-        $currentBalance = (float) $account->balance;
-        $itemTotal = (float) $item->total;
-        $newBalance = $currentBalance - $itemTotal;
-
-        $transaction = $account->transactions()->create([
-            'type' => 'ticket_cost',
-            'amount' => -$itemTotal,
-            'balance_after' => $newBalance,
-            'order_item_id' => $item->id,
-            'external_reference' => $item->provider_reference,
-            'description' => 'Ticket for '.($item->item_details['passenger_name'] ?? 'Passenger'),
-        ]);
-
-        $account->update(['balance' => $newBalance]);
-
-        $item->update(['airline_transaction_id' => $transaction->id]);
+        app(ProcessProviderWalletTransactions::class)->executeForItem($order, $item, $provider);
     }
 
     protected function createWalletTransactions(Order $order, OrderItem $item, User $issuer): void
@@ -110,8 +90,11 @@ class ProcessFinancialTransactions
     protected function resolveAgencyWalletHolder(User $fallback): User
     {
         return User::query()
-            ->whereIn('role', ['admin', 'manager'])
-            ->orderBy('id')
+            ->where(function ($query): void {
+                $query->where('role', 'admin')
+                    ->orWhere('role', 'manager');
+            })
+            ->orderBy('id', 'asc')
             ->first() ?? $fallback;
     }
 

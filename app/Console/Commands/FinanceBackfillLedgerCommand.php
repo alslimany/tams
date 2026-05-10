@@ -17,7 +17,7 @@ class FinanceBackfillLedgerCommand extends Command
         {--limit=200 : Maximum number of orders to process when identifier is omitted}
         {--skip-initialize : Skip ledger initialization step}';
 
-    protected $description = 'Backfill missing ledger entries for orders that already have wallet/airline transactions.';
+    protected $description = 'Backfill missing ledger entries for orders that already have wallet transactions.';
 
     public function handle(): int
     {
@@ -116,11 +116,7 @@ class FinanceBackfillLedgerCommand extends Command
             ->whereHas('items', function ($query): void {
                 $query
                     ->whereNull('ledger_entry_id')
-                    ->where(function ($nested): void {
-                        $nested
-                            ->whereNotNull('wallet_transaction_id')
-                            ->orWhereNotNull('airline_transaction_id');
-                    });
+                    ->whereNotNull('wallet_transaction_id');
             })
             ->orderBy('issued_at')
             ->orderBy('created_at')

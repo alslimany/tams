@@ -40,6 +40,15 @@ class ApplyFinancialSourceAndCommission
             $details['financial_source'] = $source->type;
             $details['financial_provider_id'] = $source->provider?->id;
             $details['financial_source_tenant_id'] = data_get($resolvedProvider, 'resolved_tenant_id');
+            $details['provider_source_type'] = data_get($resolvedProvider, 'source_type');
+            $details['is_default_agency_deprecated'] = (bool) data_get($resolvedProvider, 'is_default_agency_deprecated', false);
+
+            foreach (['provider_selector', 'source_agency_tenant_id', 'merchant_tenant_id', 'network_membership_id', 'provider_allocation_id', 'source_provider_model', 'source_provider_id'] as $metadataKey) {
+                $metadataValue = data_get($resolvedProvider, $metadataKey);
+                if ($metadataValue !== null) {
+                    $details[$metadataKey] = $metadataValue;
+                }
+            }
 
             $commissionPercent = (float) ($commission['percent'] ?? 0);
             $commissionAmount = (float) ($commission['amount'] ?? 0);
@@ -60,6 +69,13 @@ class ApplyFinancialSourceAndCommission
                 $agentCommission = $masterCommissionAmount;
             } else {
                 $details['settlement_source'] = 'own_credentials';
+            }
+
+            if ($source->usesOwnCredentials() && ($source->provider?->provider_type ?? null) === 'videcom') {
+                $details['provider_financial_mode'] = 'discount';
+                $details['provider_discount_amount'] = $commissionAmount;
+                $details['provider_net_fare'] = $netAfterCommission;
+                $details['provider_payable_amount'] = round($netAfterCommission + (float) ($item->total_tax ?? 0), 2);
             }
 
             $item->fill([

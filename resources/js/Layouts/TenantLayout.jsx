@@ -6,6 +6,7 @@ import {
     LayoutDashboardIcon,
     LogOutIcon,
     PlaneTakeoffIcon,
+    HotelIcon,
     PlaneLandingIcon,
     ReceiptTextIcon,
     ScaleIcon,
@@ -75,12 +76,14 @@ export default function TenantLayout({ children }) {
     const mainLinks = [
         { name: 'Dashboard', route: 'dashboard', icon: LayoutDashboardIcon },
         { name: 'Flights', route: 'flights.index', icon: BookOpenCheckIcon },
+        { name: 'Hotels', route: 'hotels.index', icon: HotelIcon },
         { name: 'Insurance Search', route: 'insurance.search', icon: ShieldIcon },
     ].filter((item) => hasRoute(item.route));
 
     const adminLinks = [
         { name: 'Users', route: 'users.index', icon: UsersIcon },
         { name: 'Air Config', route: 'settings.airlines.index', icon: PlaneTakeoffIcon, showWhen: canManageProviders },
+        { name: 'Hotel Config', route: 'settings.hotels.index', icon: HotelIcon },
         { name: 'Insurance Config', route: 'settings.insurance.index', icon: ShieldIcon },
         { name: 'General Settings', route: 'settings.general.index', icon: SettingsIcon },
     ].filter((item) => isAdmin && hasRoute(item.route) && (item.showWhen !== false));

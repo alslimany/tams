@@ -5,6 +5,10 @@ namespace App\Http\Controllers\Tenant;
 use App\Http\Controllers\Controller;
 use App\Models\Tenant\Order;
 use App\Models\Tenant\OrderItem;
+use App\Models\Tenant\TenantHotelProvider;
+use App\Models\Tenant\TenantInsuranceProvider;
+use App\Models\TenantProvider;
+use App\Models\User;
 use Bavix\Wallet\Models\Transaction as WalletTransaction;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -219,7 +223,12 @@ class ReportController extends Controller
         $endDate = $request->string('end_date', now()->toDateString())->toString();
         $type = $request->string('type', '')->toString();
 
-        $wallets = $request->user()->wallets;
+        $wallets = $request->user()->wallets
+            ->merge(TenantProvider::query()->get()->flatMap->wallets)
+            ->merge(TenantInsuranceProvider::query()->get()->flatMap->wallets)
+            ->merge(TenantHotelProvider::query()->get()->flatMap->wallets)
+            ->unique('id')
+            ->values();
 
         $walletIds = $wallets->pluck('id')->all();
 
@@ -236,10 +245,19 @@ class ReportController extends Controller
             ->withQueryString();
 
         $walletMap = $wallets->keyBy('id');
+        $holderMap = $wallets
+            ->mapWithKeys(fn ($wallet): array => [
+                $wallet->id => [
+                    'type' => $wallet->holder_type,
+                    'id' => $wallet->holder_id,
+                ],
+            ]);
 
-        $transactions->through(function (WalletTransaction $transaction) use ($walletMap): array {
+        $transactions->through(function (WalletTransaction $transaction) use ($walletMap, $holderMap): array {
             $wallet = $walletMap->get($transaction->wallet_id);
             $meta = is_array($transaction->meta) ? $transaction->meta : [];
+            $holder = $holderMap->get($transaction->wallet_id, []);
+            $holderType = $this->walletHolderLabel((string) ($holder['type'] ?? ''));
 
             return [
                 'id' => $transaction->id,
@@ -247,6 +265,8 @@ class ReportController extends Controller
                 'type' => $transaction->type,
                 'amount' => (float) ($transaction->amount / 100),
                 'currency' => $wallet?->meta['currency'] ?? $wallet?->slug ?? 'USD',
+                'wallet_holder_type' => $holderType,
+                'wallet_holder_name' => $this->walletHolderName((string) ($holder['type'] ?? ''), $holder['id'] ?? null),
                 'meta' => $meta,
                 'order_id' => $meta['order_id'] ?? null,
                 'description' => $meta['description'] ?? $meta['type'] ?? '',
@@ -257,6 +277,8 @@ class ReportController extends Controller
         $balanceSummary = $wallets->map(fn ($wallet) => [
             'slug' => $wallet->slug,
             'currency' => $wallet->meta['currency'] ?? $wallet->slug,
+            'holder_type' => $this->walletHolderLabel((string) $wallet->holder_type),
+            'holder_name' => $this->walletHolderName((string) $wallet->holder_type, $wallet->holder_id),
             'balance' => (float) ($wallet->balance / 100),
         ])->values();
 
@@ -269,6 +291,32 @@ class ReportController extends Controller
                 'type' => $type,
             ],
         ]);
+    }
+
+    protected function walletHolderLabel(string $holderType): string
+    {
+        return match ($holderType) {
+            User::class => 'Tenant Wallet',
+            TenantProvider::class => 'Airline Provider Wallet',
+            TenantInsuranceProvider::class => 'Insurance Provider Wallet',
+            TenantHotelProvider::class => 'Hotel Provider Wallet',
+            default => 'Wallet',
+        };
+    }
+
+    protected function walletHolderName(string $holderType, mixed $holderId): string
+    {
+        if (! is_numeric($holderId)) {
+            return $this->walletHolderLabel($holderType);
+        }
+
+        return match ($holderType) {
+            User::class => (string) (User::query()->find((int) $holderId)?->name ?? 'Tenant Wallet'),
+            TenantProvider::class => (string) (TenantProvider::query()->find((int) $holderId)?->airline_name ?? 'Airline Provider'),
+            TenantInsuranceProvider::class => (string) (TenantInsuranceProvider::query()->find((int) $holderId)?->name ?? 'Insurance Provider'),
+            TenantHotelProvider::class => (string) (TenantHotelProvider::query()->find((int) $holderId)?->name ?? 'Hotel Provider'),
+            default => 'Wallet',
+        };
     }
 
     /**
@@ -318,15 +366,17 @@ class ReportController extends Controller
             ]];
         });
 
-        // Airline account totals.
-        $airlineAccountTotals = DB::table('airline_accounts')
-            ->join('airline_transactions', 'airline_accounts.id', '=', 'airline_transactions.airline_account_id')
-            ->whereBetween(DB::raw('DATE(airline_transactions.created_at)'), [$startDate, $endDate])
-            ->groupBy('airline_accounts.currency')
+        // Provider (airline own-credentials) debits from bavix wallets.
+        $airlineAccountTotals = DB::table('wallets')
+            ->join('transactions', 'wallets.id', '=', 'transactions.wallet_id')
+            ->where('wallets.holder_type', TenantProvider::class)
+            ->where('transactions.type', 'withdraw')
+            ->whereBetween(DB::raw('DATE(transactions.created_at)'), [$startDate, $endDate])
+            ->groupBy('wallets.slug')
             ->get([
-                'airline_accounts.currency',
-                DB::raw('SUM(airline_transactions.amount) as total_airline_debits'),
-                DB::raw('COUNT(airline_transactions.id) as transaction_count'),
+                DB::raw('REPLACE(wallets.slug, "AIR_", "") as currency'),
+                DB::raw('SUM(transactions.amount) / 100.0 as total_airline_debits'),
+                DB::raw('COUNT(transactions.id) as transaction_count'),
             ]);
 
         // Build reconciliation rows by currency.

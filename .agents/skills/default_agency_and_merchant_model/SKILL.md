@@ -1,12 +1,19 @@
 ---
 name: default-agency-and-merchant-model
-description: "Default agency (master agency) model for forcing tenant agencies to use default airline providers, and future merchant network model with agency/merchant relationships."
+description: "Default agency (master agency) model for forcing tenant agencies to use default airline providers. For future merchant networks, use agency-network-and-merchant-model."
 license: MIT
 metadata:
   author: booknow
 ---
 
-# Default Agency & Merchant Model (Planned)
+# Default Agency Model
+
+## Related Skills
+
+- Read `financial-and-wallet-system` for wallet, provider balance, order, and ledger rules.
+- Read `agency-network-and-merchant-model` for future merchant network membership, invitation, provider allocation, and dual-wallet issuance rules.
+
+This skill covers the current default agency/master agency behavior only.
 
 ## Current Implementation (Default Agency)
 - Central admin can mark one tenant as `is_default_agency = true`.
@@ -19,17 +26,34 @@ metadata:
 - Commission owed to default agency is tracked in `order_item.agent_commission` as a liability.
 - Settlement is manual via central admin reports.
 
-## Future: Agency Network & Merchant Model (Not Yet Implemented)
-- **Agency**: Can host its own providers and invite merchants to join its network.
-- **Merchant**: Small agency without own providers. Can join multiple Agency networks, selecting which providers to use from each.
-- Wallets will move to central DB to enable cross‑tenant transfers.
-- Orders will be stored in merchant's tenant DB, with references to the supplying agency.
-- Commission splitting between Agency and Merchant will be handled centrally.
+## Provider Resolution Rule
+
+Default agency providers may belong to a different tenant database. Do not validate selected provider IDs with a local `exists:tenant_providers,id` rule when default agency providers are possible.
+
+Use resolver-based lookup instead:
+
+- Local tenant provider.
+- Default agency provider.
+- Future agency-network allocated provider.
+
+Carry source metadata into selected offer cache, order item details, wallet metadata, and ledger context.
+
+## Future: Agency Network & Merchant Model
+
+The merchant network model is documented in `agency-network-and-merchant-model`.
+
+Key decisions:
+
+- Do not add `tenant_type`; future subscription packages/plans provide capabilities.
+- Merchants join agency networks with invitation tokens.
+- `network_memberships` and `provider_allocations` live in the central database.
+- Merchant issuance validates both merchant wallet and agency provider wallet before external API calls.
+- Agency provider credentials are never copied into merchant tenant databases.
 
 ## Transition Plan (for later)
-- Central wallet tables (`entities`, `wallets`, `transactions`).
 - `network_memberships` and `provider_allocations` tables.
-- Modify financial actions to use central wallets.
+- Extend provider resolver to return agency-network allocated providers.
+- Modify financial actions to support merchant wallet plus agency provider wallet validation/deduction.
 - API endpoints for agency to manage network, merchant to request join.
 
 ## Current Restrictions (to keep in mind)

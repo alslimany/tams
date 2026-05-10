@@ -195,6 +195,10 @@ return [
     |
     */
 
-    'attributes' => [],
+    'attributes' => [
+        'city_id' => 'destination',
+        'check_in' => 'check-in date',
+        'check_out' => 'check-out date',
+    ],
 
 ];

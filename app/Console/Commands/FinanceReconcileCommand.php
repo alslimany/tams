@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Models\Tenant;
 use App\Models\Tenant\OrderItem;
+use App\Models\TenantProvider;
 use App\Models\User;
 use Bavix\Wallet\Models\Transaction as WalletTransaction;
 use Illuminate\Console\Command;
@@ -116,15 +117,17 @@ class FinanceReconcileCommand extends Command
             });
         }
 
-        // Airline account totals.
-        $airlineAccountTotals = DB::table('airline_accounts')
-            ->join('airline_transactions', 'airline_accounts.id', '=', 'airline_transactions.airline_account_id')
-            ->whereBetween(DB::raw('DATE(airline_transactions.created_at)'), [$startDate, $endDate])
-            ->when($currencyFilter, fn ($q) => $q->where('airline_accounts.currency', $currencyFilter))
-            ->groupBy('airline_accounts.currency')
+        // Airline-provider debits from bavix wallets.
+        $airlineAccountTotals = DB::table('wallets')
+            ->join('transactions', 'wallets.id', '=', 'transactions.wallet_id')
+            ->where('wallets.holder_type', TenantProvider::class)
+            ->where('transactions.type', 'withdraw')
+            ->whereBetween(DB::raw('DATE(transactions.created_at)'), [$startDate, $endDate])
+            ->when($currencyFilter, fn ($q) => $q->where('wallets.slug', 'AIR_'.strtoupper((string) $currencyFilter)))
+            ->groupBy('wallets.slug')
             ->get([
-                'airline_accounts.currency',
-                DB::raw('SUM(airline_transactions.amount) as total_airline_debits'),
+                DB::raw('REPLACE(wallets.slug, "AIR_", "") as currency'),
+                DB::raw('SUM(transactions.amount) / 100.0 as total_airline_debits'),
             ]);
 
         // Build reconciliation rows.

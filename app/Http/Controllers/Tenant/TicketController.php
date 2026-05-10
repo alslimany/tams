@@ -3,11 +3,11 @@
 namespace App\Http\Controllers\Tenant;
 
 use App\Actions\Finance\ApplyFinancialSourceAndCommission;
-use App\Actions\Finance\CreateAirlineTransactions;
 use App\Actions\Finance\CreateOrderFromBookingData;
 use App\Actions\Finance\DetermineFinancialSource;
 use App\Actions\Finance\InitializeTenantLedger;
 use App\Actions\Finance\PostToLedger;
+use App\Actions\Finance\ProcessProviderWalletTransactions;
 use App\Actions\Finance\ProcessWalletTransactions;
 use App\DTOs\Videcom\OrderItemData;
 use App\DTOs\Videcom\ParsedBookingData;
@@ -71,7 +71,7 @@ class TicketController extends Controller
         }
 
         try {
-            $this->assertWalletBalanceBeforeIssue($booking, $issuer);
+            $this->assertWalletBalanceBeforeIssue($booking, $issuer, $providerConfig);
         } catch (InsufficientWalletBalanceException $exception) {
             return back()->with('error', $exception->getMessage());
         }
@@ -134,9 +134,9 @@ class TicketController extends Controller
                     app(ProcessWalletTransactions::class)->execute($order, $issuer);
                 }
 
-                // Step 6: If financial source = 'own_credentials', record airline account debits.
+                // Step 6: If financial source = 'own_credentials', record provider wallet deductions.
                 if ($financialSources->contains('own_credentials')) {
-                    app(CreateAirlineTransactions::class)->execute($order);
+                    app(ProcessProviderWalletTransactions::class)->execute($order);
                 }
 
                 // Step 7: Create ledger entries.
@@ -301,6 +301,12 @@ class TicketController extends Controller
         DB::transaction(function () use ($booking, $voidedItems, $pnr, $voidedAmount, $oldStatus, $request): void {
             foreach ($voidedItems as $orderItem) {
                 $walletTransactionId = $this->depositVoidAmountToWallet($booking, $orderItem, $pnr, $request->user());
+                $providerWalletReversalId = $this->depositVoidAmountToProviderWallet($orderItem, $pnr);
+                $itemDetails = (array) $orderItem->item_details;
+
+                if ($providerWalletReversalId !== null) {
+                    $itemDetails['provider_wallet_void_transaction_id'] = $providerWalletReversalId;
+                }
 
                 $orderItem->update([
                     // Keep original PNR reference stable for traceability after void.
@@ -308,6 +314,7 @@ class TicketController extends Controller
                     // Keep original ticket number for historical visibility after void.
                     'ticket_number' => $orderItem->ticket_number,
                     'wallet_transaction_id' => $walletTransactionId ?: $orderItem->wallet_transaction_id,
+                    'item_details' => $itemDetails,
                     'status' => 'voided',
                     'remaining' => 0,
                 ]);
@@ -331,7 +338,7 @@ class TicketController extends Controller
         return back()->with('success', 'Ticket voided successfully.');
     }
 
-    public function refund(Order $booking, string $ticket): RedirectResponse
+    public function refund(Request $request, Order $booking, string $ticket): RedirectResponse
     {
         $item = $booking->items()->whereKey($ticket)->first();
         if (! $item) {
@@ -343,11 +350,7 @@ class TicketController extends Controller
             return back()->with('error', 'Ticket number is required for refund operation.');
         }
 
-        $airlineCode = (string) data_get($item->item_details, 'airline_code', data_get($item->item_details, 'iata', ''));
-        $providerConfig = TenantProvider::query()
-            ->where('is_active', true)
-            ->when($airlineCode !== '', fn ($query) => $query->where('airline_code', $airlineCode))
-            ->first();
+        $providerConfig = $this->resolveProviderForTicketAction($item);
 
         if (! $providerConfig) {
             return back()->with('error', 'No active provider found for this booking.');
@@ -367,13 +370,33 @@ class TicketController extends Controller
             return back()->with('error', 'Failed to refund ticket with the airline provider.');
         }
 
-        $this->dispatchDelayedAirlineBalanceUpdate($providerConfig);
+        $penaltyAmount = round((float) $request->input('penalty_amount', 0), 2);
 
-        $item->update(['status' => 'refunded']);
-        $booking->update([
-            'status' => 'refunded',
-            'amount_refunded' => (float) $booking->grand_total,
-        ]);
+        DB::transaction(function () use ($booking, $item, $ticketNumber, $penaltyAmount): void {
+            $refundResult = $this->depositRefundAmountToWallet($booking, $item, $ticketNumber, $penaltyAmount, request()->user());
+            $providerRefundTransactionId = $this->depositRefundAmountToProviderWallet($item, $ticketNumber);
+
+            $itemDetails = (array) $item->item_details;
+            data_set($itemDetails, 'refund.customer_wallet_transaction_id', $refundResult['refund_transaction_id']);
+            data_set($itemDetails, 'refund.penalty_wallet_transaction_id', $refundResult['penalty_transaction_id']);
+            data_set($itemDetails, 'refund.gross_refund_amount', $refundResult['gross_refund_amount']);
+            data_set($itemDetails, 'refund.penalty_amount', $refundResult['penalty_amount']);
+            data_set($itemDetails, 'refund.net_refund_amount', $refundResult['net_refund_amount']);
+            data_set($itemDetails, 'refund.provider_wallet_transaction_id', $providerRefundTransactionId);
+            data_set($itemDetails, 'refund.refunded_at', now()->toIso8601String());
+
+            $item->update([
+                'status' => 'refunded',
+                'item_details' => $itemDetails,
+            ]);
+
+            $booking->update([
+                'status' => 'refunded',
+                'amount_refunded' => round((float) $booking->amount_refunded + $refundResult['net_refund_amount'], 2),
+            ]);
+        });
+
+        $this->dispatchDelayedAirlineBalanceUpdate($providerConfig);
 
         return back()->with('success', 'Refund recorded successfully.');
     }
@@ -571,6 +594,178 @@ class TicketController extends Controller
     }
 
     /**
+     * @return array{refund_transaction_id:?string,penalty_transaction_id:?string,gross_refund_amount:float,penalty_amount:float,net_refund_amount:float}
+     */
+    protected function depositRefundAmountToWallet(Order $booking, OrderItem $orderItem, string $ticketNumber, float $penaltyAmount, ?User $user): array
+    {
+        $refundTarget = $this->resolveVoidRefundTarget($orderItem, $user);
+        if (! $refundTarget) {
+            return [
+                'refund_transaction_id' => null,
+                'penalty_transaction_id' => null,
+                'gross_refund_amount' => 0.0,
+                'penalty_amount' => 0.0,
+                'net_refund_amount' => 0.0,
+            ];
+        }
+
+        $walletHolder = $refundTarget['holder'];
+        $grossRefundAmount = round((float) $refundTarget['amount'], 2);
+        $penaltyAmount = min(max(round($penaltyAmount, 2), 0.0), $grossRefundAmount);
+
+        if ($grossRefundAmount <= 0) {
+            return [
+                'refund_transaction_id' => null,
+                'penalty_transaction_id' => null,
+                'gross_refund_amount' => 0.0,
+                'penalty_amount' => 0.0,
+                'net_refund_amount' => 0.0,
+            ];
+        }
+
+        $wallet = $walletHolder->getOrCreateCurrencyWallet($booking->currency);
+        $refundTransaction = $wallet->depositFloat($grossRefundAmount, [
+            'order_id' => $booking->id,
+            'order_item_id' => $orderItem->id,
+            'type' => 'ticket_refund',
+            'description' => "Refund for ticket {$ticketNumber}",
+        ]);
+
+        $penaltyTransaction = null;
+
+        if ($penaltyAmount > 0) {
+            $penaltyTransaction = $wallet->withdrawFloat($penaltyAmount, [
+                'order_id' => $booking->id,
+                'order_item_id' => $orderItem->id,
+                'type' => 'ticket_refund_penalty',
+                'description' => "Refund penalty for ticket {$ticketNumber}",
+            ]);
+        }
+
+        return [
+            'refund_transaction_id' => $refundTransaction?->uuid,
+            'penalty_transaction_id' => $penaltyTransaction?->uuid,
+            'gross_refund_amount' => $grossRefundAmount,
+            'penalty_amount' => $penaltyAmount,
+            'net_refund_amount' => round($grossRefundAmount - $penaltyAmount, 2),
+        ];
+    }
+
+    protected function depositVoidAmountToProviderWallet(OrderItem $orderItem, string $pnr): ?string
+    {
+        $originalTransactionUuid = (string) (
+            data_get($orderItem->item_details, 'provider_wallet_transaction_id')
+            ?: $orderItem->wallet_transaction_id
+        );
+
+        if ($originalTransactionUuid === '') {
+            return null;
+        }
+
+        $originalTransaction = WalletTransaction::query()
+            ->where('uuid', $originalTransactionUuid)
+            ->first(['wallet_id', 'amount']);
+
+        if (! $originalTransaction?->wallet_id) {
+            return null;
+        }
+
+        $walletOwner = DB::table('wallets')
+            ->where('id', (int) $originalTransaction->wallet_id)
+            ->first(['holder_type', 'holder_id', 'slug', 'meta']);
+
+        if (! $walletOwner || (string) $walletOwner->holder_type !== TenantProvider::class) {
+            return null;
+        }
+
+        $provider = TenantProvider::query()->find((int) $walletOwner->holder_id);
+
+        if (! $provider instanceof TenantProvider) {
+            return null;
+        }
+
+        $amount = round(abs((float) $originalTransaction->amount) / 100, 2);
+
+        if ($amount <= 0) {
+            return null;
+        }
+
+        $currency = (string) ($orderItem->currency ?: data_get(json_decode((string) $walletOwner->meta, true), 'currency', 'LYD'));
+        $wallet = $provider->getOrCreateCurrencyWallet($currency);
+
+        $transaction = $wallet->depositFloat($amount, [
+            'order_id' => $orderItem->order_id,
+            'order_item_id' => $orderItem->id,
+            'type' => 'provider_void_refund',
+            'provider_type' => 'airline',
+            'provider_id' => $provider->id,
+            'airline_code' => $provider->airline_code,
+            'provider_reference' => $pnr,
+            'original_transaction_id' => $originalTransactionUuid,
+            'description' => "Provider wallet reversal for voided PNR {$pnr}",
+        ]);
+
+        return $transaction?->uuid;
+    }
+
+    protected function depositRefundAmountToProviderWallet(OrderItem $orderItem, string $ticketNumber): ?string
+    {
+        $originalTransactionUuid = (string) (
+            data_get($orderItem->item_details, 'provider_wallet_transaction_id')
+            ?: $orderItem->wallet_transaction_id
+        );
+
+        if ($originalTransactionUuid === '') {
+            return null;
+        }
+
+        $originalTransaction = WalletTransaction::query()
+            ->where('uuid', $originalTransactionUuid)
+            ->first(['wallet_id', 'amount']);
+
+        if (! $originalTransaction?->wallet_id) {
+            return null;
+        }
+
+        $walletOwner = DB::table('wallets')
+            ->where('id', (int) $originalTransaction->wallet_id)
+            ->first(['holder_type', 'holder_id', 'slug', 'meta']);
+
+        if (! $walletOwner || (string) $walletOwner->holder_type !== TenantProvider::class) {
+            return null;
+        }
+
+        $provider = TenantProvider::query()->find((int) $walletOwner->holder_id);
+
+        if (! $provider instanceof TenantProvider) {
+            return null;
+        }
+
+        $amount = round(abs((float) $originalTransaction->amount) / 100, 2);
+
+        if ($amount <= 0) {
+            return null;
+        }
+
+        $currency = (string) ($orderItem->currency ?: data_get(json_decode((string) $walletOwner->meta, true), 'currency', 'LYD'));
+        $wallet = $provider->getOrCreateCurrencyWallet($currency);
+
+        $transaction = $wallet->depositFloat($amount, [
+            'order_id' => $orderItem->order_id,
+            'order_item_id' => $orderItem->id,
+            'type' => 'provider_ticket_refund',
+            'provider_type' => 'airline',
+            'provider_id' => $provider->id,
+            'airline_code' => $provider->airline_code,
+            'ticket_number' => $ticketNumber,
+            'original_transaction_id' => $originalTransactionUuid,
+            'description' => "Provider wallet reversal for refunded ticket {$ticketNumber}",
+        ]);
+
+        return $transaction?->uuid;
+    }
+
+    /**
      * @return array{holder: User, amount: float}|null
      */
     protected function resolveVoidRefundTarget(OrderItem $orderItem, ?User $fallback): ?array
@@ -636,7 +831,7 @@ class TicketController extends Controller
     /**
      * @throws InsufficientWalletBalanceException
      */
-    protected function assertWalletBalanceBeforeIssue(Order $booking, User $issuer): void
+    protected function assertWalletBalanceBeforeIssue(Order $booking, User $issuer, TenantProvider $providerConfig): void
     {
         $booking->loadMissing('items');
 
@@ -647,13 +842,20 @@ class TicketController extends Controller
             $airlineCode = (string) data_get($item->item_details, 'airline_code', data_get($item->product_details, 'airline_code', ''));
             $currency = strtoupper((string) $item->currency);
             $source = $financialSourceAction->execute($airlineCode, $currency);
+            $requiredAmount = round((float) ($item->total_amount ?? $item->total ?? 0), 2);
+
+            if ($source->usesOwnCredentials()) {
+                app(ProcessProviderWalletTransactions::class)->assertCanWithdraw($providerConfig, $currency, $requiredAmount);
+
+                continue;
+            }
 
             if (! $source->usesMasterAgencySupply()) {
                 continue;
             }
 
             $requiredByCurrency[$currency] = round(
-                ((float) ($requiredByCurrency[$currency] ?? 0)) + (float) ($item->total_amount ?? $item->total ?? 0),
+                ((float) ($requiredByCurrency[$currency] ?? 0)) + $requiredAmount,
                 2,
             );
         }

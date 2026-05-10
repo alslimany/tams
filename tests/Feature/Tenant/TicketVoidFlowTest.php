@@ -629,3 +629,64 @@ test('void refund is deposited back to the same wallet that was withdrawn on iss
 
     expect((float) $chargedWallet->fresh()->balanceFloat)->toBe(700.0);
 });
+
+test('voiding restores original discounted provider wallet withdrawal', function () {
+    global $state;
+
+    Queue::fake();
+
+    [$order, $item] = seedIssuedOrder($state['user'], now()->toDateString());
+
+    $providerWallet = $state['provider']->getOrCreateCurrencyWallet('LYD');
+    $providerWallet->depositFloat(1000.00, ['type' => 'seed_provider_balance']);
+
+    $providerWithdrawal = $providerWallet->withdrawFloat(450.00, [
+        'order_id' => $order->id,
+        'order_item_id' => $item->id,
+        'type' => 'provider_issuance_cost',
+        'description' => 'Discounted provider issue withdrawal',
+    ]);
+
+    $item->update([
+        'total' => 500,
+        'total_amount' => 500,
+        'commission_amount' => 50,
+        'net_after_commission' => 450,
+        'wallet_transaction_id' => $providerWithdrawal->uuid,
+        'item_details' => array_merge((array) $item->item_details, [
+            'provider_financial_mode' => 'discount',
+            'provider_wallet_transaction_id' => $providerWithdrawal->uuid,
+            'provider_wallet_withdrawal_amount' => 450,
+        ]),
+    ]);
+
+    $providerMock = \Mockery::mock();
+    $providerMock->shouldReceive('void')
+        ->once()
+        ->with('ABC123')
+        ->andReturn('<PNR RLOC="ABC123"><Itinerary from="MJI" to="IST" date="2026-04-24" departure="10:00" arrival="12:00" flight="123" class="Y" /></PNR>');
+
+    \Mockery::mock('alias:App\Services\Airline\ProviderFactory')
+        ->shouldReceive('make')
+        ->andReturn($providerMock);
+
+    $this->actingAs($state['user']);
+
+    $baseUrl = 'http://'.$state['tenant']->domains->first()->domain;
+
+    $this->from($baseUrl.route('orders.show', ['order' => $order->id], false))
+        ->post($baseUrl.route('tickets.void', ['booking' => $order->id, 'ticket' => $item->id], false))
+        ->assertRedirect()
+        ->assertSessionHas('success');
+
+    $refreshedItem = $item->fresh();
+    $providerVoidTx = WalletTransaction::query()
+        ->where('uuid', (string) data_get($refreshedItem->item_details, 'provider_wallet_void_transaction_id'))
+        ->first();
+
+    expect($providerVoidTx)->not->toBeNull()
+        ->and($providerVoidTx->type)->toBe('deposit')
+        ->and((int) $providerVoidTx->wallet_id)->toBe((int) $providerWallet->id)
+        ->and((int) $providerVoidTx->amount)->toBe(45000)
+        ->and((float) $providerWallet->fresh()->balanceFloat)->toBe(1000.0);
+});

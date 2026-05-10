@@ -315,6 +315,31 @@ test('wallet transaction history links to order when meta contains order_id', fu
         ->and($orderTx['order_id'])->not->toBeNull();
 });
 
+test('wallet transaction history includes airline provider wallet transactions', function () {
+    global $state;
+
+    $providerWallet = $state['provider']->getOrCreateCurrencyWallet('LYD');
+    $providerWallet->depositFloat(1000, ['type' => 'seed_provider_balance']);
+    $providerWallet->withdrawFloat(350, [
+        'type' => 'provider_issuance_cost',
+        'provider_type' => 'airline',
+        'description' => 'Ticket provider withdrawal',
+    ]);
+
+    $this->actingAs($state['manager']);
+
+    $baseUrl = 'http://'.$state['tenant']->domains->first()->domain;
+
+    $response = $this->get($baseUrl.route('wallet.transactions', [], false));
+
+    $transactions = $response->inertiaPage()['props']['transactions']['data'];
+    $providerTx = collect($transactions)->firstWhere('description', 'Ticket provider withdrawal');
+
+    expect($providerTx)->not->toBeNull()
+        ->and($providerTx['wallet_holder_type'])->toBe('Airline Provider Wallet')
+        ->and($providerTx['wallet_holder_name'])->toBe('Oya');
+});
+
 test('reconciliation report is accessible by admin only', function () {
     global $state;
 

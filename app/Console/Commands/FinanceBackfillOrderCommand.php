@@ -3,9 +3,9 @@
 namespace App\Console\Commands;
 
 use App\Actions\Finance\ApplyFinancialSourceAndCommission;
-use App\Actions\Finance\CreateAirlineTransactions;
 use App\Actions\Finance\InitializeTenantLedger;
 use App\Actions\Finance\PostToLedger;
+use App\Actions\Finance\ProcessProviderWalletTransactions;
 use App\Actions\Finance\ProcessWalletTransactions;
 use App\Models\Tenant;
 use App\Models\Tenant\Order;
@@ -21,7 +21,7 @@ class FinanceBackfillOrderCommand extends Command
         {--pnr : Interpret identifier as a PNR locator}
         {--skip-ledger : Skip ledger posting step}';
 
-    protected $description = 'Backfill order financial source, commissions, wallet/airline transactions, and optional ledger posting.';
+    protected $description = 'Backfill order financial source, commissions, wallet/provider transactions, and optional ledger posting.';
 
     public function handle(): int
     {
@@ -85,7 +85,7 @@ class FinanceBackfillOrderCommand extends Command
         }
 
         if ($financialSources->contains('own_credentials')) {
-            app(CreateAirlineTransactions::class)->execute($order);
+            app(ProcessProviderWalletTransactions::class)->execute($order);
         }
 
         if (! (bool) $this->option('skip-ledger')) {
@@ -100,7 +100,7 @@ class FinanceBackfillOrderCommand extends Command
         $this->line('Payment method: '.(string) $order->payment_method);
         $this->line('Items: '.(string) $order->items->count());
         $this->line('Wallet-linked items: '.(string) $order->items->filter(fn ($item): bool => $item->wallet_transaction_id !== null)->count());
-        $this->line('Airline-linked items: '.(string) $order->items->filter(fn ($item): bool => $item->airline_transaction_id !== null)->count());
+        $this->line('Legacy airline-linked items: '.(string) $order->items->filter(fn ($item): bool => $item->airline_transaction_id !== null)->count());
         $this->line('Ledger-linked items: '.(string) $order->items->filter(fn ($item): bool => $item->ledger_entry_id !== null)->count());
 
         return self::SUCCESS;

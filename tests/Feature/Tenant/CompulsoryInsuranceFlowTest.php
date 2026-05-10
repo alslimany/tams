@@ -7,6 +7,7 @@ use App\Models\Tenant\OrderItem;
 use App\Models\Tenant\TenantInsuranceProvider;
 use App\Models\User;
 use App\Services\Finance\LedgerDriver;
+use Bavix\Wallet\Models\Transaction as WalletTransaction;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 
@@ -188,8 +189,9 @@ test('compulsory insurance full flow creates order and deducts wallet', function
 
     $this->actingAs($state['admin']);
 
-    $wallet = $state['admin']->getOrCreateCurrencyWallet('LYD');
-    $wallet->depositFloat(2000, ['type' => 'test_fund']);
+    $provider = TenantInsuranceProvider::query()->where('provider_type', 'albaraka')->firstOrFail();
+    $wallet = $provider->getOrCreateCurrencyWallet('LYD');
+    $wallet->depositFloat(2000, ['type' => 'test_provider_fund']);
 
     $this->get($state['baseUrl'].route('insurance.compulsory.search', [], false))
         ->assertSuccessful()
@@ -271,9 +273,18 @@ test('compulsory insurance full flow creates order and deducts wallet', function
     $wallet->refresh();
 
     expect(round((float) $wallet->balanceFloat, 2))->toBe(1850.0);
+
+    $walletTransaction = WalletTransaction::query()
+        ->where('uuid', (string) $item->wallet_transaction_id)
+        ->first();
+
+    expect($walletTransaction)->not->toBeNull()
+        ->and((int) $walletTransaction->wallet_id)->toBe((int) $wallet->id)
+        ->and(data_get($walletTransaction->meta, 'type'))->toBe('provider_issuance_cost')
+        ->and(data_get($walletTransaction->meta, 'provider_type'))->toBe('insurance');
 });
 
-test('compulsory order creation allows wallet deduction when balance is zero', function () {
+test('compulsory order creation does not deduct agency wallet when using provider wallet', function () {
     global $state;
 
     $this->actingAs($state['admin']);
@@ -302,15 +313,75 @@ test('compulsory order creation allows wallet deduction when balance is zero', f
         ],
         requestPayload: [],
         insuranceProvider: $provider,
+        processAgencyWallet: false,
     );
 
     $item = $order->items->first();
 
     expect($item)->not->toBeNull()
-        ->and($item->wallet_transaction_id)->not->toBeNull()
-        ->and((int) $item->ledger_entry_id)->toBe(777);
+        ->and($item->wallet_transaction_id)->toBeNull()
+        ->and($item->ledger_entry_id)->toBeNull();
 
     $wallet->refresh();
 
-    expect(round((float) $wallet->balanceFloat, 2))->toBe(-150.0);
+    expect(round((float) $wallet->balanceFloat, 2))->toBe(0.0);
+});
+
+test('compulsory issue fails early when provider wallet is insufficient and does not call issuance endpoints', function () {
+    global $state;
+
+    Http::fake([
+        'https://tameen.webapi.ly/api/Compulsories/CheckPolicyPrices' => Http::response([
+            'Code' => 200,
+            'Statues' => true,
+            'data' => [
+                'TotalPremium' => 150,
+                'NetPremium' => 140,
+                'Taxes' => 10,
+                'Curr' => 'LYD',
+                'PriceDetailID' => 14,
+            ],
+        ], 200),
+        'https://tameen.webapi.ly/*' => Http::response([
+            'Code' => 500,
+            'Statues' => false,
+            'Messages' => 'Should not be called in insufficient wallet flow',
+        ], 500),
+    ]);
+
+    $this->actingAs($state['admin']);
+
+    $priceResponse = $this->postJson($state['baseUrl'].route('insurance.compulsory.price', [], false), [
+        'document_type_id' => 2,
+        'duration_id' => 1,
+        'seats' => 4,
+        'payload' => 0,
+    ])->assertSuccessful();
+
+    $quoteToken = (string) $priceResponse->json('quote_token');
+
+    $this->post($state['baseUrl'].route('insurance.compulsory.issue', [], false), [
+        'quote_token' => $quoteToken,
+        'policy_date_from' => now()->toDateTimeString(),
+        'beneficiary_name' => 'Ali Ben Salem',
+        'beneficiary_phone' => '0911111111',
+        'beneficiary_address' => 'Tripoli',
+        'beneficiary_email' => 'ali@example.com',
+        'vehicle_type_id' => 3,
+        'vehicle_color_id' => 4,
+        'vehicle_licensing_authority_id' => 5,
+        'vehicle_manufacture_year' => 2022,
+        'vehicle_chassis_number' => 'CHASSIS-123',
+        'vehicle_plate_number' => 'TR-4567',
+        'vehicle_type_engine_power' => 1800,
+    ])->assertRedirect()->assertSessionHas('error');
+
+    expect(Order::query()->exists())->toBeFalse();
+
+    Http::assertNotSent(function ($request): bool {
+        return str_contains($request->url(), '/api/ClientProfiles/GetByPhone')
+            || str_contains($request->url(), '/api/ClientProfiles/Post')
+            || str_contains($request->url(), '/api/ClientProfileVehicles/Post')
+            || str_contains($request->url(), '/api/Compulsories/Post');
+    });
 });

@@ -3,10 +3,10 @@
 namespace App\Http\Controllers\Tenant;
 
 use App\Actions\Finance\ApplyFinancialSourceAndCommission;
-use App\Actions\Finance\CreateAirlineTransactions;
 use App\Actions\Finance\DetermineFinancialSource;
 use App\Actions\Finance\InitializeTenantLedger;
 use App\Actions\Finance\PostToLedger;
+use App\Actions\Finance\ProcessProviderWalletTransactions;
 use App\Actions\Finance\ProcessWalletTransactions;
 use App\DTOs\Airline\RoundTripPriceRequest;
 use App\Exceptions\InsufficientWalletBalanceException;
@@ -16,6 +16,8 @@ use App\Models\Tenant\Order;
 use App\Models\Tenant\OrderItem;
 use App\Models\TenantProvider;
 use App\Models\User;
+use App\Services\AgencyNetwork\ProviderSourceResolver;
+use App\Services\AgencyNetwork\ProviderSourceSelector;
 use App\Services\Airline\AgencyProviderResolver;
 use App\Services\Airline\ProviderFactory;
 use App\Services\Airline\RoundTripPriceManager;
@@ -45,6 +47,8 @@ class BookingController extends Controller
         protected FlightScheduleCacheService $flightScheduleCacheService,
         protected GlobalFlightCacheSettingsService $globalFlightCacheSettingsService,
         protected AgencyProviderResolver $providerResolver,
+        protected ProviderSourceResolver $providerSourceResolver,
+        protected ProviderSourceSelector $providerSourceSelector,
     ) {}
 
     public function index(): Response
@@ -198,6 +202,7 @@ class BookingController extends Controller
             'uuid' => $uuid,
             'query' => $searchParams,
             'providers' => $filteredProviders,
+            'providerSources' => $this->providerSourcesFor($filteredProviders),
             'flights' => $flights,
             'searchDisplayMode' => tenant()->getInternal('search_display_mode') ?? 'per_offer',
         ]);
@@ -286,14 +291,14 @@ class BookingController extends Controller
     {
         $validated = $request->validate([
             'provider_id' => 'required|integer',
+            'provider_selector' => 'nullable|string',
             'flight' => 'required|array',
         ]);
 
-        // Get providers based on agency settings
-        $providers = $this->providerResolver->getAllActiveProviders();
-
-        // Find provider from collection
-        $providerConfig = $providers->firstWhere('id', $validated['provider_id']);
+        $providerConfig = $this->resolveSelectedProvider(
+            (int) $validated['provider_id'],
+            $validated['provider_selector'] ?? null,
+        );
 
         if (! $providerConfig) {
             return response()->json(['error' => 'Provider not found.'], 422);
@@ -316,14 +321,16 @@ class BookingController extends Controller
     {
         $validated = $request->validate([
             'provider_id' => 'required|integer',
+            'provider_selector' => 'nullable|string',
             'flight_number' => 'required|string',
             'date' => 'required|date',
         ]);
 
         try {
-            // Get providers based on agency settings
-            $providers = $this->providerResolver->getAllActiveProviders();
-            $providerConfig = $providers->firstWhere('id', $validated['provider_id']);
+            $providerConfig = $this->resolveSelectedProvider(
+                (int) $validated['provider_id'],
+                $validated['provider_selector'] ?? null,
+            );
 
             if (! $providerConfig) {
                 return response()->json(['error' => 'Provider not found.'], 422);
@@ -493,11 +500,27 @@ class BookingController extends Controller
         $validated = $request->validate([
             'uuid' => 'required|string',
             'provider_id' => 'nullable|integer',
+            'provider_selector' => 'nullable|string',
+            'provider_source_type' => 'nullable|string',
+            'source_agency_tenant_id' => 'nullable|string',
+            'merchant_tenant_id' => 'nullable|string',
+            'network_membership_id' => 'nullable|integer',
+            'provider_allocation_id' => 'nullable|integer',
+            'source_provider_model' => 'nullable|string',
+            'source_provider_id' => 'nullable|integer',
             'flight' => 'nullable|array',
             'reservation_type' => 'nullable|in:QQ,NN',
             'is_round_trip' => 'nullable|boolean',
             'outbound_provider_id' => 'nullable|integer',
             'return_provider_id' => 'nullable|integer',
+            'provider_selector' => 'nullable|string',
+            'provider_source_type' => 'nullable|string',
+            'source_agency_tenant_id' => 'nullable|string',
+            'merchant_tenant_id' => 'nullable|string',
+            'network_membership_id' => 'nullable|integer',
+            'provider_allocation_id' => 'nullable|integer',
+            'source_provider_model' => 'nullable|string',
+            'source_provider_id' => 'nullable|integer',
         ]);
 
         $searchParams = Cache::get("flight_search_{$validated['uuid']}");
@@ -510,13 +533,17 @@ class BookingController extends Controller
         $isRoundTripRequested = $validated['is_round_trip'] ?? $cachedOffer['is_round_trip'] ?? false;
         $outboundProviderId = $validated['outbound_provider_id'] ?? $cachedOffer['outbound_provider_id'] ?? null;
         $returnProviderId = $validated['return_provider_id'] ?? $cachedOffer['return_provider_id'] ?? null;
+        $sourceMetadata = $this->selectedOfferSourceMetadata($validated, is_array($cachedOffer) ? $cachedOffer : []);
+        $sourceMetadata = $this->selectedOfferSourceMetadata($validated, is_array($cachedOffer) ? $cachedOffer : []);
 
         if (! $providerId || ! $flight || ! $reservationType) {
             return redirect()->route('flights.index')->with('error', 'Session expired. Please search again.');
         }
 
-        // Use resolver to find provider (handles both local and master agency providers)
-        $providerConfig = $this->providerResolver->findProviderById((int) $providerId);
+        $providerConfig = $this->resolveSelectedProvider(
+            (int) $providerId,
+            $sourceMetadata['provider_selector'] ?? null,
+        );
 
         if (! $providerConfig) {
             return back()->with('error', 'Provider not found. Please search again.');
@@ -560,7 +587,7 @@ class BookingController extends Controller
         }
 
         // Save selected offer to cache for potential page refresh
-        $selectedOffer = [
+        $selectedOffer = array_merge([
             'provider_id' => $providerId,
             'flight' => $flight,
             'reservation_type' => $reservationType,
@@ -568,7 +595,7 @@ class BookingController extends Controller
             'outbound_provider_id' => $outboundProviderId,
             'return_provider_id' => $returnProviderId,
             'selected_at' => now()->toDateTimeString(),
-        ];
+        ], $sourceMetadata);
         Cache::put(
             "flight_search_{$validated['uuid']}",
             array_merge(is_array($searchParams) ? $searchParams : [], ['selected_offer' => $selectedOffer]),
@@ -594,7 +621,10 @@ class BookingController extends Controller
         $outboundProviderId = $cachedOffer['outbound_provider_id'] ?? null;
         $returnProviderId = $cachedOffer['return_provider_id'] ?? null;
 
-        $providerConfig = $this->providerResolver->findProviderById((int) $providerId);
+        $providerConfig = $this->resolveSelectedProvider(
+            (int) $providerId,
+            $cachedOffer['provider_selector'] ?? null,
+        );
 
         if (! $providerConfig) {
             return back()->with('error', 'Provider not found. Please search again.');
@@ -650,6 +680,14 @@ class BookingController extends Controller
         $validated = $request->validate([
             'uuid' => 'required|string',
             'provider_id' => 'nullable|integer',
+            'provider_selector' => 'nullable|string',
+            'provider_source_type' => 'nullable|string',
+            'source_agency_tenant_id' => 'nullable|string',
+            'merchant_tenant_id' => 'nullable|string',
+            'network_membership_id' => 'nullable|integer',
+            'provider_allocation_id' => 'nullable|integer',
+            'source_provider_model' => 'nullable|string',
+            'source_provider_id' => 'nullable|integer',
             'flight' => 'nullable|array',
             'reservation_type' => 'nullable|in:QQ,NN',
             'is_round_trip' => 'nullable|boolean',
@@ -708,6 +746,7 @@ class BookingController extends Controller
         $isRoundTrip = filter_var($validated['is_round_trip'] ?? $cachedOffer['is_round_trip'] ?? false, FILTER_VALIDATE_BOOLEAN);
         $outboundProviderId = $validated['outbound_provider_id'] ?? $cachedOffer['outbound_provider_id'] ?? null;
         $returnProviderId = $validated['return_provider_id'] ?? $cachedOffer['return_provider_id'] ?? null;
+        $sourceMetadata = $this->selectedOfferSourceMetadata($validated, is_array($cachedOffer) ? $cachedOffer : []);
 
         // Save passengers and extras to cache for potential retry
         Cache::put("flight_search_{$validated['uuid']}", array_merge(is_array($searchParams) ? $searchParams : [], [
@@ -745,8 +784,10 @@ class BookingController extends Controller
             return back()->withErrors($passportErrors)->withInput();
         }
 
-        // Use resolver to find provider
-        $providerConfig = $this->providerResolver->findProviderById((int) $providerId);
+        $providerConfig = $this->resolveSelectedProvider(
+            (int) $providerId,
+            $sourceMetadata['provider_selector'] ?? null,
+        );
 
         if (! $providerConfig) {
             return back()->withErrors(['error' => 'Provider not found.']);
@@ -891,11 +932,22 @@ class BookingController extends Controller
 
         try {
             $source = app(DetermineFinancialSource::class)->execute((string) $providerConfig->airline_code, $currency);
+            $providerSourceType = (string) ($sourceMetadata['provider_source_type'] ?? '');
+            $requiresSourceProviderWallet = in_array($providerSourceType, ['default_agency', 'agency_network'], true);
 
             if ($source->usesMasterAgencySupply()) {
                 app(ProcessWalletTransactions::class)->assertCanIssueForAmounts([
                     strtoupper($currency) => $totalPrice,
                 ], $issuer);
+            }
+
+            if ($source->usesOwnCredentials() || $requiresSourceProviderWallet) {
+                app(ProcessProviderWalletTransactions::class)->assertCanWithdrawForSelector(
+                    $sourceMetadata['provider_selector'] ?? null,
+                    $providerConfig,
+                    strtoupper($currency),
+                    $totalPrice,
+                );
             }
         } catch (InsufficientWalletBalanceException $exception) {
             return back()->withInput()->with('error', $exception->getMessage());
@@ -932,7 +984,7 @@ class BookingController extends Controller
                     : 'Failed to communicate with the airline: '.$exception->getMessage());
         }
 
-        $order = DB::transaction(function () use ($providerConfig, $totalPrice, $currency, $pnr, $providerPayload, $ancillaryCatalog, $ancillarySummary, $customer, $isRoundTrip, $outboundProviderId, $returnProviderId, $flight, $passengers, $baseTotal): Order {
+        $order = DB::transaction(function () use ($providerConfig, $totalPrice, $currency, $pnr, $providerPayload, $ancillaryCatalog, $ancillarySummary, $customer, $isRoundTrip, $outboundProviderId, $returnProviderId, $flight, $passengers, $baseTotal, $sourceMetadata): Order {
             $order = Order::query()->create([
                 'owner_type' => get_class(request()->user()),
                 'owner_id' => request()->user()?->id,
@@ -955,7 +1007,7 @@ class BookingController extends Controller
                 'product_subtype' => $isRoundTrip ? 'roundtrip' : 'oneway',
                 'provider' => 'videcom',
                 'provider_reference' => $pnr,
-                'item_details' => [
+                'item_details' => array_merge([
                     'pnr' => $pnr,
                     'airline_code' => $providerConfig->airline_code,
                     'outbound_provider_id' => $outboundProviderId,
@@ -968,7 +1020,7 @@ class BookingController extends Controller
                         'ancillary_catalog' => $ancillaryCatalog,
                         'ancillary_summary' => $ancillarySummary,
                     ],
-                ],
+                ], $sourceMetadata),
                 'product_details' => [
                     'segments' => $flight['segments'] ?? [$flight],
                     'currency' => strtoupper($currency),
@@ -1004,13 +1056,14 @@ class BookingController extends Controller
         };
 
         $order->update(['payment_method' => $resolvedPaymentMethod]);
+        $order->load('items');
 
         if ($financialSources->contains('master_agency_supply')) {
             app(ProcessWalletTransactions::class)->execute($order, $request->user());
         }
 
-        if ($financialSources->contains('own_credentials')) {
-            app(CreateAirlineTransactions::class)->execute($order);
+        if ($financialSources->contains('own_credentials') || $order->items->contains(fn (OrderItem $item): bool => $this->hasSelectedSourceProvider($item))) {
+            app(ProcessProviderWalletTransactions::class)->execute($order);
         }
 
         try {
@@ -1034,6 +1087,71 @@ class BookingController extends Controller
     protected function applyFinancialSourceAndCommission(Order $order): void
     {
         app(ApplyFinancialSourceAndCommission::class)->execute($order);
+    }
+
+    /**
+     * @param  array<string, mixed>  $validated
+     * @param  array<string, mixed>  $cachedOffer
+     * @return array<string, mixed>
+     */
+    protected function selectedOfferSourceMetadata(array $validated, array $cachedOffer): array
+    {
+        $metadata = [];
+
+        foreach ([
+            'provider_selector',
+            'provider_source_type',
+            'source_agency_tenant_id',
+            'merchant_tenant_id',
+            'network_membership_id',
+            'provider_allocation_id',
+            'source_provider_model',
+            'source_provider_id',
+        ] as $key) {
+            $value = $validated[$key] ?? $cachedOffer[$key] ?? null;
+
+            if ($value !== null && $value !== '') {
+                $metadata[$key] = $value;
+            }
+        }
+
+        return $metadata;
+    }
+
+    /**
+     * @return array<int|string, array<string, mixed>>
+     */
+    protected function providerSourcesFor(Collection $providers): array
+    {
+        return $providers
+            ->filter(fn ($provider): bool => $provider instanceof TenantProvider)
+            ->mapWithKeys(fn (TenantProvider $provider): array => [
+                $provider->id => $this->providerSourceSelector->own($provider),
+            ])
+            ->all();
+    }
+
+    protected function resolveSelectedProvider(int $providerId, ?string $providerSelector = null): ?TenantProvider
+    {
+        if (is_string($providerSelector) && $providerSelector !== '') {
+            $resolved = $this->providerSourceResolver->resolve($providerSelector);
+
+            if (($resolved['provider'] ?? null) instanceof TenantProvider) {
+                return $resolved['provider'];
+            }
+        }
+
+        return $this->providerResolver->findProviderById($providerId);
+    }
+
+    protected function hasSelectedSourceProvider(OrderItem $item): bool
+    {
+        $selector = data_get($item->item_details, 'provider_selector');
+        $sourceType = (string) data_get($item->item_details, 'provider_source_type', '');
+
+        return is_string($selector)
+            && $selector !== ''
+            && in_array($sourceType, [ProviderSourceSelector::SourceDefaultAgency, ProviderSourceSelector::SourceAgencyNetwork], true);
     }
 
     public function show(Order $booking): Response

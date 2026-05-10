@@ -60,7 +60,7 @@ export default function WalletTransactions({ transactions, balanceSummary = [], 
                 {balanceSummary.length > 0 && (
                     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                         {balanceSummary.map((wallet) => (
-                            <Card key={wallet.slug}>
+                            <Card key={`${wallet.holder_type}-${wallet.holder_name}-${wallet.slug}`}>
                                 <CardHeader className="pb-2">
                                     <CardTitle className="text-sm font-medium text-muted-foreground">
                                         {wallet.currency} Wallet
@@ -68,7 +68,7 @@ export default function WalletTransactions({ transactions, balanceSummary = [], 
                                 </CardHeader>
                                 <CardContent>
                                     <p className="text-2xl font-bold">{formatMoney(wallet.balance, wallet.currency)}</p>
-                                    <p className="text-xs text-muted-foreground">Current balance</p>
+                                    <p className="text-xs text-muted-foreground">{wallet.holder_type} · {wallet.holder_name}</p>
                                 </CardContent>
                             </Card>
                         ))}
@@ -112,6 +112,7 @@ export default function WalletTransactions({ transactions, balanceSummary = [], 
                                     <TableHead>Currency</TableHead>
                                     <TableHead className="text-right">Amount</TableHead>
                                     <TableHead>Description</TableHead>
+                                    <TableHead>Wallet</TableHead>
                                     <TableHead>Order</TableHead>
                                     <TableHead>Date</TableHead>
                                 </TableRow>
@@ -119,7 +120,7 @@ export default function WalletTransactions({ transactions, balanceSummary = [], 
                             <TableBody>
                                 {rows.length === 0 ? (
                                     <TableRow>
-                                        <TableCell colSpan={6} className="py-8 text-center text-muted-foreground">
+                                        <TableCell colSpan={7} className="py-8 text-center text-muted-foreground">
                                             No wallet transactions found for the selected period.
                                         </TableCell>
                                     </TableRow>
@@ -140,6 +141,10 @@ export default function WalletTransactions({ transactions, balanceSummary = [], 
                                             </TableCell>
                                             <TableCell className="max-w-50 truncate text-sm text-muted-foreground">
                                                 {tx.description || '-'}
+                                            </TableCell>
+                                            <TableCell className="text-sm text-muted-foreground">
+                                                <div className="font-medium text-foreground">{tx.wallet_holder_type || '-'}</div>
+                                                <div>{tx.wallet_holder_name || '-'}</div>
                                             </TableCell>
                                             <TableCell>
                                                 {tx.order_id ? (

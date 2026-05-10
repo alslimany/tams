@@ -2,67 +2,115 @@
 
 namespace App\Services\Airline;
 
+use App\Models\ProviderAllocation;
 use App\Models\Tenant;
 use App\Models\Tenant\AgencySetting;
 use App\Models\TenantProvider;
+use App\Services\AgencyNetwork\MerchantProviderAllocationResolver;
+use App\Services\AgencyNetwork\ProviderSourceSelector;
 
 class AgencyProviderResolver
 {
+    public function __construct(
+        protected MerchantProviderAllocationResolver $networkAllocationResolver,
+        protected ProviderSourceSelector $sourceSelector,
+    ) {}
+
     /**
      * Resolve the appropriate TenantProvider for a given airline code.
      *
      * Decision logic (in priority order):
-     * 1. If agency_settings.force_use_default_agency is true → use default agency's provider
-     * 2. If agency_settings.can_use_own_airline_credentials is false → use default agency's provider
+     * 1. If agency_settings.force_use_default_agency is true → prefer agency network allocation, then deprecated default agency fallback
+     * 2. If agency_settings.can_use_own_airline_credentials is false → prefer agency network allocation, then deprecated default agency fallback
      * 3. If agency has own provider for this airline → use agency's own provider
-     * 4. Otherwise → use default agency's provider (fallback)
+     * 4. Otherwise → deprecated default agency provider fallback
      *
-     * @return array{provider: ?TenantProvider, is_using_master_agency: bool, resolved_tenant_id: string|null}
+     * @return array<string, mixed>
      */
     public function resolve(string $airlineCode): array
     {
         $agencySettings = AgencySetting::current();
-        $isUsingMasterAgency = false;
-        $resolvedTenantId = tenant()?->id;
+        $currentTenantId = tenant()?->id;
 
-        // If forced to use default agency, or not allowed to use own credentials...
         if ($agencySettings->isForcedToUseDefaultAgency() || ! $agencySettings->canUseOwnAirlineCredentials()) {
-            $provider = $this->getDefaultAgencyProvider($airlineCode);
-            if ($provider) {
-                $isUsingMasterAgency = true;
-                $resolvedTenantId = $provider->tenant_id;
+            $networkProvider = $this->resolveNetworkProviderForCurrentTenant($airlineCode);
+
+            if ($networkProvider['provider'] instanceof TenantProvider) {
+                return $networkProvider;
             }
 
-            return [
-                'provider' => $provider,
-                'is_using_master_agency' => $isUsingMasterAgency,
-                'resolved_tenant_id' => $resolvedTenantId,
-            ];
+            return $this->deprecatedDefaultAgencyResult($airlineCode, $currentTenantId);
         }
 
-        // Try to use agency's own provider
         $ownProvider = $this->getAgencyProvider($airlineCode);
 
         if ($ownProvider) {
-            return [
+            return array_merge($this->sourceSelector->own($ownProvider), [
                 'provider' => $ownProvider,
                 'is_using_master_agency' => false,
-                'resolved_tenant_id' => $ownProvider->tenant_id,
-            ];
+                'is_default_agency_deprecated' => false,
+                'resolved_tenant_id' => $currentTenantId,
+            ]);
         }
 
-        // Fallback to default agency provider
+        return $this->deprecatedDefaultAgencyResult($airlineCode, $currentTenantId);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    protected function deprecatedDefaultAgencyResult(string $airlineCode, ?string $fallbackTenantId): array
+    {
+        $defaultAgency = Tenant::getDefaultAgency();
         $defaultProvider = $this->getDefaultAgencyProvider($airlineCode);
-        if ($defaultProvider) {
-            $isUsingMasterAgency = true;
-            $resolvedTenantId = $defaultProvider->tenant_id;
+
+        $resolvedTenantId = $defaultProvider instanceof TenantProvider
+            ? $defaultAgency?->id
+            : $fallbackTenantId;
+
+        $sourceMetadata = $defaultProvider instanceof TenantProvider && $defaultAgency instanceof Tenant
+            ? $this->sourceSelector->defaultAgency($defaultProvider, (string) $defaultAgency->id)
+            : [
+                'source_type' => ProviderSourceSelector::SourceDefaultAgency,
+                'provider_selector' => null,
+                'source_agency_tenant_id' => null,
+                'merchant_tenant_id' => null,
+                'network_membership_id' => null,
+                'provider_allocation_id' => null,
+                'source_provider_model' => null,
+                'source_provider_id' => null,
+            ];
+
+        return array_merge($sourceMetadata, [
+            'provider' => $defaultProvider,
+            'is_using_master_agency' => $defaultProvider instanceof TenantProvider,
+            'is_default_agency_deprecated' => true,
+            'resolved_tenant_id' => $resolvedTenantId,
+        ]);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    protected function resolveNetworkProviderForCurrentTenant(string $airlineCode): array
+    {
+        $tenantId = tenant()?->id;
+        if ($tenantId === null) {
+            return ['provider' => null];
         }
 
-        return [
-            'provider' => $defaultProvider,
-            'is_using_master_agency' => $isUsingMasterAgency,
-            'resolved_tenant_id' => $resolvedTenantId,
-        ];
+        $allocation = $this->networkAllocationResolver
+            ->forMerchant($tenantId)
+            ->first(fn (ProviderAllocation $allocation): bool => $allocation->provider_type === 'airline'
+                && $allocation->provider_identity === strtoupper($airlineCode));
+
+        if (! $allocation instanceof ProviderAllocation) {
+            return ['provider' => null];
+        }
+
+        return array_merge($this->resolveNetworkProviderAllocation($allocation), [
+            'is_default_agency_deprecated' => false,
+        ]);
     }
 
     /**
@@ -220,5 +268,58 @@ class AgencyProviderResolver
         $providers = $this->getAllActiveProviders();
 
         return $providers->firstWhere('id', $providerId);
+    }
+
+    /**
+     * Resolve a provider that belongs to an agency network allocation.
+     *
+     * @return array{
+     *     provider: ?TenantProvider,
+     *     source_type: string,
+     *     is_using_master_agency: bool,
+     *     resolved_tenant_id: string|null,
+     *     source_agency_tenant_id: string|null,
+     *     merchant_tenant_id: string|null,
+     *     network_membership_id: int|null,
+     *     provider_allocation_id: int|null
+     * }
+     */
+    public function resolveNetworkProviderAllocation(ProviderAllocation $allocation): array
+    {
+        $metadata = array_merge($this->sourceSelector->agencyNetwork($allocation), [
+            'provider' => null,
+            'is_using_master_agency' => false,
+            'resolved_tenant_id' => null,
+            'is_default_agency_deprecated' => false,
+        ]);
+
+        if ($allocation->status !== ProviderAllocation::StatusActive) {
+            return $metadata;
+        }
+
+        if ($allocation->networkMembership?->status !== \App\Models\NetworkMembership::StatusActive) {
+            return $metadata;
+        }
+
+        if ($allocation->source_provider_model !== TenantProvider::class) {
+            return $metadata;
+        }
+
+        $sourceAgency = Tenant::query()->find($allocation->agency_tenant_id);
+        if (! $sourceAgency instanceof Tenant) {
+            return $metadata;
+        }
+
+        $provider = $sourceAgency->run(function () use ($allocation): ?TenantProvider {
+            return TenantProvider::query()
+                ->whereKey($allocation->source_provider_id)
+                ->where('is_active', true)
+                ->first();
+        });
+
+        return array_merge($metadata, [
+            'provider' => $provider,
+            'resolved_tenant_id' => $provider instanceof TenantProvider ? $allocation->agency_tenant_id : null,
+        ]);
     }
 }

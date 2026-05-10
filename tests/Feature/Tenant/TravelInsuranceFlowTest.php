@@ -6,6 +6,8 @@ use App\Models\Tenant\OrderItem;
 use App\Models\Tenant\TenantInsuranceProvider;
 use App\Models\User;
 use App\Services\Finance\LedgerDriver;
+use Bavix\Wallet\Models\Transaction as WalletTransaction;
+use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 
@@ -31,7 +33,7 @@ beforeEach(function () {
         'is_active' => true,
     ]);
 
-    TenantInsuranceProvider::query()->create([
+    $provider = TenantInsuranceProvider::query()->create([
         'provider_type' => 'albaraka',
         'name' => 'Al Baraka Insurance',
         'credentials' => [
@@ -43,6 +45,8 @@ beforeEach(function () {
         'commission_travel' => 10,
         'commission_orange' => 8,
     ]);
+
+    $provider->getOrCreateCurrencyWallet('LYD');
 
     app()->bind(LedgerDriver::class, fn () => new class implements LedgerDriver
     {
@@ -121,8 +125,8 @@ test('travel insurance flow issues policies per passenger and creates one order'
         ], 200);
 
     $paxSequence = Http::sequence()
-        ->push(['Code' => 200, 'Statues' => true, 'data' => ['Id' => 7001]], 200)
-        ->push(['Code' => 200, 'Statues' => true, 'data' => ['Id' => 7002]], 200);
+        ->push(['Code' => 200, 'Statues' => true, 'data' => 7001], 200)
+        ->push(['Code' => 200, 'Statues' => true, 'data' => 7002], 200);
 
     $policySequence = Http::sequence()
         ->push([
@@ -192,8 +196,9 @@ test('travel insurance flow issues policies per passenger and creates one order'
 
     $this->actingAs($state['admin']);
 
-    $wallet = $state['admin']->getOrCreateCurrencyWallet('LYD');
-    $wallet->depositFloat(1000, ['type' => 'test_fund']);
+    $provider = TenantInsuranceProvider::query()->where('provider_type', 'albaraka')->firstOrFail();
+    $wallet = $provider->getOrCreateCurrencyWallet('LYD');
+    $wallet->depositFloat(1000, ['type' => 'seed_balance']);
 
     $this->get($state['baseUrl'].route('insurance.travel.references', [], false))
         ->assertSuccessful()
@@ -276,14 +281,206 @@ test('travel insurance flow issues policies per passenger and creates one order'
         ->and((float) $items[1]->commission_amount)->toBe(10.8)
         ->and((int) $items[0]->ledger_entry_id)->toBe(777)
         ->and((int) $items[1]->ledger_entry_id)->toBe(777)
-        ->and($items[0]->wallet_transaction_id)->not->toBeNull()
-        ->and($items[1]->wallet_transaction_id)->not->toBeNull();
+        ->and((string) $items[0]->wallet_transaction_id)->not->toBe('')
+        ->and((string) $items[1]->wallet_transaction_id)->not->toBe('');
 
     expect((float) $order->grand_total)->toBe(220.0)
         ->and((float) $order->subtotal)->toBe(198.0)
-        ->and((float) $order->tax_total)->toBe(22.0);
+        ->and((float) $order->tax_total)->toBe(22.0)
+        ->and((string) $order->payment_method)->toBe('provider_wallet');
 
     $wallet->refresh();
 
     expect(round((float) $wallet->balanceFloat, 2))->toBe(780.0);
+
+    $walletTransaction = WalletTransaction::query()
+        ->where('uuid', (string) $items[0]->wallet_transaction_id)
+        ->first();
+
+    expect($walletTransaction)->not->toBeNull()
+        ->and((int) $walletTransaction->wallet_id)->toBe((int) $wallet->id)
+        ->and(data_get($walletTransaction->meta, 'type'))->toBe('provider_issuance_cost')
+        ->and(data_get($walletTransaction->meta, 'provider_type'))->toBe('insurance');
+
+    Http::assertSent(function (Request $request): bool {
+        return $request->url() === 'https://tameen.webapi.ly/api/Travelers/Post'
+            && (int) $request['ClientProfileId'] === 66272
+            && (int) $request['ClientProfilePaxeId'] === 7001
+            && (string) $request['ZoneID'] === '4'
+            && (string) $request['InsuranceDurationID'] === '12'
+            && (string) $request['PolicyDateFrom'] === '2026-04-09'
+            && $request['IsPolicyPaid'] === false;
+    });
+
+    Http::assertSent(function (Request $request): bool {
+        return $request->url() === 'https://tameen.webapi.ly/api/Travelers/Post'
+            && (int) $request['ClientProfileId'] === 66272
+            && (int) $request['ClientProfilePaxeId'] === 7002
+            && (string) $request['ZoneID'] === '4'
+            && (string) $request['InsuranceDurationID'] === '12'
+            && (string) $request['PolicyDateFrom'] === '2026-04-09'
+            && $request['IsPolicyPaid'] === false;
+    });
+});
+
+test('travel insurance issue fails early when wallet is insufficient and does not call issuance endpoints', function () {
+    global $state;
+
+    Http::fake([
+        'https://tameen.webapi.ly/api/Travelers/ZonesLookup' => Http::response([
+            'Code' => 200,
+            'Statues' => true,
+            'data' => [
+                ['Value' => 4, 'Text' => 'دول الشنغن'],
+            ],
+        ], 200),
+        'https://tameen.webapi.ly/api/Travelers/DurationsLookup' => Http::response([
+            'Code' => 200,
+            'Statues' => true,
+            'data' => [
+                ['Value' => 12, 'Text' => '5 أيام'],
+            ],
+        ], 200),
+        'https://tameen.webapi.ly/api/ClientProfilePaxes/NationalityLookup' => Http::response([
+            'Code' => 200,
+            'Statues' => true,
+            'data' => [
+                ['Value' => 1, 'Text' => 'الليبية'],
+            ],
+        ], 200),
+        'https://tameen.webapi.ly/api/Travelers/CheckPolicyAgePrices' => Http::response([
+            'Code' => 200,
+            'Statues' => true,
+            'data' => ['TotalPremium' => 100, 'NetPremium' => 90, 'TaxAmount' => 10, 'Curr' => 'LYD'],
+        ], 200),
+        'https://tameen.webapi.ly/*' => Http::response([
+            'Code' => 500,
+            'Statues' => false,
+            'Messages' => 'Should not be called in insufficient wallet flow',
+        ], 500),
+    ]);
+
+    $this->actingAs($state['admin']);
+
+    $provider = TenantInsuranceProvider::query()->where('provider_type', 'albaraka')->firstOrFail();
+    $wallet = $provider->getOrCreateCurrencyWallet('LYD');
+    $balance = (float) $wallet->balanceFloat;
+
+    if ($balance > 0) {
+        $wallet->forceWithdrawFloat($balance, ['type' => 'test_reset_balance']);
+    }
+
+    $this->get($state['baseUrl'].route('insurance.travel.references', [], false))->assertSuccessful();
+
+    $priceResponse = $this->postJson($state['baseUrl'].route('insurance.travel.price', [], false), [
+        'zone_id' => 4,
+        'policy_date_from' => '2026-04-09',
+        'policy_date_to' => '2026-04-13',
+        'passengers' => [
+            [
+                'first_name' => 'A',
+                'last_name' => 'B',
+                'birth_date' => '1993-05-07',
+                'gender_id' => 1,
+                'birth_place' => 'Tripoli',
+                'passport_number' => 'HPPLRF3K',
+                'nationality_id' => 1,
+            ],
+        ],
+    ])->assertSuccessful();
+
+    $quoteToken = (string) $priceResponse->json('quote_token');
+
+    $issueResponse = $this->post($state['baseUrl'].route('insurance.travel.issue', [], false), [
+        'quote_token' => $quoteToken,
+        'client_name' => 'Abdullah Ishtiwy',
+        'client_phone' => '+218911111111',
+        'client_address' => 'Tripoli',
+        'client_email' => 'abdullah@example.com',
+        'passengers' => [
+            [
+                'first_name' => 'Abdullah',
+                'last_name' => 'Ishtiwy',
+                'birth_date' => '1993-05-07',
+                'gender_id' => 1,
+                'birth_place' => 'Tripoli',
+                'passport_number' => 'HPPLRF3K',
+                'nationality_id' => 1,
+            ],
+        ],
+    ]);
+
+    $issueResponse->assertSessionHas('error');
+
+    expect(Order::query()->get()->count())->toBe(0);
+
+    Http::assertNotSent(function ($request): bool {
+        return str_contains($request->url(), '/api/ClientProfiles/GetByPhone')
+            || str_contains($request->url(), '/api/ClientProfiles/Post')
+            || str_contains($request->url(), '/api/ClientProfilePaxes/Post')
+            || str_contains($request->url(), '/api/Travelers/Post');
+    });
+});
+
+test('printing travel policy fetches traveler report pdf by encrypted reference', function () {
+    global $state;
+
+    Http::fake([
+        'https://tameen.webapi.ly/api/Travelers/GetReportById?EncryptedId=ENC-TRV-001' => Http::response('%PDF-1.4 travel-pdf', 200, [
+            'Content-Type' => 'application/pdf',
+        ]),
+    ]);
+
+    $provider = TenantInsuranceProvider::query()->where('provider_type', 'albaraka')->firstOrFail();
+
+    $order = app(\App\Actions\Finance\CreateOrderFromInsuranceBooking::class)->createFromTravelPolicies(
+        userId: $state['admin']->id,
+        clientProfileData: [
+            'name' => 'Travel Report Client',
+            'phone' => '0911111111',
+            'address' => 'Tripoli',
+            'email' => 'travel@example.com',
+            'client_profile_id' => 66272,
+        ],
+        policyItems: [
+            [
+                'passenger' => [
+                    'first_name' => 'Travel',
+                    'last_name' => 'Passenger',
+                    'birth_date' => '1993-05-07',
+                    'gender_id' => 1,
+                    'birth_place' => 'Tripoli',
+                    'passport_number' => 'TRV123',
+                    'nationality_id' => 1,
+                ],
+                'policy_details' => [
+                    'policy_id' => 81001,
+                    'policy_number' => 'TRV-81001',
+                    'report_reference' => 'ENC-TRV-001',
+                    'zone_id' => 4,
+                    'duration_id' => 12,
+                    'policy_date_from' => '2026-04-09',
+                    'policy_date_to' => '2026-04-13',
+                    'raw' => ['data' => ['Id' => 81001, 'EncryptedId' => 'ENC-TRV-001']],
+                ],
+                'net_amount' => 90,
+                'total_amount' => 100,
+                'tax_amount' => 10,
+                'currency' => 'LYD',
+            ],
+        ],
+        insuranceProvider: $provider,
+        processAgencyWallet: false,
+    );
+
+    $item = $order->items->firstOrFail();
+
+    $this->actingAs($state['admin'])
+        ->get($state['baseUrl'].route('insurance.order-items.report', ['order' => $order->id, 'item' => $item->id], false))
+        ->assertOk()
+        ->assertHeader('content-type', 'application/pdf');
+
+    Http::assertSent(function (Request $request): bool {
+        return $request->url() === 'https://tameen.webapi.ly/api/Travelers/GetReportById?EncryptedId=ENC-TRV-001';
+    });
 });

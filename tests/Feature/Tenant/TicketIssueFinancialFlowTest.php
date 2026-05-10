@@ -11,6 +11,7 @@ use App\Models\Tenant\Order;
 use App\Models\Tenant\OrderItem;
 use App\Models\TenantProvider;
 use App\Models\User;
+use Bavix\Wallet\Models\Transaction as WalletTransaction;
 use Illuminate\Support\Str;
 
 /** @var array<string, mixed> $state */
@@ -205,7 +206,7 @@ test('issuing a ticket with master agency supply processes wallet transactions a
     ]);
 });
 
-test('issuing a ticket with own credentials creates airline transactions and posts to ledger', function () {
+test('issuing a ticket with own credentials creates provider wallet transactions and posts to ledger', function () {
     global $state;
 
     // Default tenant settings have usesOwnAirlineCredentials = true.
@@ -229,6 +230,8 @@ test('issuing a ticket with own credentials creates airline transactions and pos
     $ledgerPoster->shouldReceive('execute')->once();
     app()->instance(PostToLedger::class, $ledgerPoster);
 
+    $state['provider']->getOrCreateCurrencyWallet('LYD')->depositFloat(1000, ['type' => 'seed_provider_balance']);
+
     $this->actingAs($state['user']);
 
     $baseUrl = 'http://'.$state['tenant']->domains->first()->domain;
@@ -246,22 +249,25 @@ test('issuing a ticket with own credentials creates airline transactions and pos
     // Financial source should be own_credentials.
     expect(data_get($issuedItem->item_details, 'financial_source'))->toBe('own_credentials');
 
-    // Airline transaction should have been created.
-    expect($issuedItem->airline_transaction_id)->not->toBeNull();
+    expect($issuedItem->airline_transaction_id)->toBeNull();
+    expect((string) $issuedItem->wallet_transaction_id)->not->toBe('');
 
-    // No wallet withdrawal should have occurred.
-    expect($issuedItem->wallet_transaction_id)->toBeNull();
+    $providerWallet = $state['provider']->getOrCreateCurrencyWallet('LYD');
 
-    // Airline account balance should be debited.
-    $this->assertDatabaseHas('airline_accounts', [
-        'tenant_provider_id' => $state['provider']->id,
-        'currency' => 'LYD',
-    ]);
+    $walletTransaction = WalletTransaction::query()
+        ->where('uuid', (string) $issuedItem->wallet_transaction_id)
+        ->first();
 
-    $this->assertDatabaseHas('airline_transactions', [
-        'order_item_id' => $issuedItem->id,
-        'type' => 'ticket_cost',
-    ]);
+    expect($walletTransaction)->not->toBeNull()
+        ->and((int) $walletTransaction->wallet_id)->toBe((int) $providerWallet->id)
+        ->and((string) $walletTransaction->type)->toBe('withdraw')
+        ->and((int) $walletTransaction->amount)->toBe(-35000)
+        ->and(data_get($walletTransaction->meta, 'type'))->toBe('provider_issuance_cost')
+        ->and(data_get($walletTransaction->meta, 'provider_type'))->toBe('airline')
+        ->and(data_get($walletTransaction->meta, 'order_item_id'))->toBe($issuedItem->id);
+
+    expect(data_get($issuedItem->item_details, 'provider_financial_mode'))->toBe('discount')
+        ->and((float) data_get($issuedItem->item_details, 'provider_payable_amount'))->toBe(350.0);
 
     // Status log should be created on the issued order.
     $this->assertDatabaseHas('order_status_log', [
@@ -497,6 +503,29 @@ test('ticket issuance is rejected before provider call when wallet is insufficie
     ]);
 
     [$order] = seedPendingOrder($state['user'], 'INSUF1');
+
+    $providerMock = \Mockery::mock();
+    $providerMock->shouldNotReceive('issueTicket');
+
+    \Mockery::mock('alias:App\Services\Airline\ProviderFactory')
+        ->shouldReceive('make')
+        ->andReturn($providerMock);
+
+    $this->actingAs($state['user']);
+
+    $baseUrl = 'http://'.$state['tenant']->domains->first()->domain;
+
+    $this->post($baseUrl.route('tickets.issue', ['booking' => $order->id], false), [
+        'payment_type' => 'airline_token',
+    ])->assertRedirect()->assertSessionHas('error');
+
+    expect(Order::query()->where('parent_id', $order->id)->exists())->toBeFalse();
+});
+
+test('own credential ticket issuance is rejected before provider call when provider wallet is insufficient', function () {
+    global $state;
+
+    [$order] = seedPendingOrder($state['user'], 'PROV01');
 
     $providerMock = \Mockery::mock();
     $providerMock->shouldNotReceive('issueTicket');

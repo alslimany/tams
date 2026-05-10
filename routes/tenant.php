@@ -7,11 +7,14 @@ use App\Http\Controllers\Tenant\AirlineConfigController;
 use App\Http\Controllers\Tenant\BookingController;
 use App\Http\Controllers\Tenant\CompulsoryInsuranceController;
 use App\Http\Controllers\Tenant\DashboardController;
+use App\Http\Controllers\Tenant\HotelBookingController;
+use App\Http\Controllers\Tenant\HotelConfigController;
 use App\Http\Controllers\Tenant\InsuranceBookController;
 use App\Http\Controllers\Tenant\InsuranceConfigController;
 use App\Http\Controllers\Tenant\InsurancePolicyController;
 use App\Http\Controllers\Tenant\InsuranceQuoteController;
 use App\Http\Controllers\Tenant\InsuranceSearchController;
+use App\Http\Controllers\Tenant\OrangeInsuranceController;
 use App\Http\Controllers\Tenant\OrderController;
 use App\Http\Controllers\Tenant\ReportController;
 use App\Http\Controllers\Tenant\TicketController;
@@ -77,6 +80,20 @@ Route::middleware([
         Route::get('orders', [OrderController::class, 'index'])->name('orders.index');
         Route::get('orders/{order}', [OrderController::class, 'show'])->name('orders.show');
 
+        // Hotels
+        Route::middleware('role:admin,manager,agent')->group(function () {
+            Route::get('hotels', [HotelBookingController::class, 'index'])->name('hotels.index');
+            Route::get('api/hotels/autocomplete', [HotelBookingController::class, 'autocomplete'])->name('hotels.autocomplete');
+            Route::post('hotels/search', [HotelBookingController::class, 'search'])->name('hotels.search');
+            Route::get('hotels/results/{uuid}', [HotelBookingController::class, 'results'])->name('hotels.results');
+            Route::get('hotels/results/{uuid}/availability', [HotelBookingController::class, 'availability'])->name('hotels.availability');
+            Route::get('api/hotels/hotel-info', [HotelBookingController::class, 'hotelInfo'])->name('hotels.hotel-info');
+            Route::post('hotels/select', [HotelBookingController::class, 'select'])->name('hotels.select');
+            Route::get('hotels/details/{uuid}', [HotelBookingController::class, 'details'])->name('hotels.details');
+            Route::post('hotels/book', [HotelBookingController::class, 'book'])->name('hotels.book');
+            Route::post('orders/{order}/hotel-items/{item}/cancel', [HotelBookingController::class, 'cancel'])->name('hotels.order-items.cancel');
+        });
+
         // Insurance
         Route::middleware('role:admin,manager,agent')->group(function () {
             Route::get('insurance/search', [InsuranceSearchController::class, 'index'])->name('insurance.search');
@@ -89,6 +106,11 @@ Route::middleware([
             Route::get('insurance/travel/references', [TravelInsuranceController::class, 'references'])->name('insurance.travel.references');
             Route::post('insurance/travel/price', [TravelInsuranceController::class, 'price'])->name('insurance.travel.price');
             Route::post('insurance/travel/issue', [TravelInsuranceController::class, 'issue'])->name('insurance.travel.issue');
+
+            Route::get('insurance/orange/beneficiary/{quoteToken}', [OrangeInsuranceController::class, 'beneficiaryPage'])->name('insurance.orange.beneficiary');
+            Route::get('insurance/orange/references', [OrangeInsuranceController::class, 'references'])->name('insurance.orange.references');
+            Route::post('insurance/orange/price', [OrangeInsuranceController::class, 'price'])->name('insurance.orange.price');
+            Route::post('insurance/orange/issue', [OrangeInsuranceController::class, 'issue'])->name('insurance.orange.issue');
 
             Route::get('insurance/compulsory/references/durations', [CompulsoryInsuranceController::class, 'durationsReference'])->name('insurance.compulsory.references.durations');
             Route::get('insurance/compulsory/references/document-types', [CompulsoryInsuranceController::class, 'documentTypesReference'])->name('insurance.compulsory.references.document-types');
@@ -132,6 +154,7 @@ Route::middleware([
             Route::get('settings/airlines', [AirlineConfigController::class, 'index'])->name('settings.airlines.index');
             Route::post('settings/airlines', [AirlineConfigController::class, 'store'])->name('settings.airlines.store');
             Route::post('settings/airlines/test', [AirlineConfigController::class, 'testConnection'])->name('settings.airlines.test');
+            Route::post('settings/airlines/deposit', [AirlineConfigController::class, 'deposit'])->name('settings.airlines.deposit');
             Route::patch('settings/airlines/{provider}/toggle', [AirlineConfigController::class, 'toggle'])->name('settings.airlines.toggle');
 
             // General Tenant Settings
@@ -141,6 +164,13 @@ Route::middleware([
             // Insurance Provider Configuration
             Route::get('settings/insurance', [InsuranceConfigController::class, 'index'])->name('settings.insurance.index');
             Route::post('settings/insurance', [InsuranceConfigController::class, 'store'])->name('settings.insurance.store');
+            Route::post('settings/insurance/deposit', [InsuranceConfigController::class, 'deposit'])->name('settings.insurance.deposit');
+
+            // Hotel Provider Configuration
+            Route::get('settings/hotels', [HotelConfigController::class, 'index'])->name('settings.hotels.index');
+            Route::post('settings/hotels', [HotelConfigController::class, 'store'])->name('settings.hotels.store');
+            Route::post('settings/hotels/deposit', [HotelConfigController::class, 'deposit'])->name('settings.hotels.deposit');
+            Route::post('settings/hotels/credit-check', [HotelConfigController::class, 'syncCredit'])->name('settings.hotels.credit-check');
         });
 
     });

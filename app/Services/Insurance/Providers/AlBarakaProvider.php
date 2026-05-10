@@ -12,6 +12,7 @@ use App\Services\Insurance\InsuranceApiException;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 
 class AlBarakaProvider implements InsuranceProviderInterface
 {
@@ -336,11 +337,11 @@ class AlBarakaProvider implements InsuranceProviderInterface
 
         $netPremium = $this->extractNumericValue($data, ['NetPremium', 'NetPrice', 'Net'])
             ?? $this->extractNumericValue($normalized['raw'], ['NetPremium', 'NetPrice', 'Net'])
-            ?? 0.0;
+            ?? ($scalarPremium !== null ? $totalPremium : 0.0);
 
         $taxAmount = $this->extractNumericValue($data, ['Tax', 'Taxes', 'TaxAmount'])
             ?? $this->extractNumericValue($normalized['raw'], ['Tax', 'Taxes', 'TaxAmount'])
-            ?? max(0.0, $totalPremium - $netPremium);
+            ?? ($scalarPremium !== null ? 0.0 : max(0.0, $totalPremium - $netPremium));
 
         if ($netPremium <= 0 && $totalPremium > 0) {
             $netPremium = max(0.0, $totalPremium - $taxAmount);
@@ -362,6 +363,142 @@ class AlBarakaProvider implements InsuranceProviderInterface
                 ?? 'LYD')),
             'raw' => $normalized['raw'],
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @return array{total_premium:float,net_premium:float,tax_amount:float,currency:string,raw:array<string,mixed>}
+     */
+    public function calculateOrangePrice(array $payload): array
+    {
+        $response = $this->request('POST', '/api/Oranges/CheckPolicyPrices', [
+            'DocumentTypeID' => (int) ($payload['DocumentTypeID'] ?? 0),
+            'PolicyDay' => (int) ($payload['PolicyDay'] ?? 0),
+            'Countries' => (int) ($payload['Countries'] ?? 0),
+        ]);
+
+        $normalized = $this->normalizeMainResponse($response);
+        $data = is_array($normalized['data']) ? $normalized['data'] : [];
+        $scalarPremium = is_numeric($normalized['data']) ? (float) $normalized['data'] : null;
+
+        $totalPremium = $this->extractNumericValue($data, ['TotalPrice', 'TotalPremium', 'totalpremium', 'PolicyPrice', 'Price', 'Premium'])
+            ?? $this->extractNumericValue($normalized['raw'], ['TotalPrice', 'TotalPremium', 'totalpremium', 'PolicyPrice', 'Price', 'Premium'])
+            ?? $scalarPremium
+            ?? 0.0;
+
+        $netPremium = $this->extractNumericValue($data, ['NetPremium', 'NetPrice', 'Net'])
+            ?? $this->extractNumericValue($normalized['raw'], ['NetPremium', 'NetPrice', 'Net'])
+            ?? ($scalarPremium !== null ? $totalPremium : 0.0);
+
+        $taxAmount = $this->extractNumericValue($data, ['Tax', 'Taxes', 'TaxAmount'])
+            ?? $this->extractNumericValue($normalized['raw'], ['Tax', 'Taxes', 'TaxAmount'])
+            ?? ($scalarPremium !== null ? 0.0 : max(0.0, $totalPremium - $netPremium));
+
+        if ($netPremium <= 0 && $totalPremium > 0) {
+            $netPremium = max(0.0, $totalPremium - $taxAmount);
+        }
+
+        return [
+            'total_premium' => round($totalPremium, 3),
+            'net_premium' => round($netPremium, 3),
+            'tax_amount' => round($taxAmount, 3),
+            'currency' => strtoupper((string) ($this->extractStringValue($data, ['Currency', 'Curr'])
+                ?? $this->extractStringValue($normalized['raw'], ['Currency', 'Curr'])
+                ?? 'LYD')),
+            'raw' => $normalized['raw'],
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @return array{policy_id:int,card_number:string,report_reference:string,total_premium:float,net_premium:float,tax_amount:float,currency:string,raw:array<string,mixed>}
+     */
+    public function createOrangePolicy(array $payload): array
+    {
+        $response = $this->request('POST', '/api/Oranges/Post', [
+            'Check' => $payload['Check'] ?? null,
+            'Name' => (string) ($payload['Name'] ?? ''),
+            'Address' => (string) ($payload['Address'] ?? ''),
+            'Phone' => (string) ($payload['Phone'] ?? ''),
+            'ChassisNumber' => (string) ($payload['ChassisNumber'] ?? ''),
+            'MetalPlateNo' => (string) ($payload['MetalPlateNo'] ?? ''),
+            'ManufactureYear' => (string) ($payload['ManufactureYear'] ?? ''),
+            'CarID' => (int) ($payload['CarID'] ?? 0),
+            'Nationality' => (int) ($payload['Nationality'] ?? 0),
+            'Country' => (int) ($payload['Country'] ?? 0),
+            'PolicyDateFrom' => (string) ($payload['PolicyDateFrom'] ?? ''),
+            'NumberOfDays' => (int) ($payload['NumberOfDays'] ?? 0),
+            'DocumentTypeID' => (int) ($payload['DocumentTypeID'] ?? 0),
+            'IsPolicyPaid' => (bool) ($payload['IsPolicyPaid'] ?? true),
+            'VoucherCode' => $payload['VoucherCode'] ?? null,
+        ]);
+
+        $data = is_array($response['data'] ?? null) ? $response['data'] : $response;
+
+        $policyId = $this->extractNumericValue($data, ['Id', 'ID', 'PolicyId', 'InsurancePolicyId'])
+            ?? $this->extractNumericValue($response, ['Id', 'ID', 'PolicyId', 'InsurancePolicyId'])
+            ?? 0.0;
+
+        if ((int) $policyId <= 0) {
+            throw new InsuranceApiException('Orange insurance response did not include a valid identifier.');
+        }
+
+        $totalPremium = $this->extractNumericValue($data, ['totalpremium', 'TotalPremium', 'TotalPrice', 'Premium'])
+            ?? $this->extractNumericValue($response, ['totalpremium', 'TotalPremium', 'TotalPrice', 'Premium'])
+            ?? 0.0;
+
+        $netPremium = $this->extractNumericValue($data, ['NetPremium', 'NetPrice', 'Net'])
+            ?? $this->extractNumericValue($response, ['NetPremium', 'NetPrice', 'Net'])
+            ?? $totalPremium;
+
+        $taxAmount = $this->extractNumericValue($data, ['Tax', 'Taxes', 'TaxAmount'])
+            ?? $this->extractNumericValue($response, ['Tax', 'Taxes', 'TaxAmount'])
+            ?? max(0.0, $totalPremium - $netPremium);
+
+        return [
+            'policy_id' => (int) $policyId,
+            'card_number' => (string) ($this->extractStringValue($data, ['CardNumber', 'cardNumber'])
+                ?? $this->extractStringValue($response, ['CardNumber', 'cardNumber'])
+                ?? ''),
+            'report_reference' => (string) ($this->extractStringValue($data, ['EncryptedId', 'CardNumber'])
+                ?? $this->extractStringValue($response, ['EncryptedId', 'CardNumber'])
+                ?? ''),
+            'total_premium' => round($totalPremium, 2),
+            'net_premium' => round($netPremium, 2),
+            'tax_amount' => round($taxAmount, 2),
+            'currency' => strtoupper((string) ($this->extractStringValue($data, ['Currency', 'Curr'])
+                ?? $this->extractStringValue($response, ['Currency', 'Curr'])
+                ?? 'LYD')),
+            'raw' => $response,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function getOrangePolicyByDates(string $dateFrom, string $dateTo, string $encryptedId): array
+    {
+        $response = $this->request(
+            'GET',
+            '/api/Oranges/Get?DateFrom='.urlencode($dateFrom).'&DateTo='.urlencode($dateTo),
+        );
+
+        $normalized = $this->normalizeMainResponse($response, strictStatus: false);
+        $items = $this->normalizeCollectionData($normalized['data']);
+
+        foreach ($items as $item) {
+            if (! is_array($item)) {
+                continue;
+            }
+
+            $candidate = (string) ($this->extractStringValue($item, ['EncryptedId', 'encryptedId']) ?? '');
+
+            if ($candidate !== '' && hash_equals($candidate, $encryptedId)) {
+                return $item;
+            }
+        }
+
+        return [];
     }
 
     public function book(InsuranceBookingRequest $request): InsuranceBookingResult
@@ -404,11 +541,11 @@ class AlBarakaProvider implements InsuranceProviderInterface
         $data = $normalized['data'];
 
         if (is_array($data) && array_is_list($data)) {
-            return $data;
+            return $this->normalizeLookupItems(array_values(array_filter($data, fn (mixed $item): bool => is_array($item))));
         }
 
         if (is_array($data)) {
-            return [$data];
+            return $this->normalizeLookupItems([$data]);
         }
 
         return [];
@@ -491,12 +628,26 @@ class AlBarakaProvider implements InsuranceProviderInterface
     protected function request(string $method, string $path, ?array $payload = null): array
     {
         $client = $this->client();
+        $method = strtoupper($method);
 
-        $response = match (strtoupper($method)) {
+        Log::debug('Al Baraka API request', [
+            'method' => $method,
+            'path' => $path,
+            'payload' => $payload,
+        ]);
+
+        $response = match ($method) {
             'GET' => $client->get($path),
             'POST' => $client->post($path, $payload ?? []),
             default => throw new InsuranceApiException('Unsupported HTTP method for insurance provider.'),
         };
+
+        Log::debug('Al Baraka API response', [
+            'method' => $method,
+            'path' => $path,
+            'status' => $response->status(),
+            'body' => $response->body(),
+        ]);
 
         if ($response->failed()) {
             throw new InsuranceApiException('Insurance API request failed: '.$response->body());
@@ -675,6 +826,10 @@ class AlBarakaProvider implements InsuranceProviderInterface
      */
     protected function extractPrimaryId(array $normalized): int
     {
+        if (is_numeric($normalized['data']) && (int) $normalized['data'] > 0) {
+            return (int) $normalized['data'];
+        }
+
         $id = $this->extractNumericValue($normalized['data'], ['Id', 'ID', 'PolicyId', 'InsurancePolicyId'])
             ?? $this->extractNumericValue($normalized['raw'], ['Id', 'ID', 'PolicyId', 'InsurancePolicyId']);
 
@@ -690,6 +845,10 @@ class AlBarakaProvider implements InsuranceProviderInterface
      */
     protected function extractOptionalPrimaryId(array $normalized): ?int
     {
+        if (is_numeric($normalized['data']) && (int) $normalized['data'] > 0) {
+            return (int) $normalized['data'];
+        }
+
         $id = $this->extractNumericValue($normalized['data'], ['Id', 'ID', 'PolicyId', 'InsurancePolicyId'])
             ?? $this->extractNumericValue($normalized['raw'], ['Id', 'ID', 'PolicyId', 'InsurancePolicyId']);
 

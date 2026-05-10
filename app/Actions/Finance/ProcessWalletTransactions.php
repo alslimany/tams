@@ -52,7 +52,6 @@ class ProcessWalletTransactions
 
         $pendingItems = $order->items->filter(
             fn (OrderItem $item): bool => $item->wallet_transaction_id === null
-                && $item->airline_transaction_id === null
                 && (string) data_get($item->item_details, 'financial_source') === 'master_agency_supply'
         );
 
@@ -69,8 +68,7 @@ class ProcessWalletTransactions
     /**
      * Process wallet withdrawals for all master-supply order items.
      *
-     * Items that already have a wallet_transaction_id or airline_transaction_id are skipped
-     * (they were processed via own-credentials in CreateOrderFromBookingData, or previously).
+     * Items that already have a wallet_transaction_id are skipped.
      *
      * All wallet operations are wrapped in a DB transaction so a failed withdrawal rolls
      * back any earlier withdrawals made in the same call.
@@ -86,7 +84,6 @@ class ProcessWalletTransactions
 
         $pendingItems = $order->items->filter(
             fn (OrderItem $item): bool => $item->wallet_transaction_id === null
-                && $item->airline_transaction_id === null
                 && (string) data_get($item->item_details, 'financial_source') === 'master_agency_supply'
         );
 

@@ -40,9 +40,4 @@ class OrderItem extends Model
     {
         return $this->belongsTo(self::class, 'refund_parent_id');
     }
-
-    public function airlineTransaction(): BelongsTo
-    {
-        return $this->belongsTo(AirlineTransaction::class, 'airline_transaction_id');
-    }
 }

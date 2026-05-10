@@ -84,6 +84,20 @@ class HandleInertiaRequests extends Middleware
                 'location' => $request->url(),
             ],
             'locale' => session('locale', app()->getLocale()),
+            'translations' => function () {
+                $locale = session('locale', app()->getLocale());
+                $phpTranslations = [];
+                if (file_exists(lang_path($locale.'.json'))) {
+                    $phpTranslations = json_decode(file_get_contents(lang_path($locale.'.json')), true);
+                }
+
+                $commonTranslations = [];
+                if (file_exists(lang_path($locale.'/common.php'))) {
+                    $commonTranslations = include lang_path($locale.'/common.php');
+                }
+
+                return array_merge($phpTranslations, ['common' => $commonTranslations]);
+            },
         ];
     }
 }

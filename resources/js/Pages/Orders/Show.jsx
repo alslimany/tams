@@ -21,6 +21,7 @@ import {
     CreditCard,
     Mail,
     MapPin,
+    HotelIcon,
     RefreshCcw,
     Phone,
     Plane,
@@ -39,6 +40,7 @@ export default function Show({ order, itemTransactions, voidRefundAccount }) {
     const currentUserRole = String(auth?.user?.role ?? auth?.landlordUser?.role ?? '').trim().toLowerCase();
     const canManageItems = ['admin', 'manager'].includes(currentUserRole);
     const canManageInsurance = ['admin', 'manager', 'agent'].includes(currentUserRole);
+    const canManageHotels = ['admin', 'manager', 'agent'].includes(currentUserRole);
     const [voidTarget, setVoidTarget] = React.useState(null);
     const [cancelTarget, setCancelTarget] = React.useState(null);
     const [finalizeTarget, setFinalizeTarget] = React.useState(null);
@@ -76,6 +78,16 @@ export default function Show({ order, itemTransactions, voidRefundAccount }) {
     };
 
     const formatAmount = (amount, currency) => formatMoney(amount, currency);
+
+    const stripHtml = (value) => String(value ?? '')
+        .replace(/<[^>]*>/g, ' ')
+        .replace(/&nbsp;/g, ' ')
+        .replace(/&agrave;/g, 'à')
+        .replace(/&acirc;/g, 'â')
+        .replace(/&eacute;/g, 'é')
+        .replace(/&#39;/g, "'")
+        .replace(/\s+/g, ' ')
+        .trim();
 
     const orderStatusVariant = (status) => {
         if (status === 'paid' || status === 'issued') {
@@ -216,6 +228,39 @@ export default function Show({ order, itemTransactions, voidRefundAccount }) {
 
     const getInsurancePayload = (item) => item?.product_details?.policy_details ?? {};
 
+    const getInsurancePassengerName = (item) => {
+        const directName = String(item?.product_details?.passenger_name ?? item?.item_details?.passenger_name ?? '').trim();
+
+        if (directName !== '') {
+            return directName;
+        }
+
+        const passenger = item?.product_details?.passenger ?? item?.item_details?.insurance?.passenger ?? {};
+        const fallbackName = `${String(passenger?.first_name ?? '').trim()} ${String(passenger?.last_name ?? '').trim()}`.trim();
+
+        return fallbackName || '-';
+    };
+
+    const getTravelDurationLabel = (item, policyDetails) => {
+        const start = String(policyDetails?.policy_date_from ?? policyDetails?.PolicyDateFrom ?? '').trim();
+        const end = String(policyDetails?.policy_date_to ?? policyDetails?.PolicyDateTo ?? '').trim();
+
+        if (start === '' || end === '') {
+            return '-';
+        }
+
+        const startDate = new Date(start);
+        const endDate = new Date(end);
+
+        if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
+            return '-';
+        }
+
+        const durationDays = Math.max(1, Math.round((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)));
+
+        return `${durationDays} day${durationDays > 1 ? 's' : ''}`;
+    };
+
     const getInsuranceBeneficiary = (item) => item?.item_details?.beneficiary ?? {};
 
     const getInsuranceCancellation = (item) => item?.item_details?.insurance?.cancellation ?? {};
@@ -234,6 +279,16 @@ export default function Show({ order, itemTransactions, voidRefundAccount }) {
         const url = route('insurance.order-items.report', { order: order.id, item: item.id });
 
         window.open(url, '_blank', 'noopener,noreferrer');
+    };
+
+    const cancelHotelBooking = (item) => {
+        if (!window.confirm('Cancel this hotel booking with the provider?')) {
+            return;
+        }
+
+        router.post(route('hotels.order-items.cancel', { order: order.id, item: item.id }), {}, {
+            preserveScroll: true,
+        });
     };
 
     const closeCancelModal = () => {
@@ -388,13 +443,17 @@ export default function Show({ order, itemTransactions, voidRefundAccount }) {
                                 const cancellation = getInsuranceCancellation(item);
                                 const latestRemark = getInsuranceRemark(item);
                                 const netWalletEffect = Number(cancellation?.financials?.net_wallet_effect ?? 0);
+                                const passengerName = getInsurancePassengerName(item);
+                                const travelZone = policyDetails.zone_text ?? policyDetails.zone ?? item?.product_details?.zone_text ?? item?.product_details?.zone_id ?? policyDetails.zone_id ?? '-';
+                                const travelDuration = policyDetails.duration_text ?? item?.product_details?.duration_text ?? getTravelDurationLabel(item, policyDetails);
+                                const policyNumber = policyDetails.policy_number ?? item.ticket_number ?? item.provider_reference ?? '-';
 
                                 return (
                                     <div key={item.id}>
                                         <div className="flex flex-col gap-4 border-b border-slate-200 bg-slate-50/70 px-5 py-5 md:flex-row md:items-start md:justify-between">
                                             <div className="space-y-2">
                                                 <div className="flex flex-wrap items-center gap-3">
-                                                    <p className="text-2xl font-black tracking-tight text-slate-950 w-120 truncate">Policy: {item.provider_reference ?? item.ticket_number ?? '-'}</p>
+                                                    <p className="text-2xl font-black tracking-tight text-slate-950 w-120 truncate">Policy: {policyNumber}</p>
                                                     <Badge variant={itemStatusVariant(item.status)} className="px-3 py-1 font-black uppercase text-white tracking-wider">
                                                         {item.status}
                                                     </Badge>
@@ -461,6 +520,7 @@ export default function Show({ order, itemTransactions, voidRefundAccount }) {
                                                     </p>
                                                     <p className="text-lg font-black text-slate-950">{beneficiary.name ?? '-'}</p>
                                                     <p className="mt-1 text-sm text-slate-600">{beneficiary.phone ?? '-'}</p>
+                                                    <p className="mt-1 text-sm text-slate-600">Passenger: {passengerName}</p>
                                                     <p className="mt-1 text-sm text-slate-600">{beneficiary.address ?? '-'}</p>
                                                 </div>
                                                 <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4">
@@ -469,6 +529,8 @@ export default function Show({ order, itemTransactions, voidRefundAccount }) {
                                                     </p>
                                                     <p className="text-lg font-black text-slate-950">{policyDetails.policy_date_from ?? policyDetails.PolicyDateFrom ?? '-'}</p>
                                                     <p className="mt-1 text-sm text-slate-600">to {policyDetails.policy_date_to ?? policyDetails.PolicyDateTo ?? '-'}</p>
+                                                    <p className="mt-1 text-sm text-slate-600">Zone: {travelZone}</p>
+                                                    <p className="mt-1 text-sm text-slate-600">Duration: {travelDuration}</p>
                                                     <p className="mt-1 text-sm text-slate-600">Policy ID: {policyDetails.policy_id ?? cancellation.insurance_policy_id ?? '-'}</p>
                                                 </div>
                                                 <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4">
@@ -509,6 +571,171 @@ export default function Show({ order, itemTransactions, voidRefundAccount }) {
                                                             <Badge variant="secondary">Pending Insurance Company</Badge>
                                                         )}
                                                     </div>
+                                                </div>
+                                            ) : null}
+                                        </div>
+                                    </div>
+                                );
+                            }
+
+                            if (item.type === 'hotel' || item.product_type === 'hotel') {
+                                const details = item.item_details ?? {};
+                                const product = item.product_details ?? {};
+                                const hotel = product.hotel ?? {};
+                                const room = product.room ?? {};
+                                const stay = product.stay ?? details.provider_booking ?? {};
+                                const bookedRooms = product.rooms ?? details.provider_booking?.rooms ?? details.rooms ?? [];
+                                const providerComments = stripHtml(product.comments ?? details.comments ?? '');
+                                const customer = product.customer ?? details.customer ?? {};
+                                const cancellation = details.cancellation ?? {};
+                                const cancellationRequest = details.cancellation_request ?? {};
+
+                                return (
+                                    <div key={item.id}>
+                                        <div className="flex flex-col gap-4 border-b border-slate-200 bg-slate-50/70 px-5 py-5 md:flex-row md:items-start md:justify-between">
+                                            <div className="space-y-2">
+                                                <div className="flex flex-wrap items-center gap-3">
+                                                    <p className="text-2xl font-black tracking-tight text-slate-950 w-120 truncate">Hotel Booking: {details.booking_id ?? item.provider_reference ?? '-'}</p>
+                                                    <Badge variant={itemStatusVariant(item.status)} className="px-3 py-1 font-black uppercase text-white tracking-wider">
+                                                        {item.status}
+                                                    </Badge>
+                                                </div>
+                                                <p className="text-sm text-slate-500">Hotel • Item #{item.id}</p>
+                                            </div>
+
+                                            <div className="flex flex-col items-start gap-3 md:items-end">
+                                                <div className="text-left md:text-right">
+                                                    <p className="text-xs font-bold uppercase tracking-[0.2em] text-slate-500">Booking Total</p>
+                                                    <p className="text-2xl font-black text-slate-950">{formatAmount(item.total_amount ?? item.total, item.currency)}</p>
+                                                </div>
+
+                                                {canManageHotels ? (
+                                                    <DropdownMenu>
+                                                        <DropdownMenuTrigger asChild>
+                                                            <Button variant="outline" size="sm" className="border-slate-300 bg-white/90 font-semibold text-slate-700 hover:bg-slate-100">
+                                                                Manage
+                                                                <MoreHorizontal className="ml-1.5 h-4 w-4" />
+                                                            </Button>
+                                                        </DropdownMenuTrigger>
+                                                        <DropdownMenuContent align="end" className="w-52">
+                                                            <DropdownMenuLabel>Manage Booking</DropdownMenuLabel>
+                                                            <DropdownMenuSeparator />
+                                                    {item.status !== 'cancelled' ? (
+                                                                <DropdownMenuItem
+                                                                    className="text-rose-600 focus:text-rose-700"
+                                                                    onSelect={(event) => {
+                                                                        event.preventDefault();
+                                                                        cancelHotelBooking(item);
+                                                                    }}
+                                                                >
+                                                                    {item.status === 'cancellation' ? 'Cancellation Requested' : 'Cancel Booking'}
+                                                                </DropdownMenuItem>
+                                                            ) : (
+                                                                <DropdownMenuItem disabled>Cancel Booking</DropdownMenuItem>
+                                                            )}
+                                                        </DropdownMenuContent>
+                                                    </DropdownMenu>
+                                                ) : null}
+                                            </div>
+                                        </div>
+
+                                        <div className="space-y-5 p-5">
+                                            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                                                <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4">
+                                                    <p className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-[0.2em] text-slate-500">
+                                                        <HotelIcon className="h-3.5 w-3.5" /> Hotel
+                                                    </p>
+                                                    <p className="text-lg font-black text-slate-950">{hotel.name ?? room.hotel_name ?? '-'}</p>
+                                                    <p className="mt-1 text-sm text-slate-600">{hotel.city_name ?? '-'}, {hotel.country_name ?? '-'}</p>
+                                                    <p className="mt-1 text-sm text-slate-600">Rating: {hotel.rating ?? hotel.rating_id ?? '-'}</p>
+                                                    <p className="mt-1 text-sm text-slate-600">Room: {room.room_name ?? '-'}</p>
+                                                    <p className="mt-1 text-sm text-slate-600">Board: {room.board_name ?? '-'}</p>
+                                                </div>
+                                                <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4">
+                                                    <p className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-[0.2em] text-slate-500">
+                                                        <CalendarDays className="h-3.5 w-3.5" /> Stay
+                                                    </p>
+                                                    <p className="text-lg font-black text-slate-950">{stay.from ?? details.search?.check_in ?? '-'}</p>
+                                                    <p className="mt-1 text-sm text-slate-600">to {stay.to ?? details.search?.check_out ?? '-'}</p>
+                                                    <p className="mt-1 text-sm text-slate-600">Destination: {details.search?.city ?? '-'}</p>
+                                                    <p className="mt-1 text-sm text-slate-600">Deadline: {stay.deadline || '-'}</p>
+                                                </div>
+                                                <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4">
+                                                    <p className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-[0.2em] text-slate-500">
+                                                        <UserRound className="h-3.5 w-3.5" /> Customer
+                                                    </p>
+                                                    <p className="text-lg font-black text-slate-950">{customer.firstName ?? customer.first_name ?? '-'} {customer.lastName ?? customer.last_name ?? ''}</p>
+                                                    <p className="mt-1 text-sm text-slate-600">{customer.email ?? '-'}</p>
+                                                    <p className="mt-1 text-sm text-slate-600">{customer.mobile ?? '-'}</p>
+                                                </div>
+                                                <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4">
+                                                    <p className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-[0.2em] text-slate-500">
+                                                        <ReceiptText className="h-3.5 w-3.5" /> Transactions
+                                                    </p>
+                                                    <p className="text-sm text-slate-600">Provider wallet transaction</p>
+                                                    <p className="mt-1 break-all font-mono text-xs text-slate-700">{tx?.wallet_transaction?.uuid ?? item.wallet_transaction_id ?? '-'}</p>
+                                                    <p className="mt-3 text-sm text-slate-600">Provider total</p>
+                                                    <p className="text-base font-bold text-slate-950">{formatAmount(details.total_purchase ?? item.total_amount ?? item.total, details.provider_currency ?? item.currency)}</p>
+                                                    <p className="mt-3 text-sm text-slate-600">Markup profit</p>
+                                                    <p className="text-base font-bold text-slate-950">{formatAmount(details.markup_amount ?? item.commission_amount ?? 0, item.currency)} ({details.markup_percent ?? item.commission_percent ?? 0}%)</p>
+                                                    <p className="mt-1 text-xs text-slate-500">Returned price: {details.returned_price ? 'Yes' : 'No'}</p>
+                                                    {item.status === 'cancelled' ? (
+                                                        <>
+                                                            <p className="mt-3 text-sm text-slate-600">Refund amount</p>
+                                                            <p className="text-base font-bold text-slate-950">{formatAmount(cancellation.refund_amount ?? 0, item.currency)}</p>
+                                                        </>
+                                                    ) : null}
+                                                </div>
+                                            </div>
+
+                                            {bookedRooms.length > 0 ? (
+                                                <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                                                    <p className="mb-3 font-black uppercase tracking-[0.2em] text-slate-500">Booked Rooms</p>
+                                                    <div className="grid gap-3 md:grid-cols-2">
+                                                        {bookedRooms.map((bookedRoom, index) => (
+                                                            <div key={`${bookedRoom.rateKey ?? bookedRoom.ratekey ?? index}`} className="rounded-xl border border-slate-200 bg-slate-50/60 p-3 text-sm">
+                                                                <div className="flex items-start justify-between gap-3">
+                                                                    <div>
+                                                                        <p className="font-bold text-slate-950">Room {bookedRoom.roomIndex ?? index + 1}: {bookedRoom.name ?? bookedRoom.room_name ?? '-'}</p>
+                                                                        <p className="mt-1 text-slate-600">Board: {bookedRoom.boardName ?? bookedRoom.board_name ?? '-'}</p>
+                                                                        <p className="mt-1 text-slate-600">Association: {bookedRoom.associationId ?? '-'}</p>
+                                                                    </div>
+                                                                    <p className="font-black text-slate-950">{formatAmount(bookedRoom.price ?? 0, bookedRoom.currency ?? item.currency)}</p>
+                                                                </div>
+                                                                <p className="mt-2 text-slate-600">No-show: {formatAmount(bookedRoom.noShow ?? 0, bookedRoom.currency ?? item.currency)}</p>
+                                                                {(bookedRoom.cancellationPolicies ?? []).length > 0 ? (
+                                                                    <p className="mt-1 text-slate-600">
+                                                                        Cancellation from {bookedRoom.cancellationPolicies[0]?.from ?? '-'}: {formatAmount(bookedRoom.cancellationPolicies[0]?.amount ?? 0, bookedRoom.currency ?? item.currency)}
+                                                                    </p>
+                                                                ) : null}
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            ) : null}
+
+                                            {providerComments ? (
+                                                <div className="rounded-2xl border border-sky-200 bg-sky-50/80 p-4 text-sm text-sky-950">
+                                                    <p className="font-black uppercase tracking-[0.2em] text-sky-700">Provider Notes</p>
+                                                    <p className="mt-2">{providerComments}</p>
+                                                </div>
+                                            ) : null}
+
+                                            {item.status === 'cancellation' ? (
+                                                <div className="rounded-2xl border border-sky-200 bg-sky-50/80 p-4 text-sm text-sky-950">
+                                                    <p className="font-black uppercase tracking-[0.2em] text-sky-700">Cancellation Request</p>
+                                                    <p className="mt-2">Auto cancellation was denied by 3T, but a cancellation request has been sent for this booking.</p>
+                                                    <p className="mt-1">Provider message: {cancellationRequest.message ?? '-'}</p>
+                                                    <p className="mt-1">Requested at: {formatDateTime(cancellationRequest.requested_at)}</p>
+                                                </div>
+                                            ) : null}
+
+                                            {item.status === 'cancelled' ? (
+                                                <div className="rounded-2xl border border-amber-200 bg-amber-50/80 p-4 text-sm text-amber-950">
+                                                    <p className="font-black uppercase tracking-[0.2em] text-amber-700">Cancellation</p>
+                                                    <p className="mt-2">Cancellation fee: {formatAmount(cancellation.cancellation_fee ?? 0, item.currency)}</p>
+                                                    <p className="mt-1">Refund amount: {formatAmount(cancellation.refund_amount ?? 0, item.currency)}</p>
+                                                    <p className="mt-1 break-all">Provider wallet refund transaction: {cancellation.provider_wallet_transaction_id ?? '-'}</p>
                                                 </div>
                                             ) : null}
                                         </div>
@@ -692,16 +919,33 @@ export default function Show({ order, itemTransactions, voidRefundAccount }) {
                                                 <p className="mt-2 text-sm font-semibold text-slate-900">{payments[0]?.reference ?? '-'}</p>
                                             </div>
                                             <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4">
-                                                <p className="text-xs font-bold uppercase tracking-[0.2em] text-slate-500">Wallet Transaction</p>
+                                                <p className="text-xs font-bold uppercase tracking-[0.2em] text-slate-500">Main Wallet Transaction</p>
                                                 <p className="mt-2 break-all font-mono text-xs text-slate-700">{tx?.wallet_transaction?.uuid ?? '-'}</p>
                                             </div>
                                             <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4">
-                                                <p className="text-xs font-bold uppercase tracking-[0.2em] text-slate-500">Airline Transaction</p>
+                                                <p className="text-xs font-bold uppercase tracking-[0.2em] text-slate-500">Provider Wallet</p>
                                                 <p className="mt-2 text-sm font-semibold text-slate-900">
-                                                    {tx?.airline_transaction
-                                                        ? `${tx.airline_transaction.type} (${tx.airline_transaction.amount})`
+                                                    {tx?.provider_wallet_transaction
+                                                        ? `${tx.provider_wallet_transaction.type} (${formatAmount(Number(tx.provider_wallet_transaction.amount ?? 0) / 100, item.currency)})`
+                                                        : tx?.provider_wallet_void_transaction
+                                                            ? `${tx.provider_wallet_void_transaction.type} (${formatAmount(Number(tx.provider_wallet_void_transaction.amount ?? 0) / 100, item.currency)})`
+                                                            : tx?.provider_wallet_refund_transaction
+                                                                ? `${tx.provider_wallet_refund_transaction.type} (${formatAmount(Number(tx.provider_wallet_refund_transaction.amount ?? 0) / 100, item.currency)})`
+                                                                : '-'}
+                                                </p>
+                                            </div>
+                                            <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4">
+                                                <p className="text-xs font-bold uppercase tracking-[0.2em] text-slate-500">Refund / Penalty</p>
+                                                <p className="mt-2 text-sm font-semibold text-slate-900">
+                                                    {tx?.refund_wallet_transaction
+                                                        ? `${formatAmount(Number(tx.refund_wallet_transaction.amount ?? 0) / 100, item.currency)} refunded`
                                                         : '-'}
                                                 </p>
+                                                {tx?.refund_penalty_transaction ? (
+                                                    <p className="mt-1 text-xs font-semibold text-rose-700">
+                                                        Penalty {formatAmount(Math.abs(Number(tx.refund_penalty_transaction.amount ?? 0)) / 100, item.currency)}
+                                                    </p>
+                                                ) : null}
                                             </div>
                                             <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4">
                                                 <p className="text-xs font-bold uppercase tracking-[0.2em] text-slate-500">Synced At</p>
