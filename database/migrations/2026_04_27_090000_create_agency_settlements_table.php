@@ -24,7 +24,7 @@ return new class extends Migration
             $table->foreign('buyer_tenant_id')->references('id')->on('tenants')->cascadeOnDelete();
             $table->foreign('default_agency_tenant_id')->references('id')->on('tenants')->cascadeOnDelete();
 
-            $table->index(['buyer_tenant_id', 'default_agency_tenant_id']);
+            $table->index(['buyer_tenant_id', 'default_agency_tenant_id'], 'agency_settlements_buyer_default_idx');
             $table->index(['status', 'currency']);
         });
     }
