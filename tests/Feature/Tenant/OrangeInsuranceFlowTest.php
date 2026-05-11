@@ -1,10 +1,13 @@
 <?php
 
+use App\Models\NetworkMembership;
+use App\Models\ProviderAllocation;
 use App\Models\Tenant;
 use App\Models\Tenant\Order;
 use App\Models\Tenant\OrderItem;
 use App\Models\Tenant\TenantInsuranceProvider;
 use App\Models\User;
+use App\Services\AgencyNetwork\MerchantAgencyWalletManager;
 use App\Services\Finance\LedgerDriver;
 use Bavix\Wallet\Models\Transaction as WalletTransaction;
 use Illuminate\Http\Client\Request;
@@ -233,5 +236,212 @@ test('orange issue fails early when provider wallet is insufficient and does not
 
     Http::assertNotSent(function (Request $request): bool {
         return $request->url() === 'https://tameen.webapi.ly/api/Oranges/Post';
+    });
+});
+
+test('merchant agency network orange issuance deducts merchant agency wallet and agency provider wallet', function () {
+    global $state;
+
+    $agency = Tenant::create([
+        'id' => 'orange-net-agency-'.Str::random(4),
+        'company_name' => 'Orange Network Agency',
+        'status' => 'active',
+        'subscription_status' => 'trial',
+    ]);
+
+    tenancy()->initialize($agency);
+    $agencyProvider = TenantInsuranceProvider::query()->create([
+        'provider_type' => 'albaraka',
+        'name' => 'Agency Orange Al Baraka',
+        'credentials' => [
+            'base_url' => 'https://agency-orange.test',
+            'token' => 'agency-orange-token',
+        ],
+        'is_active' => true,
+        'commission_orange' => 8,
+    ]);
+    $agencyProvider->getOrCreateCurrencyWallet('LYD')->depositFloat(500, ['type' => 'test_provider_fund']);
+    tenancy()->end();
+
+    $membership = NetworkMembership::query()->create([
+        'agency_tenant_id' => $agency->id,
+        'merchant_tenant_id' => $state['tenant']->id,
+        'status' => NetworkMembership::StatusActive,
+        'accepted_at' => now(),
+    ]);
+
+    $allocation = ProviderAllocation::query()->create([
+        'network_membership_id' => $membership->id,
+        'agency_tenant_id' => $agency->id,
+        'merchant_tenant_id' => $state['tenant']->id,
+        'provider_type' => 'insurance',
+        'provider_driver' => 'albaraka',
+        'provider_identity' => 'ALBARAKA-ORANGE',
+        'source_provider_model' => TenantInsuranceProvider::class,
+        'source_provider_id' => $agencyProvider->id,
+        'status' => ProviderAllocation::StatusActive,
+        'is_offered_by_agency' => true,
+        'is_enabled_by_merchant' => true,
+        'enabled_at' => now(),
+    ]);
+
+    tenancy()->initialize($state['tenant']);
+    app(MerchantAgencyWalletManager::class)->depositForMembership($membership, 250, 'LYD', [
+        'reference_number' => 'ORANGE-MER-DEP-001',
+    ]);
+
+    Http::fake([
+        'https://agency-orange.test/api/Oranges/CheckPolicyPrices' => Http::response(['Code' => 200, 'Statues' => true, 'data' => 74.565], 200),
+        'https://agency-orange.test/api/Oranges/Post' => Http::response([
+            'Id' => 67785,
+            'EncryptedId' => 'ENC-ORANGE-NET-001',
+            'CardNumber' => 'LBY/NET/6825725',
+            'totalpremium' => 74.565,
+        ], 200),
+        'https://agency-orange.test/api/Oranges/Get*' => Http::response(['Code' => 200, 'Statues' => true, 'data' => [[
+            'Id' => 67785,
+            'EncryptedId' => 'ENC-ORANGE-NET-001',
+            'CardNumber' => 'LBY/NET/6825725',
+            'TotalPremium' => 74.565,
+        ]]], 200),
+    ]);
+
+    $this->actingAs($state['admin']);
+
+    $priceResponse = $this->postJson($state['baseUrl'].route('insurance.orange.price', [], false), [
+        'country' => 1,
+        'document_type_id' => 1,
+        'policy_date_from' => '2026-04-05',
+        'policy_date_to' => '2026-04-12',
+    ])->assertSuccessful();
+
+    expect($priceResponse->json('provider_source.source_type'))->toBe('agency_network')
+        ->and($priceResponse->json('provider_source.provider_selector'))->toBe("agency_network:{$allocation->id}");
+
+    $issueResponse = $this->post($state['baseUrl'].route('insurance.orange.issue', [], false), [
+        'quote_token' => (string) $priceResponse->json('quote_token'),
+        'name' => 'ORANGE NETWORK CUSTOMER',
+        'address' => 'Tripoli',
+        'phone' => '+218911388788',
+        'chassis_number' => '1VXBR12EXCP901213',
+        'metal_plate_number' => '1074316',
+        'manufacture_year' => 2009,
+        'car_id' => 14,
+        'nationality' => 1,
+    ]);
+
+    $order = Order::query()->latest('created_at')->firstOrFail();
+    $item = OrderItem::query()->where('order_id', $order->id)->firstOrFail();
+
+    $issueResponse->assertRedirect(route('orders.show', $order, false));
+
+    expect(data_get($item->item_details, 'financial_source'))->toBe('agency_network_supply')
+        ->and(data_get($item->item_details, 'provider_wallet_transaction_id'))->not->toBeNull()
+        ->and($item->wallet_transaction_id)->not->toBeNull();
+
+    $merchantWallet = app(MerchantAgencyWalletManager::class)->getOrCreateWalletForMembership($membership, 'LYD');
+    expect(round((float) $merchantWallet->balanceFloat, 2))->toBe(175.43);
+
+    tenancy()->initialize($agency);
+    $agencyProviderWallet = TenantInsuranceProvider::query()->findOrFail($agencyProvider->id)->getOrCreateCurrencyWallet('LYD');
+    expect(round((float) $agencyProviderWallet->balanceFloat, 2))->toBe(425.43);
+
+    $providerWithdrawal = WalletTransaction::query()->where('uuid', (string) data_get($item->item_details, 'provider_wallet_transaction_id'))->first();
+    expect($providerWithdrawal)->not->toBeNull()
+        ->and(data_get($providerWithdrawal->meta, 'provider_source_type'))->toBe('agency_network')
+        ->and(data_get($providerWithdrawal->meta, 'provider_allocation_id'))->toBe($allocation->id);
+
+    tenancy()->initialize($state['tenant']);
+});
+
+test('merchant agency network orange issuance fails early when merchant agency wallet is insufficient', function () {
+    global $state;
+
+    $agency = Tenant::create([
+        'id' => 'orange-net-low-merchant-'.Str::random(4),
+        'company_name' => 'Orange Low Merchant Agency',
+        'status' => 'active',
+        'subscription_status' => 'trial',
+    ]);
+
+    tenancy()->initialize($agency);
+    $agencyProvider = TenantInsuranceProvider::query()->create([
+        'provider_type' => 'albaraka',
+        'name' => 'Agency Orange Wallet Guard',
+        'credentials' => [
+            'base_url' => 'https://agency-orange-low-merchant.test',
+            'token' => 'agency-orange-token',
+        ],
+        'is_active' => true,
+        'commission_orange' => 8,
+    ]);
+    $agencyProvider->getOrCreateCurrencyWallet('LYD')->depositFloat(500, ['type' => 'test_provider_fund']);
+    tenancy()->end();
+
+    $membership = NetworkMembership::query()->create([
+        'agency_tenant_id' => $agency->id,
+        'merchant_tenant_id' => $state['tenant']->id,
+        'status' => NetworkMembership::StatusActive,
+        'accepted_at' => now(),
+    ]);
+
+    $allocation = ProviderAllocation::query()->create([
+        'network_membership_id' => $membership->id,
+        'agency_tenant_id' => $agency->id,
+        'merchant_tenant_id' => $state['tenant']->id,
+        'provider_type' => 'insurance',
+        'provider_driver' => 'albaraka',
+        'provider_identity' => 'ALBARAKA-ORANGE-LOW-MERCHANT',
+        'source_provider_model' => TenantInsuranceProvider::class,
+        'source_provider_id' => $agencyProvider->id,
+        'status' => ProviderAllocation::StatusActive,
+        'is_offered_by_agency' => true,
+        'is_enabled_by_merchant' => true,
+        'enabled_at' => now(),
+    ]);
+
+    tenancy()->initialize($state['tenant']);
+    $merchantWallet = app(MerchantAgencyWalletManager::class)->getOrCreateWalletForMembership($membership, 'LYD');
+
+    Http::fake([
+        'https://agency-orange-low-merchant.test/api/Oranges/CheckPolicyPrices' => Http::response(['Code' => 200, 'Statues' => true, 'data' => 74.565], 200),
+        'https://agency-orange-low-merchant.test/*' => Http::response(['Code' => 500, 'Statues' => false], 500),
+    ]);
+
+    $this->actingAs($state['admin']);
+
+    $priceResponse = $this->postJson($state['baseUrl'].route('insurance.orange.price', [], false), [
+        'country' => 1,
+        'document_type_id' => 1,
+        'policy_date_from' => '2026-04-05',
+        'policy_date_to' => '2026-04-12',
+    ])->assertSuccessful();
+
+    expect($priceResponse->json('provider_source.provider_selector'))->toBe("agency_network:{$allocation->id}");
+
+    $this->post($state['baseUrl'].route('insurance.orange.issue', [], false), [
+        'quote_token' => (string) $priceResponse->json('quote_token'),
+        'name' => 'ORANGE NETWORK CUSTOMER',
+        'address' => 'Tripoli',
+        'phone' => '+218911388788',
+        'chassis_number' => '1VXBR12EXCP901213',
+        'metal_plate_number' => '1074316',
+        'manufacture_year' => 2009,
+        'car_id' => 14,
+        'nationality' => 1,
+    ])->assertSessionHas('error');
+
+    expect(Order::query()->count())->toBe(0)
+        ->and(round((float) $merchantWallet->fresh()->balanceFloat, 2))->toBe(0.0);
+
+    tenancy()->initialize($agency);
+    $agencyProviderWallet = TenantInsuranceProvider::query()->findOrFail($agencyProvider->id)->getOrCreateCurrencyWallet('LYD');
+    expect(round((float) $agencyProviderWallet->balanceFloat, 2))->toBe(500.0);
+
+    tenancy()->initialize($state['tenant']);
+
+    Http::assertNotSent(function (Request $request): bool {
+        return $request->url() === 'https://agency-orange-low-merchant.test/api/Oranges/Post'
+            || str_starts_with($request->url(), 'https://agency-orange-low-merchant.test/api/Oranges/Get?');
     });
 });

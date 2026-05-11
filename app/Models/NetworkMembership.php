@@ -2,6 +2,10 @@
 
 namespace App\Models;
 
+use Bavix\Wallet\Interfaces\Wallet as WalletInterface;
+use Bavix\Wallet\Models\Wallet;
+use Bavix\Wallet\Traits\HasWallet;
+use Bavix\Wallet\Traits\HasWallets;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -9,9 +13,11 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Str;
 use Stancl\Tenancy\Database\Concerns\CentralConnection;
 
-class NetworkMembership extends Model
+class NetworkMembership extends Model implements WalletInterface
 {
     use CentralConnection;
+    use HasWallet;
+    use HasWallets;
 
     public const StatusPending = 'pending';
 
@@ -28,11 +34,15 @@ class NetworkMembership extends Model
     protected $fillable = [
         'agency_tenant_id',
         'merchant_tenant_id',
+        'merchant_email',
+        'merchant_contact_name',
         'invitation_token',
         'invitation_code',
         'status',
         'expires_at',
+        'invited_at',
         'accepted_at',
+        'suspended_at',
         'removal_requested_at',
         'removal_approved_at',
         'revoked_at',
@@ -52,7 +62,9 @@ class NetworkMembership extends Model
     {
         return [
             'expires_at' => 'datetime',
+            'invited_at' => 'datetime',
             'accepted_at' => 'datetime',
+            'suspended_at' => 'datetime',
             'removal_requested_at' => 'datetime',
             'removal_approved_at' => 'datetime',
             'revoked_at' => 'datetime',
@@ -80,6 +92,25 @@ class NetworkMembership extends Model
         return $this->hasMany(ProviderAllocation::class);
     }
 
+    public function getOrCreateCurrencyWallet(string $currency = 'LYD'): Wallet
+    {
+        $normalizedCurrency = strtoupper($currency);
+        $slug = 'NETWORK_'.$this->id.'_'.$normalizedCurrency;
+
+        return $this->getWallet($slug) ?? $this->createWallet([
+            'name' => 'Network '.$this->id.' '.$normalizedCurrency.' Wallet',
+            'slug' => $slug,
+            'meta' => [
+                'type' => 'merchant_agency_network_wallet',
+                'currency' => $normalizedCurrency,
+                'agency_tenant_id' => $this->agency_tenant_id,
+                'source_agency_tenant_id' => $this->agency_tenant_id,
+                'merchant_tenant_id' => $this->merchant_tenant_id,
+                'network_membership_id' => $this->id,
+            ],
+        ]);
+    }
+
     public function scopeActive(Builder $query): Builder
     {
         return $query->where('status', self::StatusActive);
@@ -90,6 +121,22 @@ class NetworkMembership extends Model
         return $this->forceFill([
             'status' => self::StatusActive,
             'accepted_at' => now(),
+        ])->save();
+    }
+
+    public function suspend(): bool
+    {
+        return $this->forceFill([
+            'status' => self::StatusSuspended,
+            'suspended_at' => now(),
+        ])->save();
+    }
+
+    public function revoke(): bool
+    {
+        return $this->forceFill([
+            'status' => self::StatusRevoked,
+            'revoked_at' => now(),
         ])->save();
     }
 

@@ -1,8 +1,8 @@
-import React from 'react';
 import { Head, Link, usePage } from '@inertiajs/react';
 import { Button } from '@/Components/ui/Button';
 import { Badge } from '@/Components/ui/Badge';
 import StorefrontLayout from '@/Layouts/StorefrontLayout';
+import { useTranslation } from '@/hooks/useTranslation';
 import {
     Plane,
     ShieldCheck,
@@ -23,6 +23,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/Com
 
 export default function Welcome() {
     const { tenant } = usePage().props;
+    const { t } = useTranslation();
 
     // --- TENANT HOME PAGE (e.g. agency.tams.ly) ---
     if (tenant?.id) {
@@ -73,31 +74,45 @@ export default function Welcome() {
     return (
         <StorefrontLayout>
             <div className="bg-white text-slate-950">
-                <Head title="BookNow - Airline Ticket and Hotel Booking Platform" />
+                <Head title={t('landlord.page_title')} />
                 
                 {/* Hero Section */}
-                <section className="relative py-14 md:py-20 overflow-hidden border-b bg-slate-50/30">
+                <section className="relative overflow-hidden border-b bg-slate-50/30 py-14 md:py-20">
+                    <div className="absolute inset-x-0 top-0 h-px bg-primary/20" aria-hidden="true" />
                     <div className="container mx-auto px-4 md:px-6 relative z-10">
-                        <div className="flex flex-col items-center text-center space-y-6 max-w-3xl mx-auto">
+                        <div className="mx-auto flex max-w-4xl flex-col items-center space-y-6 text-center">
                             <Badge variant="outline" className="px-3 py-1 border-primary/20 bg-primary/5 text-primary font-medium rounded-full uppercase text-[10px]">
-                                Airline Ticketing and Hotel Booking
+                                {t('landlord.hero_badge')}
                             </Badge>
-                            <h1 className="text-3xl md:text-5xl font-bold tracking-tight leading-tight text-slate-950">
-                                One Platform for <span className="text-primary">Flights, Hotels, and Travel Operations</span>
+                            <h1 className="text-balance text-3xl font-bold leading-tight tracking-tight text-slate-950 md:text-5xl">
+                                {t('landlord.hero_title_prefix')} <span className="text-primary">{t('landlord.hero_title_highlight')}</span>
                             </h1>
-                            <p className="text-base md:text-lg text-slate-600 font-medium max-w-2xl leading-relaxed">
-                                BookNow helps agencies and travel teams search airline fares, book hotels, issue tickets, and manage agents from one secure system.
+                            <p className="max-w-2xl text-pretty text-base font-medium leading-relaxed text-slate-600 md:text-lg">
+                                {t('landlord.hero_description')}
                             </p>
+
+                            <div className="grid w-full max-w-3xl gap-3 pt-2 sm:grid-cols-3">
+                                {[
+                                    ['landlord.metric_products', '3+'],
+                                    ['landlord.metric_wallets', '2x'],
+                                    ['landlord.metric_markets', '3'],
+                                ].map(([label, value]) => (
+                                    <div key={label} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs">
+                                        <p className="text-2xl font-bold text-slate-950 tabular-nums">{value}</p>
+                                        <p className="mt-1 text-xs font-medium text-slate-500">{t(label)}</p>
+                                    </div>
+                                ))}
+                            </div>
                             
                             <div className="flex flex-col sm:flex-row gap-3 pt-2 w-full justify-center">
                                 <Button asChild size="lg" className="font-semibold h-11 px-6 group">
                                     <Link href="/register-agency">
-                                        Request a Demo <ArrowRight className="ml-2 h-4 w-4 group-hover:translate-x-1 transition-transform" />
+                                        {t('landlord.request_demo')} <ArrowRight className="ms-2 h-4 w-4 transition-transform group-hover:translate-x-1 rtl:group-hover:-translate-x-1" />
                                     </Link>
                                 </Button>
                                 <Button asChild variant="outline" size="lg" className="font-semibold h-11 px-6 border-slate-200 hover:bg-slate-50">
                                     <Link href="#features">
-                                        Explore Capabilities
+                                        {t('landlord.explore_capabilities')}
                                     </Link>
                                 </Button>
                             </div>
@@ -109,22 +124,22 @@ export default function Welcome() {
                 <section id="features" className="py-14 md:py-16">
                     <div className="container mx-auto px-4 md:px-6">
                         <div className="text-center mb-10 space-y-3">
-                            <h2 className="text-2xl md:text-3xl font-semibold tracking-tight text-balance">Core Product Capabilities</h2>
+                            <h2 className="text-2xl md:text-3xl font-semibold tracking-tight text-balance">{t('landlord.capabilities_title')}</h2>
                             <p className="text-base text-slate-500 font-medium max-w-2xl mx-auto leading-relaxed text-pretty">
-                                Purpose-built for airline ticket and hotel booking businesses.
+                                {t('landlord.capabilities_description')}
                             </p>
                         </div>
 
                         <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
                             {[
-                                { title: 'Flight Search and Booking', desc: 'Search across connected airline providers and create bookings in seconds.', icon: Plane },
-                                { title: 'Hotel Reservation Management', desc: 'Manage hotel offers, room selections, and itinerary-linked stays.', icon: Hotel },
-                                { title: 'Ticketing and Post-Sales', desc: 'Handle issue, reissue, void, and refund workflows with full traceability.', icon: Ticket },
-                                { title: 'Agency Team Control', desc: 'Secure roles, access control, and activity visibility for every agent.', icon: ShieldCheck },
+                                { title: t('landlord.feature_flights_title'), desc: t('landlord.feature_flights_desc'), icon: Plane },
+                                { title: t('landlord.feature_hotels_title'), desc: t('landlord.feature_hotels_desc'), icon: Hotel },
+                                { title: t('landlord.feature_ticketing_title'), desc: t('landlord.feature_ticketing_desc'), icon: Ticket },
+                                { title: t('landlord.feature_control_title'), desc: t('landlord.feature_control_desc'), icon: ShieldCheck },
                             ].map((f, i) => (
                                 <Card key={i} className="border hover:border-primary/20 transition-all group overflow-hidden bg-white">
                                     <CardContent className="p-6 space-y-4">
-                                        <div className="size-12 rounded-xl bg-primary/10 text-primary flex items-center justify-center group-hover:bg-primary group-hover:text-white transition-all duration-300">
+                                        <div className="size-12 rounded-xl bg-primary/10 text-primary flex items-center justify-center transition-colors group-hover:bg-primary group-hover:text-white">
                                             <f.icon className="h-6 w-6" />
                                         </div>
                                         <div className="space-y-2">
@@ -145,10 +160,10 @@ export default function Welcome() {
                                 <CardContent className="p-6 space-y-3">
                                     <div className="flex items-center gap-2 text-primary">
                                         <Building2 className="h-5 w-5" />
-                                        <h3 className="font-semibold">Built for Agencies</h3>
+                                        <h3 className="font-semibold">{t('landlord.built_for_agencies')}</h3>
                                     </div>
                                     <p className="text-sm text-slate-600 font-medium text-pretty">
-                                        Operate B2B travel workflows with one workspace for flights, hotels, agents, and customer service.
+                                        {t('landlord.built_for_agencies_desc')}
                                     </p>
                                 </CardContent>
                             </Card>
@@ -156,10 +171,10 @@ export default function Welcome() {
                                 <CardContent className="p-6 space-y-3">
                                     <div className="flex items-center gap-2 text-primary">
                                         <Clock className="h-5 w-5" />
-                                        <h3 className="font-semibold">Faster Operations</h3>
+                                        <h3 className="font-semibold">{t('landlord.faster_operations')}</h3>
                                     </div>
                                     <p className="text-sm text-slate-600 font-medium text-pretty">
-                                        Reduce manual steps with centralized booking handling and streamlined post-sales actions.
+                                        {t('landlord.faster_operations_desc')}
                                     </p>
                                 </CardContent>
                             </Card>
@@ -167,10 +182,10 @@ export default function Welcome() {
                                 <CardContent className="p-6 space-y-3">
                                     <div className="flex items-center gap-2 text-primary">
                                         <Globe className="h-5 w-5" />
-                                        <h3 className="font-semibold">Multi-Market Ready</h3>
+                                        <h3 className="font-semibold">{t('landlord.multi_market_ready')}</h3>
                                     </div>
                                     <p className="text-sm text-slate-600 font-medium text-pretty">
-                                        Support regional and global customers with flexible provider integration and scalable access.
+                                        {t('landlord.multi_market_ready_desc')}
                                     </p>
                                 </CardContent>
                             </Card>
@@ -182,34 +197,34 @@ export default function Welcome() {
                 <section id="offers" className="py-14 md:py-16 bg-slate-50/50 border-t">
                     <div className="container mx-auto px-4 md:px-6">
                         <div className="text-center mb-10 space-y-3">
-                            <h2 className="text-2xl md:text-3xl font-semibold tracking-tight text-slate-950 text-balance">Customer Offers</h2>
+                            <h2 className="text-2xl md:text-3xl font-semibold tracking-tight text-slate-950 text-balance">{t('landlord.offers_title')}</h2>
                             <p className="text-base text-slate-500 font-medium max-w-2xl mx-auto text-pretty">
-                                Flexible plans and onboarding options for growing travel businesses.
+                                {t('landlord.offers_description')}
                             </p>
                         </div>
 
                         <div className="grid md:grid-cols-2 gap-6 max-w-4xl mx-auto">
                             {[
                                 {
-                                    name: 'Starter',
+                                    name: t('landlord.starter'),
                                     price: '49',
-                                    features: ['1 Airline Provider', 'Hotel Module Ready', '5 Agent Accounts', 'Standard Support'],
-                                    badge: 'Ideal for new agencies',
+                                    features: [t('landlord.starter_feature_1'), t('landlord.starter_feature_2'), t('landlord.starter_feature_3'), t('landlord.starter_feature_4')],
+                                    badge: t('landlord.starter_badge'),
                                 },
                                 {
-                                    name: 'Professional',
+                                    name: t('landlord.professional'),
                                     price: '149',
-                                    features: ['Unlimited Providers', 'Hotel + Flight Workflows', 'Unlimited Agents', 'Priority Support'],
-                                    badge: 'Most selected by growing teams',
+                                    features: [t('landlord.pro_feature_1'), t('landlord.pro_feature_2'), t('landlord.pro_feature_3'), t('landlord.pro_feature_4')],
+                                    badge: t('landlord.pro_badge'),
                                 },
                             ].map((p, i) => (
                                 <Card key={i} className={`border overflow-hidden bg-white ${i === 1 ? 'border-primary shadow-sm relative' : ''}`}>
-                                    {i === 1 && <div className="absolute top-0 right-0 bg-primary text-white px-4 py-1 text-xs font-semibold uppercase">Recommended</div>}
+                                    {i === 1 && <div className="absolute top-0 end-0 bg-primary text-white px-4 py-1 text-xs font-semibold uppercase">{t('landlord.recommended')}</div>}
                                     <CardHeader className="p-6 pb-4">
                                         <CardTitle className="text-xs font-semibold uppercase text-primary mb-2">{p.name}</CardTitle>
                                         <div className="flex items-baseline gap-1">
                                             <span className="text-4xl font-bold tracking-tight text-slate-950">${p.price}</span>
-                                            <span className="text-slate-500 font-medium text-sm">/month</span>
+                                            <span className="text-slate-500 font-medium text-sm">{t('landlord.per_month')}</span>
                                         </div>
                                         <p className="text-xs text-slate-500 font-medium">{p.badge}</p>
                                     </CardHeader>
@@ -222,7 +237,7 @@ export default function Welcome() {
                                             ))}
                                         </ul>
                                         <Button asChild size="lg" variant={i === 1 ? "default" : "outline"} className="w-full h-11 font-semibold transition-all border-slate-200 hover:bg-slate-50">
-                                            <Link href="/register-agency">Get Started Now</Link>
+                                            <Link href="/register-agency">{t('landlord.get_started_now')}</Link>
                                         </Button>
                                     </CardContent>
                                 </Card>
@@ -232,7 +247,7 @@ export default function Welcome() {
                         <div className="mt-8 text-center">
                             <Badge variant="secondary" className="px-3 py-1 text-xs font-medium">
                                 <Sparkles className="h-3.5 w-3.5 mr-1" />
-                                Limited Offer: Free migration and onboarding for annual plans
+                                {t('landlord.limited_offer')}
                             </Badge>
                         </div>
                     </div>
@@ -241,9 +256,9 @@ export default function Welcome() {
                 <section id="contact" className="py-14 md:py-16 border-t bg-white">
                     <div className="container mx-auto px-4 md:px-6">
                         <div className="max-w-3xl mx-auto text-center space-y-3 mb-10">
-                            <h2 className="text-2xl md:text-3xl font-semibold tracking-tight text-balance">Contact Us</h2>
+                            <h2 className="text-2xl md:text-3xl font-semibold tracking-tight text-balance">{t('landlord.contact_us')}</h2>
                             <p className="text-base text-slate-500 font-medium text-pretty">
-                                Talk to our team about product fit, pricing, onboarding, or custom integrations.
+                                {t('landlord.contact_description')}
                             </p>
                         </div>
 
@@ -251,7 +266,7 @@ export default function Welcome() {
                             <Card className="border bg-white">
                                 <CardContent className="p-6 text-center space-y-3">
                                     <Phone className="h-5 w-5 text-primary mx-auto" />
-                                    <h3 className="font-semibold">Phone</h3>
+                                    <h3 className="font-semibold">{t('common.phone')}</h3>
                                     <a href="tel:+218910000000" className="text-sm text-slate-600 font-medium hover:text-primary">
                                         +218 91 000 0000
                                     </a>
@@ -261,7 +276,7 @@ export default function Welcome() {
                             <Card className="border bg-white">
                                 <CardContent className="p-6 text-center space-y-3">
                                     <Mail className="h-5 w-5 text-primary mx-auto" />
-                                    <h3 className="font-semibold">Email</h3>
+                                    <h3 className="font-semibold">{t('common.email')}</h3>
                                     <a href="mailto:sales@booknow.ly" className="text-sm text-slate-600 font-medium hover:text-primary">
                                         sales@booknow.ly
                                     </a>
@@ -271,9 +286,9 @@ export default function Welcome() {
                             <Card className="border bg-white">
                                 <CardContent className="p-6 text-center space-y-3">
                                     <MessageSquare className="h-5 w-5 text-primary mx-auto" />
-                                    <h3 className="font-semibold">Live Inquiry</h3>
+                                    <h3 className="font-semibold">{t('landlord.live_inquiry')}</h3>
                                     <Link href="/register-agency" className="text-sm text-slate-600 font-medium hover:text-primary">
-                                        Request callback
+                                        {t('landlord.request_callback')}
                                     </Link>
                                 </CardContent>
                             </Card>
@@ -281,7 +296,7 @@ export default function Welcome() {
 
                         <div className="mt-10 flex justify-center">
                             <Button asChild size="lg" className="h-11 px-6 font-semibold">
-                                <Link href="/register-agency">Contact Sales</Link>
+                                <Link href="/register-agency">{t('landlord.contact_sales')}</Link>
                             </Button>
                         </div>
                     </div>
@@ -290,5 +305,4 @@ export default function Welcome() {
         </StorefrontLayout>
     );
 }
-
 

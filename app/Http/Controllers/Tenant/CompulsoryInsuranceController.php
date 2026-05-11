@@ -12,6 +12,7 @@ use App\Http\Requests\Tenant\Insurance\CompulsoryIssueRequest;
 use App\Http\Requests\Tenant\Insurance\CompulsoryPriceRequest;
 use App\Models\Tenant\Order;
 use App\Models\User;
+use App\Services\AgencyNetwork\MerchantAgencyWalletManager;
 use App\Services\Insurance\InsuranceProviderManager;
 use App\Services\Insurance\Providers\AlBarakaProvider;
 use Illuminate\Http\JsonResponse;
@@ -29,6 +30,7 @@ class CompulsoryInsuranceController extends Controller
         protected InsuranceProviderManager $providerManager,
         protected CreateOrderFromInsuranceBooking $createOrderFromInsuranceBooking,
         protected ProcessInsuranceProviderWalletTransactions $insuranceProviderWalletTransactions,
+        protected MerchantAgencyWalletManager $merchantAgencyWalletManager,
     ) {}
 
     public function searchPage(): Response
@@ -118,6 +120,7 @@ class CompulsoryInsuranceController extends Controller
             $quoteToken = (string) Str::uuid();
             $quote = [
                 'quote_token' => $quoteToken,
+                'provider_source' => $this->providerManager->activeProviderSource(),
                 'document_type_id' => (int) $validated['document_type_id'],
                 'duration_id' => (int) $validated['duration_id'],
                 'seats' => (int) $validated['seats'],
@@ -158,11 +161,16 @@ class CompulsoryInsuranceController extends Controller
         }
 
         $insuranceProvider = $this->providerManager->activeProvider();
+        $providerSource = is_array($quote['provider_source'] ?? null) ? $quote['provider_source'] : [];
         $totalPremium = round((float) ($quote['total_premium'] ?? 0), 2);
         $currency = strtoupper((string) ($quote['currency'] ?? 'LYD'));
 
         try {
-            $this->insuranceProviderWalletTransactions->assertCanWithdraw($insuranceProvider, $currency, $totalPremium);
+            if ((string) data_get($providerSource, 'source_type') === 'agency_network') {
+                $this->merchantAgencyWalletManager->assertCanWithdrawForSource($issuer, $providerSource, $currency, $totalPremium);
+            }
+
+            $this->insuranceProviderWalletTransactions->assertCanWithdrawForSource($providerSource, $insuranceProvider, $currency, $totalPremium);
         } catch (InsufficientWalletBalanceException $exception) {
             return back()->with('error', $exception->getMessage());
         }
@@ -250,6 +258,7 @@ class CompulsoryInsuranceController extends Controller
                 beneficiaryData: $beneficiaryData,
                 requestPayload: [
                     'quote' => $quote,
+                    'provider_source' => $quote['provider_source'] ?? null,
                     'issue_request' => $validated,
                     'client_profile_id' => $clientProfileId,
                     'client_profile_vehicle_id' => $vehicleId,
@@ -257,6 +266,14 @@ class CompulsoryInsuranceController extends Controller
                 insuranceProvider: $insuranceProvider,
                 processAgencyWallet: false,
             );
+
+            if ((string) data_get($providerSource, 'source_type') === 'agency_network') {
+                $order->loadMissing('items');
+
+                foreach ($order->items as $item) {
+                    $this->merchantAgencyWalletManager->withdrawForOrderItem($order, $item, $issuer);
+                }
+            }
 
             $this->insuranceProviderWalletTransactions->execute($order, $insuranceProvider);
             app(InitializeTenantLedger::class)->execute((string) $order->currency);

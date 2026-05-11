@@ -6,15 +6,21 @@ use App\Exceptions\InsufficientWalletBalanceException;
 use App\Models\Tenant\Order;
 use App\Models\Tenant\OrderItem;
 use App\Models\Tenant\TenantHotelProvider;
+use App\Services\AgencyNetwork\ProviderSourceResolver;
 use Bavix\Wallet\Models\Transaction;
+use Bavix\Wallet\Models\Wallet;
 use Illuminate\Support\Facades\DB;
 
 class ProcessHotelProviderWalletTransactions
 {
+    public function __construct(
+        protected ProviderSourceResolver $providerSourceResolver,
+    ) {}
+
     /**
      * @throws InsufficientWalletBalanceException
      */
-    public function assertCanWithdraw(TenantHotelProvider $provider, string $currency, float $amount): void
+    public function assertCanWithdraw(TenantHotelProvider $provider, string $currency, float $amount, ?int $walletId = null): void
     {
         $required = round($amount, 2);
 
@@ -22,7 +28,12 @@ class ProcessHotelProviderWalletTransactions
             return;
         }
 
-        $wallet = $provider->getOrCreateCurrencyWallet($currency);
+        $wallet = $walletId !== null ? Wallet::query()->find($walletId) : $provider->getOrCreateCurrencyWallet($currency);
+
+        if (! $wallet instanceof Wallet) {
+            $wallet = $provider->getOrCreateCurrencyWallet($currency);
+        }
+
         $available = round((float) $wallet->balanceFloat, 2);
 
         if (! $wallet->canWithdrawFloat($required)) {
@@ -37,19 +48,43 @@ class ProcessHotelProviderWalletTransactions
     {
         $order->loadMissing('items');
 
-        DB::transaction(function () use ($order, $provider): void {
-            foreach ($order->items as $item) {
-                $this->executeForItem($order, $item, $provider);
+        foreach ($order->items as $item) {
+            $resolved = $this->resolveProviderAndTenantForItem($item, $provider);
+            $resolvedProvider = $resolved['provider'] ?? $provider;
+            $tenantId = $resolved['tenant_id'] ?? tenant()?->id;
+
+            if (! $resolvedProvider instanceof TenantHotelProvider) {
+                continue;
             }
-        });
+
+            $withdrawal = $this->runForProviderTenant($tenantId, fn (): ?Transaction => DB::transaction(function () use ($order, $item, $resolvedProvider): ?Transaction {
+                $provider = TenantHotelProvider::query()->find($resolvedProvider->id) ?? $resolvedProvider;
+                $currency = strtoupper((string) ($item->currency ?? $order->currency ?? 'USD'));
+                $walletId = $provider->getOrCreateCurrencyWallet($currency)->id;
+
+                return $this->executeForItem($order, $item, $provider, $walletId);
+            }));
+
+            if ($withdrawal instanceof Transaction && $this->hasSourceProviderSelector($item)) {
+                $details = (array) $item->item_details;
+                $details['provider_wallet_transaction_id'] = $withdrawal->uuid;
+                $details['provider_wallet_withdrawal_amount'] = round(abs((float) $withdrawal->amount) / 100, 2);
+
+                $item->update(['item_details' => $details]);
+            }
+        }
     }
 
     /**
      * @throws InsufficientWalletBalanceException
      */
-    public function executeForItem(Order $order, OrderItem $item, TenantHotelProvider $provider): ?Transaction
+    public function executeForItem(Order $order, OrderItem $item, TenantHotelProvider $provider, ?int $walletId = null): ?Transaction
     {
-        if ($item->wallet_transaction_id !== null) {
+        if ($this->hasSourceProviderSelector($item) && data_get($item->item_details, 'provider_wallet_transaction_id') !== null) {
+            return null;
+        }
+
+        if (! $this->hasSourceProviderSelector($item) && $item->wallet_transaction_id !== null) {
             return null;
         }
 
@@ -59,21 +94,132 @@ class ProcessHotelProviderWalletTransactions
         }
 
         $currency = strtoupper((string) ($item->currency ?? $order->currency ?? 'USD'));
-        $this->assertCanWithdraw($provider, $currency, $amount);
+        $this->assertCanWithdraw($provider, $currency, $amount, $walletId);
 
-        $wallet = $provider->getOrCreateCurrencyWallet($currency);
+        $wallet = $walletId !== null ? Wallet::query()->find($walletId) : $provider->getOrCreateCurrencyWallet($currency);
+
+        if (! $wallet instanceof Wallet) {
+            $wallet = $provider->getOrCreateCurrencyWallet($currency);
+        }
+
         $withdrawal = $wallet->withdrawFloat($amount, $this->metadataForWithdrawal($order, $item, $provider));
 
         $details = (array) $item->item_details;
         $details['provider_wallet_transaction_id'] = $withdrawal->uuid;
         $details['provider_wallet_withdrawal_amount'] = round(abs((float) $withdrawal->amount) / 100, 2);
 
-        $item->update([
-            'wallet_transaction_id' => $withdrawal->uuid,
-            'item_details' => $details,
-        ]);
+        $updates = ['item_details' => $details];
+
+        if (! $this->hasSourceProviderSelector($item)) {
+            $updates['wallet_transaction_id'] = $withdrawal->uuid;
+        }
+
+        $item->update($updates);
 
         return $withdrawal;
+    }
+
+    /**
+     * @param  array<string, mixed>  $providerSource
+     *
+     * @throws InsufficientWalletBalanceException
+     */
+    public function assertCanWithdrawForSource(array $providerSource, TenantHotelProvider $fallbackProvider, string $currency, float $amount): void
+    {
+        $providerSelector = data_get($providerSource, 'provider_selector');
+
+        if (! is_string($providerSelector) || $providerSelector === '') {
+            $this->assertCanWithdraw($fallbackProvider, $currency, $amount);
+
+            return;
+        }
+
+        $resolved = $this->providerSourceResolver->resolve($providerSelector);
+        $provider = $resolved['provider'] ?? null;
+
+        if (! $provider instanceof TenantHotelProvider) {
+            $this->assertCanWithdraw($fallbackProvider, $currency, $amount);
+
+            return;
+        }
+
+        $tenantId = is_string($resolved['resolved_tenant_id'] ?? null) ? $resolved['resolved_tenant_id'] : tenant()?->id;
+
+        $this->runForProviderTenant($tenantId, function () use ($provider, $currency, $amount): mixed {
+            $providerForTenant = TenantHotelProvider::query()->find($provider->id) ?? $provider;
+            $walletId = $providerForTenant->getOrCreateCurrencyWallet($currency)->id;
+
+            return $this->assertCanWithdraw($providerForTenant, $currency, $amount, $walletId);
+        });
+    }
+
+    /**
+     * @return array{provider: ?TenantHotelProvider, tenant_id: string|null}
+     */
+    protected function resolveProviderAndTenantForItem(OrderItem $item, TenantHotelProvider $fallbackProvider): array
+    {
+        $providerSelector = data_get($item->item_details, 'provider_selector');
+
+        if (is_string($providerSelector) && $providerSelector !== '') {
+            $resolved = $this->providerSourceResolver->resolve($providerSelector);
+            $provider = $resolved['provider'] ?? null;
+
+            if ($provider instanceof TenantHotelProvider) {
+                return [
+                    'provider' => $provider,
+                    'tenant_id' => is_string($resolved['resolved_tenant_id'] ?? null) ? $resolved['resolved_tenant_id'] : tenant()?->id,
+                ];
+            }
+        }
+
+        return [
+            'provider' => $fallbackProvider,
+            'tenant_id' => tenant()?->id,
+        ];
+    }
+
+    protected function hasSourceProviderSelector(OrderItem $item): bool
+    {
+        $selector = data_get($item->item_details, 'provider_selector');
+        $sourceType = (string) data_get($item->item_details, 'provider_source_type', data_get($item->item_details, 'source_type', ''));
+
+        return is_string($selector)
+            && $selector !== ''
+            && in_array($sourceType, ['default_agency', 'agency_network'], true);
+    }
+
+    /**
+     * @template TReturn
+     *
+     * @param  callable(): TReturn  $callback
+     * @return TReturn
+     */
+    protected function runForProviderTenant(?string $tenantId, callable $callback): mixed
+    {
+        if ($tenantId === null || $tenantId === tenant()?->id) {
+            return $callback();
+        }
+
+        $currentTenantId = tenant()?->id;
+        $tenant = \App\Models\Tenant::query()->find($tenantId);
+
+        if (! $tenant instanceof \App\Models\Tenant) {
+            return $callback();
+        }
+
+        try {
+            return $tenant->run($callback);
+        } finally {
+            if ($currentTenantId !== null) {
+                $previousTenant = \App\Models\Tenant::query()->find($currentTenantId);
+
+                if ($previousTenant instanceof \App\Models\Tenant) {
+                    tenancy()->initialize($previousTenant);
+                }
+            } else {
+                tenancy()->end();
+            }
+        }
     }
 
     /**
@@ -95,6 +241,14 @@ class ProcessHotelProviderWalletTransactions
             'product_type' => 'hotel',
             'product_subtype' => (string) $item->product_subtype,
             'provider_reference' => $reference,
+            'financial_source' => data_get($item->item_details, 'financial_source'),
+            'provider_source_type' => data_get($item->item_details, 'provider_source_type'),
+            'source_agency_tenant_id' => data_get($item->item_details, 'source_agency_tenant_id'),
+            'merchant_tenant_id' => data_get($item->item_details, 'merchant_tenant_id'),
+            'network_membership_id' => data_get($item->item_details, 'network_membership_id'),
+            'provider_allocation_id' => data_get($item->item_details, 'provider_allocation_id'),
+            'source_provider_model' => data_get($item->item_details, 'source_provider_model'),
+            'source_provider_id' => data_get($item->item_details, 'source_provider_id'),
         ];
     }
 }

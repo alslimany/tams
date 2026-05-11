@@ -30,6 +30,7 @@ class CreateOrderFromHotelBooking
         array $rooms,
         array $search,
         TenantHotelProvider $provider,
+        ?array $providerSource = null,
     ): Order {
         $issuer = User::query()->find($userId);
 
@@ -54,8 +55,12 @@ class CreateOrderFromHotelBooking
         ));
         $providerTotal = (float) ($bookingResponse['totalPurchase'] ?? $totalAmount);
         $bookingCurrency = strtoupper((string) ($bookingResponse['currency'] ?? $currency));
+        $providerSourceDetails = $this->providerSourceItemDetails($providerSource ?? []);
+        $financialSource = (string) data_get($providerSource, 'source_type') === 'agency_network'
+            ? 'agency_network_supply'
+            : 'own_provider_wallet';
 
-        return DB::transaction(function () use ($issuer, $totalAmount, $providerCost, $currency, $commissionPercent, $commissionAmount, $booking, $bookingResponse, $providerBooking, $providerHotel, $providerRooms, $providerTotal, $bookingCurrency, $bookingId, $bookingSource, $confirmed, $selectedOffer, $customer, $rooms, $search, $provider): Order {
+        return DB::transaction(function () use ($issuer, $totalAmount, $providerCost, $currency, $commissionPercent, $commissionAmount, $booking, $bookingResponse, $providerBooking, $providerHotel, $providerRooms, $providerTotal, $bookingCurrency, $bookingId, $bookingSource, $confirmed, $selectedOffer, $customer, $rooms, $search, $provider, $providerSourceDetails, $financialSource): Order {
             $order = Order::query()->create([
                 'owner_type' => $issuer::class,
                 'owner_id' => $issuer->id,
@@ -79,8 +84,8 @@ class CreateOrderFromHotelBooking
                 'provider' => $provider->provider_type,
                 'provider_reference' => $bookingId,
                 'ticket_number' => (string) ($bookingResponse['bookingRef'] ?? ''),
-                'item_details' => [
-                    'financial_source' => 'own_provider_wallet',
+                'item_details' => array_merge($providerSourceDetails, [
+                    'financial_source' => $financialSource,
                     'booking_id' => $bookingId,
                     'booking_source' => $bookingSource,
                     'booking_ref' => $bookingResponse['bookingRef'] ?? null,
@@ -105,7 +110,7 @@ class CreateOrderFromHotelBooking
                     'customer' => $customer,
                     'rooms' => $rooms,
                     'provider_response' => $booking,
-                ],
+                ]),
                 'product_details' => [
                     'provider' => $provider->name,
                     'product_subtype' => 'hotel',
@@ -164,5 +169,30 @@ class CreateOrderFromHotelBooking
         }
 
         return $this->orderNumberGenerator->generate();
+    }
+
+    /**
+     * @param  array<string, mixed>  $providerSource
+     * @return array<string, mixed>
+     */
+    protected function providerSourceItemDetails(array $providerSource): array
+    {
+        if ($providerSource === []) {
+            return [];
+        }
+
+        $details = [
+            'provider_source_type' => data_get($providerSource, 'source_type'),
+        ];
+
+        foreach (['provider_selector', 'source_agency_tenant_id', 'merchant_tenant_id', 'network_membership_id', 'provider_allocation_id', 'source_provider_model', 'source_provider_id'] as $metadataKey) {
+            $metadataValue = data_get($providerSource, $metadataKey);
+
+            if ($metadataValue !== null) {
+                $details[$metadataKey] = $metadataValue;
+            }
+        }
+
+        return $details;
     }
 }

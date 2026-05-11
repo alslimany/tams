@@ -13,6 +13,7 @@ use App\Models\Tenant\Order;
 use App\Models\Tenant\OrderItem;
 use App\Models\Tenant\TenantHotelProvider;
 use App\Models\User;
+use App\Services\AgencyNetwork\MerchantAgencyWalletManager;
 use App\Services\Hotels\HotelApiException;
 use App\Services\Hotels\HotelProviderManager;
 use Illuminate\Http\JsonResponse;
@@ -31,6 +32,7 @@ class HotelBookingController extends Controller
         protected HotelProviderManager $providerManager,
         protected CreateOrderFromHotelBooking $createOrderFromHotelBooking,
         protected ProcessHotelProviderWalletTransactions $hotelProviderWalletTransactions,
+        protected MerchantAgencyWalletManager $merchantAgencyWalletManager,
     ) {}
 
     public function index(): Response
@@ -95,10 +97,11 @@ class HotelBookingController extends Controller
         $page = max(1, (int) $request->integer('page', 1));
 
         try {
+            $providerSource = $this->providerManager->activeProviderSource();
             $payload = $this->providerManager->provider()->availability($this->availabilityPayload($search, $page));
 
             return response()->json([
-                'hotels' => $this->normalizeAvailabilityHotels($payload),
+                'hotels' => $this->normalizeAvailabilityHotels($payload, $providerSource),
                 'search_code' => (string) ($payload['search_code'] ?: data_get($payload, 'raw.searchCode', '')),
                 'pages' => (int) data_get($payload, 'raw.pages', 1),
                 'hotels_count' => (int) data_get($payload, 'raw.hotelsCount', 0),
@@ -169,7 +172,8 @@ class HotelBookingController extends Controller
         }
 
         $bookingUuid = (string) Str::uuid();
-        $selectedOffer = $this->normalizeSelectedOffer($validated, $ratePayload);
+        $providerSource = $request->input('provider_source', data_get($validated, 'raw.provider_source'));
+        $selectedOffer = $this->normalizeSelectedOffer($validated, $ratePayload, is_array($providerSource) ? $providerSource : null);
 
         Cache::put($this->bookingCacheKey($bookingUuid), [
             'search' => $search,
@@ -220,18 +224,29 @@ class HotelBookingController extends Controller
             return redirect()->route('hotels.index')->with('error', 'Selected hotel offer expired. Please search again.');
         }
 
+        $selectedOffer = $cached['selected_offer'];
         $hotelProvider = $this->providerManager->activeProvider();
+        $providerSource = is_array($selectedOffer['provider_source'] ?? null) ? $selectedOffer['provider_source'] : [];
 
         if (! $hotelProvider instanceof TenantHotelProvider) {
             return back()->with('error', '3T hotel provider is not configured.');
         }
 
-        $selectedOffer = $cached['selected_offer'];
         $currency = strtoupper((string) ($selectedOffer['currency'] ?? 'USD'));
         $amount = round((float) ($selectedOffer['provider_price'] ?? $selectedOffer['price'] ?? 0), 2);
 
         try {
-            $this->hotelProviderWalletTransactions->assertCanWithdraw($hotelProvider, $currency, $amount);
+            if ((string) data_get($providerSource, 'source_type') === 'agency_network') {
+                $issuer = $request->user();
+
+                if (! $issuer instanceof User) {
+                    return back()->with('error', 'Authentication is required to book hotels.');
+                }
+
+                $this->merchantAgencyWalletManager->assertCanWithdrawForSource($issuer, $providerSource, $currency, round((float) ($selectedOffer['price'] ?? 0), 2));
+            }
+
+            $this->hotelProviderWalletTransactions->assertCanWithdrawForSource($providerSource, $hotelProvider, $currency, $amount);
         } catch (InsufficientWalletBalanceException $exception) {
             return back()->with('error', $exception->getMessage());
         }
@@ -268,7 +283,16 @@ class HotelBookingController extends Controller
                 rooms: $rooms,
                 search: $cached['search'],
                 provider: $hotelProvider,
+                providerSource: $providerSource,
             );
+
+            if ((string) data_get($providerSource, 'source_type') === 'agency_network') {
+                $order->loadMissing('items');
+
+                foreach ($order->items as $item) {
+                    $this->merchantAgencyWalletManager->withdrawForOrderItem($order, $item, $issuer);
+                }
+            }
 
             $this->hotelProviderWalletTransactions->execute($order, $hotelProvider);
         } catch (Throwable $exception) {
@@ -476,13 +500,13 @@ class HotelBookingController extends Controller
      * @param  array<string, mixed>  $payload
      * @return array<int, array<string, mixed>>
      */
-    protected function normalizeAvailabilityHotels(array $payload): array
+    protected function normalizeAvailabilityHotels(array $payload, ?array $providerSource = null): array
     {
         $items = is_array($payload['response'] ?? null) ? $payload['response'] : [];
         $searchCode = (string) ($payload['search_code'] ?: data_get($payload, 'raw.searchCode', ''));
         $markupPercent = $this->hotelMarkupPercent();
 
-        return array_values(array_map(function (array $item) use ($searchCode, $markupPercent): array {
+        return array_values(array_map(function (array $item) use ($searchCode, $markupPercent, $providerSource): array {
             $hotel = is_array($item['hotel'] ?? null) ? $item['hotel'] : [];
 
             return [
@@ -491,7 +515,8 @@ class HotelBookingController extends Controller
                 'hotel_uid' => (string) ($hotel['hotelUid'] ?? ''),
                 'name' => (string) ($hotel['name'] ?? $hotel['hotelName'] ?? $item['hotelName'] ?? 'Hotel'),
                 'source' => $item['source'] ?? null,
-                'rooms' => $this->flattenRooms((array) ($item['rooms'] ?? []), $item, $searchCode, $markupPercent),
+                'provider_source' => $providerSource,
+                'rooms' => $this->flattenRooms((array) ($item['rooms'] ?? []), $item, $searchCode, $markupPercent, $providerSource),
                 'raw' => $item,
             ];
         }, array_filter($items, fn (mixed $item): bool => is_array($item))));
@@ -502,7 +527,7 @@ class HotelBookingController extends Controller
      * @param  array<string, mixed>  $hotelItem
      * @return array<int, array<string, mixed>>
      */
-    protected function flattenRooms(array $groups, array $hotelItem, string $searchCode, float $markupPercent = 0): array
+    protected function flattenRooms(array $groups, array $hotelItem, string $searchCode, float $markupPercent = 0, ?array $providerSource = null): array
     {
         $rooms = [];
 
@@ -530,6 +555,7 @@ class HotelBookingController extends Controller
                     'no_show' => $room['noShow'] ?? null,
                     'search_code' => $searchCode,
                     'source' => $hotelItem['source'] ?? null,
+                    'provider_source' => $providerSource,
                     'raw' => $room,
                 ];
             }
@@ -543,7 +569,7 @@ class HotelBookingController extends Controller
      * @param  array<string, mixed>  $ratePayload
      * @return array<string, mixed>
      */
-    protected function normalizeSelectedOffer(array $validated, array $ratePayload): array
+    protected function normalizeSelectedOffer(array $validated, array $ratePayload, ?array $providerSource = null): array
     {
         $rateKeys = array_values(array_filter(
             (array) ($validated['rate_keys'] ?? [$validated['rate_key']]),
@@ -578,6 +604,7 @@ class HotelBookingController extends Controller
             'check_rate_rooms' => $this->applyMarkupToCheckRateRooms($checkRateRooms, $markupPercent),
             'search_code' => (string) ($validated['raw']['search_code'] ?? $ratePayload['search_code'] ?? ''),
             'token_for_book' => (string) ($ratePayload['token_for_book'] ?? ''),
+            'provider_source' => $providerSource,
             'hotel' => [
                 'hotel_id' => (string) $validated['hotel_id'],
                 'hotel_uid' => (string) ($validated['hotel_uid'] ?? ''),

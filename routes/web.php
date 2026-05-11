@@ -8,6 +8,7 @@ use App\Http\Controllers\Landlord\DashboardController as LandlordDashboardContro
 use App\Http\Controllers\Landlord\GlobalFlightCacheSettingsController;
 use App\Http\Controllers\Landlord\TenantManagementController;
 use App\Http\Controllers\Landlord\TenantUserController;
+use App\Http\Controllers\LanguageController;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 
@@ -16,6 +17,8 @@ foreach (config('tenancy.central_domains', []) as $centralDomain) {
         Route::get('/', function () {
             return Inertia::render('Welcome');
         });
+
+        Route::get('/language/switch', [LanguageController::class, 'switch']);
     });
 }
 

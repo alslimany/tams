@@ -120,6 +120,9 @@ class CreateOrderFromInsuranceBooking
             $commissionPercent = $insuranceProvider?->commissionForProductType('travel') ?? 0.0;
             $defaultAgencyTenantId = $this->resolveDefaultAgencyTenantId();
             $currency = strtoupper((string) ($policyItems[0]['currency'] ?? 'LYD'));
+            $providerSource = $this->providerSourceFromRequestPayload($requestPayload);
+            $providerSourceDetails = $this->providerSourceItemDetails($providerSource);
+            $financialSource = $this->financialSourceForProviderSource($providerSource, $processAgencyWallet);
 
             $subtotal = 0.0;
             $taxTotal = 0.0;
@@ -168,9 +171,9 @@ class CreateOrderFromInsuranceBooking
                     'provider' => $insuranceProvider?->provider_type ?? 'albaraka',
                     'provider_reference' => (string) ($policyDetails['policy_id'] ?? ''),
                     'ticket_number' => (string) ($policyDetails['policy_number'] ?? ''),
-                    'item_details' => [
+                    'item_details' => array_merge($providerSourceDetails, [
                         'passenger_name' => $passengerName,
-                        'financial_source' => $processAgencyWallet ? 'master_agency_supply' : 'own_provider_wallet',
+                        'financial_source' => $financialSource,
                         'default_agency_tenant_id' => $defaultAgencyTenantId,
                         'beneficiary' => $clientProfileData,
                         'insurance' => [
@@ -184,7 +187,7 @@ class CreateOrderFromInsuranceBooking
                             'provider_response' => $policyDetails['raw'] ?? $policyDetails,
                             'request_payload' => $requestPayload,
                         ],
-                    ],
+                    ]),
                     'product_details' => [
                         'provider' => $insuranceProvider?->name ?? 'Al Baraka Insurance',
                         'product_subtype' => 'travel',
@@ -256,6 +259,9 @@ class CreateOrderFromInsuranceBooking
             $commissionAmount = round(($bookingResult->netPremium * $commissionPercent) / 100, 2);
             $defaultAgencyTenantId = $this->resolveDefaultAgencyTenantId();
             $currency = strtoupper($bookingResult->currency ?: 'LYD');
+            $providerSource = $this->providerSourceFromRequestPayload($requestPayload);
+            $providerSourceDetails = $this->providerSourceItemDetails($providerSource);
+            $financialSource = $this->financialSourceForProviderSource($providerSource, $processAgencyWallet);
 
             $order = Order::query()->create([
                 'owner_type' => $issuer::class,
@@ -280,8 +286,8 @@ class CreateOrderFromInsuranceBooking
                 'provider' => $insuranceProvider?->provider_type ?? 'albaraka',
                 'provider_reference' => $bookingResult->policyNumber ?: $bookingResult->reportReference,
                 'ticket_number' => $bookingResult->policyNumber,
-                'item_details' => [
-                    'financial_source' => $processAgencyWallet ? 'master_agency_supply' : 'own_provider_wallet',
+                'item_details' => array_merge($providerSourceDetails, [
+                    'financial_source' => $financialSource,
                     'default_agency_tenant_id' => $defaultAgencyTenantId,
                     'beneficiary' => $beneficiaryData,
                     'insurance' => [
@@ -290,7 +296,7 @@ class CreateOrderFromInsuranceBooking
                         'request_payload' => $requestPayload,
                         'provider_response' => $bookingResult->raw,
                     ],
-                ],
+                ]),
                 'product_details' => [
                     'provider' => $insuranceProvider?->name ?? 'Al Baraka Insurance',
                     'product_subtype' => strtolower($productSubtype),
@@ -354,5 +360,59 @@ class CreateOrderFromInsuranceBooking
         }
 
         throw new RuntimeException('Unable to generate a unique order number.');
+    }
+
+    /**
+     * @param  array<string, mixed>  $requestPayload
+     * @return array<string, mixed>
+     */
+    protected function providerSourceFromRequestPayload(array $requestPayload): array
+    {
+        $providerSource = data_get($requestPayload, 'provider_source');
+
+        if (is_array($providerSource)) {
+            return $providerSource;
+        }
+
+        $quoteProviderSource = data_get($requestPayload, 'quote.provider_source');
+
+        return is_array($quoteProviderSource) ? $quoteProviderSource : [];
+    }
+
+    /**
+     * @param  array<string, mixed>  $providerSource
+     * @return array<string, mixed>
+     */
+    protected function providerSourceItemDetails(array $providerSource): array
+    {
+        $details = [];
+
+        if ($providerSource === []) {
+            return $details;
+        }
+
+        $details['provider_source_type'] = data_get($providerSource, 'source_type');
+
+        foreach (['provider_selector', 'source_agency_tenant_id', 'merchant_tenant_id', 'network_membership_id', 'provider_allocation_id', 'source_provider_model', 'source_provider_id'] as $metadataKey) {
+            $metadataValue = data_get($providerSource, $metadataKey);
+
+            if ($metadataValue !== null) {
+                $details[$metadataKey] = $metadataValue;
+            }
+        }
+
+        return $details;
+    }
+
+    /**
+     * @param  array<string, mixed>  $providerSource
+     */
+    protected function financialSourceForProviderSource(array $providerSource, bool $processAgencyWallet): string
+    {
+        if ((string) data_get($providerSource, 'source_type') === 'agency_network') {
+            return 'agency_network_supply';
+        }
+
+        return $processAgencyWallet ? 'master_agency_supply' : 'own_provider_wallet';
     }
 }

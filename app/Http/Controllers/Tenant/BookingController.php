@@ -213,6 +213,7 @@ class BookingController extends Controller
         $validated = $request->validate([
             'uuid' => 'required|string',
             'provider_id' => 'required|integer',
+            'provider_selector' => 'nullable|string',
         ]);
 
         $searchParams = Cache::get("flight_search_{$validated['uuid']}") ?? [];
@@ -224,8 +225,10 @@ class BookingController extends Controller
         // Get providers based on agency settings
         $providers = $this->providerResolver->getAllActiveProviders();
 
-        // Find provider from collection
-        $providerConfig = $providers->firstWhere('id', $validated['provider_id']);
+        $providerConfig = $this->resolveSelectedProvider(
+            (int) $validated['provider_id'],
+            $validated['provider_selector'] ?? null,
+        );
 
         if (! $providerConfig) {
             return response()->json(['error' => 'Provider not found.'], 422);
@@ -351,6 +354,7 @@ class BookingController extends Controller
         $validated = $request->validate([
             'uuid' => 'required|string',
             'outbound_provider_id' => 'required|integer',
+            'provider_selector' => 'nullable|string',
             'outbound_flight' => 'required|array',
             'reservation_type' => 'nullable|in:QQ,NN',
             'return_date' => 'nullable|date_format:Y-m-d',
@@ -381,10 +385,14 @@ class BookingController extends Controller
             'force_refresh' => filter_var($validated['force_refresh'] ?? false, FILTER_VALIDATE_BOOLEAN),
         ]);
 
-        // Get providers based on agency settings (uses default agency if forced)
-        $providers = $this->providerResolver->getAllActiveProviders()
-            ->where('provider_type', '=', 'videcom')
-            ->get(['id', 'airline_name', 'airline_code', 'account_name', 'provider_type', 'credentials']);
+        $resolvedOutboundProvider = $this->resolveSelectedProvider(
+            $outboundProviderId,
+            $validated['provider_selector'] ?? null,
+        );
+
+        $providers = $resolvedOutboundProvider instanceof TenantProvider
+            ? collect([$resolvedOutboundProvider])->where('provider_type', '=', 'videcom')
+            : collect();
 
         $returnOptions = [];
 
@@ -1126,7 +1134,7 @@ class BookingController extends Controller
         return $providers
             ->filter(fn ($provider): bool => $provider instanceof TenantProvider)
             ->mapWithKeys(fn (TenantProvider $provider): array => [
-                $provider->id => $this->providerSourceSelector->own($provider),
+                $provider->id => data_get($provider, 'provider_source_metadata') ?: $this->providerSourceSelector->own($provider),
             ])
             ->all();
     }

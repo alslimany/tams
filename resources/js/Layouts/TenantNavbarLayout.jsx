@@ -63,17 +63,17 @@ const Navbar = ({ children }) => {
                 <div className="mx-auto flex max-w-7xl items-center justify-between gap-6 px-4 py-4 sm:px-6 lg:px-8">
                     <div className="flex items-center gap-8">
                         <Link href={route('dashboard')} className="flex items-center gap-3">
-                            <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-slate-200 bg-slate-950 shadow-sm">
+                           
                                 <img
                                     src={logoUrl}
                                     alt="BookNow Logo"
-                                    className="h-6 w-6 object-contain"
+                                    className="h-10 w-10 object-contain"
                                     onError={(event) => {
                                         event.currentTarget.style.display = 'none';
                                         event.currentTarget.parentElement?.classList.add('bg-primary');
                                     }}
                                 />
-                            </div>
+                            
                             <div className="hidden sm:block">
                                 <p className="text-[11px] font-black uppercase tracking-[0.24em] text-slate-400">Travel Workspace</p>
                                 <p className="text-sm font-bold tracking-tight text-slate-950">{tenantName}</p>

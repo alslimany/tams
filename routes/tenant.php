@@ -14,6 +14,7 @@ use App\Http\Controllers\Tenant\InsuranceConfigController;
 use App\Http\Controllers\Tenant\InsurancePolicyController;
 use App\Http\Controllers\Tenant\InsuranceQuoteController;
 use App\Http\Controllers\Tenant\InsuranceSearchController;
+use App\Http\Controllers\Tenant\NetworkController;
 use App\Http\Controllers\Tenant\OrangeInsuranceController;
 use App\Http\Controllers\Tenant\OrderController;
 use App\Http\Controllers\Tenant\ReportController;
@@ -78,6 +79,7 @@ Route::middleware([
         Route::get('flights/{booking}', [BookingController::class, 'show'])->name('flights.show');
         Route::get('flights/{booking}/completed', [TicketController::class, 'completed'])->name('tickets.completed');
         Route::get('orders', [OrderController::class, 'index'])->name('orders.index');
+        Route::get('orders/{order}/flight-items/{item}/ticket-pdf', [OrderController::class, 'flightTicketPdf'])->name('orders.flight-items.ticket-pdf');
         Route::get('orders/{order}', [OrderController::class, 'show'])->name('orders.show');
 
         // Hotels
@@ -149,6 +151,14 @@ Route::middleware([
         Route::middleware('role:admin')->group(function () {
             Route::resource('users', UserController::class);
             Route::patch('users/{user}/toggle-status', [UserController::class, 'toggleStatus'])->name('users.toggle-status');
+
+            // Agency Network
+            Route::get('network', [NetworkController::class, 'index'])->name('network.index');
+            Route::post('network/invitations', [NetworkController::class, 'invite'])->name('network.invite');
+            Route::post('network/join', [NetworkController::class, 'join'])->name('network.join');
+            Route::post('network/{membership}/accept', [NetworkController::class, 'accept'])->name('network.accept');
+            Route::patch('network/{membership}/suspend', [NetworkController::class, 'suspend'])->name('network.suspend');
+            Route::patch('network/{membership}/revoke', [NetworkController::class, 'revoke'])->name('network.revoke');
 
             // Airline Configuration
             Route::get('settings/airlines', [AirlineConfigController::class, 'index'])->name('settings.airlines.index');

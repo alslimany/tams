@@ -5,6 +5,8 @@ namespace App\Services\AgencyNetwork;
 use App\Models\NetworkMembership;
 use App\Models\ProviderAllocation;
 use App\Models\Tenant;
+use App\Models\Tenant\TenantHotelProvider;
+use App\Models\Tenant\TenantInsuranceProvider;
 use App\Models\TenantProvider;
 
 class ProviderSourceResolver
@@ -102,19 +104,24 @@ class ProviderSourceResolver
             return $metadata;
         }
 
+        if (! $allocation->is_offered_by_agency || ! $allocation->is_enabled_by_merchant) {
+            return $metadata;
+        }
+
         if ($allocation->networkMembership?->status !== NetworkMembership::StatusActive) {
             return $metadata;
         }
 
-        if ($allocation->source_provider_model !== TenantProvider::class) {
-            return $metadata;
-        }
-
-        $provider = $this->resolveTenantProvider($allocation->agency_tenant_id, (int) $allocation->source_provider_id);
+        $provider = match ($allocation->source_provider_model) {
+            TenantProvider::class => $this->resolveTenantProvider($allocation->agency_tenant_id, (int) $allocation->source_provider_id),
+            TenantInsuranceProvider::class => $this->resolveTenantInsuranceProvider($allocation->agency_tenant_id, (int) $allocation->source_provider_id),
+            TenantHotelProvider::class => $this->resolveTenantHotelProvider($allocation->agency_tenant_id, (int) $allocation->source_provider_id),
+            default => null,
+        };
 
         return array_merge($metadata, [
             'provider' => $provider,
-            'resolved_tenant_id' => $provider instanceof TenantProvider ? $allocation->agency_tenant_id : null,
+            'resolved_tenant_id' => $provider instanceof TenantProvider || $provider instanceof TenantInsuranceProvider || $provider instanceof TenantHotelProvider ? $allocation->agency_tenant_id : null,
         ]);
     }
 
@@ -130,6 +137,64 @@ class ProviderSourceResolver
         try {
             return $tenant->run(function () use ($providerId): ?TenantProvider {
                 return TenantProvider::query()
+                    ->whereKey($providerId)
+                    ->where('is_active', true)
+                    ->first();
+            });
+        } finally {
+            if ($currentTenantId !== null) {
+                $previousTenant = Tenant::query()->find($currentTenantId);
+
+                if ($previousTenant instanceof Tenant) {
+                    tenancy()->initialize($previousTenant);
+                }
+            } else {
+                tenancy()->end();
+            }
+        }
+    }
+
+    protected function resolveTenantInsuranceProvider(string $tenantId, int $providerId): ?TenantInsuranceProvider
+    {
+        $currentTenantId = tenant()?->id;
+        $tenant = Tenant::query()->find($tenantId);
+
+        if (! $tenant instanceof Tenant) {
+            return null;
+        }
+
+        try {
+            return $tenant->run(function () use ($providerId): ?TenantInsuranceProvider {
+                return TenantInsuranceProvider::query()
+                    ->whereKey($providerId)
+                    ->where('is_active', true)
+                    ->first();
+            });
+        } finally {
+            if ($currentTenantId !== null) {
+                $previousTenant = Tenant::query()->find($currentTenantId);
+
+                if ($previousTenant instanceof Tenant) {
+                    tenancy()->initialize($previousTenant);
+                }
+            } else {
+                tenancy()->end();
+            }
+        }
+    }
+
+    protected function resolveTenantHotelProvider(string $tenantId, int $providerId): ?TenantHotelProvider
+    {
+        $currentTenantId = tenant()?->id;
+        $tenant = Tenant::query()->find($tenantId);
+
+        if (! $tenant instanceof Tenant) {
+            return null;
+        }
+
+        try {
+            return $tenant->run(function () use ($providerId): ?TenantHotelProvider {
+                return TenantHotelProvider::query()
                     ->whereKey($providerId)
                     ->where('is_active', true)
                     ->first();
@@ -223,6 +288,9 @@ class ProviderSourceResolver
             'provider_identity' => $allocation->provider_identity,
             'source_provider_model' => $allocation->source_provider_model,
             'source_provider_id' => $allocation->source_provider_id,
+            'commission_rate' => $allocation->commission_rate,
+            'markup_rate' => $allocation->markup_rate,
+            'financial_terms' => data_get($allocation->metadata, 'financial_terms'),
         ]);
     }
 }

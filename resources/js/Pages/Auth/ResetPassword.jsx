@@ -1,8 +1,8 @@
 import { Button } from "@/Components/ui/Button";
 import { Input } from "@/Components/ui/Input";
 import { Label } from "@/Components/ui/Label";
-import GuestLayout from '@/Layouts/GuestLayout';
-import { Head, useForm } from '@inertiajs/react';
+import AuthSplitLayout from '@/Layouts/AuthSplitLayout';
+import { Head, Link, useForm } from '@inertiajs/react';
 import { useTranslation } from "@/hooks/useTranslation";
 
 export default function ResetPassword({ token, email }) {
@@ -23,10 +23,24 @@ export default function ResetPassword({ token, email }) {
     };
 
     return (
-        <GuestLayout>
+        <AuthSplitLayout
+            brandHref={route('login')}
+            title={t('Set a new password')}
+            description={t('Choose a secure password to regain access to your travel workspace.')}
+            footer={(
+                <p className="text-center text-sm text-muted-foreground text-pretty">
+                    <Link
+                        href={route('login')}
+                        className="rounded text-primary font-medium underline-offset-4 hover:underline focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                    >
+                        {t('Back to sign in')}
+                    </Link>
+                </p>
+            )}
+        >
             <Head title={t("Reset Password")} />
 
-            <form onSubmit={submit} className="space-y-4">
+            <form onSubmit={submit} className="space-y-5">
                 <div className="space-y-2">
                     <Label htmlFor="email">{t("Email")}</Label>
                     <Input
@@ -34,7 +48,6 @@ export default function ResetPassword({ token, email }) {
                         type="email"
                         name="email"
                         value={data.email}
-                        className="mt-1 block w-full"
                         autoComplete="username"
                         onChange={(e) => setData('email', e.target.value)}
                         required
@@ -49,7 +62,6 @@ export default function ResetPassword({ token, email }) {
                         type="password"
                         name="password"
                         value={data.password}
-                        className="mt-1 block w-full"
                         autoComplete="new-password"
                         onChange={(e) => setData('password', e.target.value)}
                         required
@@ -65,7 +77,6 @@ export default function ResetPassword({ token, email }) {
                         id="password_confirmation"
                         name="password_confirmation"
                         value={data.password_confirmation}
-                        className="mt-1 block w-full"
                         autoComplete="new-password"
                         onChange={(e) => setData('password_confirmation', e.target.value)}
                         required
@@ -73,12 +84,10 @@ export default function ResetPassword({ token, email }) {
                     {errors.password_confirmation && <p className="text-sm text-destructive">{errors.password_confirmation}</p>}
                 </div>
 
-                <div className="flex items-center justify-end mt-4">
-                    <Button className="w-full" disabled={processing}>
-                        {t("Reset Password")}
-                    </Button>
-                </div>
+                <Button type="submit" className="w-full" disabled={processing}>
+                    {processing ? t('Resetting password…') : t('Reset Password')}
+                </Button>
             </form>
-        </GuestLayout>
+        </AuthSplitLayout>
     );
 }

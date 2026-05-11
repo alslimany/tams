@@ -86,6 +86,7 @@ export default function SearchResults({ providers, providerSources = {}, query, 
         const payload = {
             provider_id: providerId,
             flight,
+            ...providerSourcePayload(providerId),
         };
 
         try {
@@ -135,7 +136,8 @@ export default function SearchResults({ providers, providerSources = {}, query, 
         providers.forEach(provider => {
             axios.post(route('flights.fetch-flights'), {
                 uuid: uuid,
-                provider_id: provider.id
+                provider_id: provider.id,
+                ...providerSourcePayload(provider.id),
             }).then(response => {
                 const newFlights = response.data?.flights || [];
 
@@ -278,6 +280,7 @@ export default function SearchResults({ providers, providerSources = {}, query, 
                 reservation_type: reservationType,
                 return_date: returnDate,
                 force_refresh: forceRefresh,
+                ...providerSourcePayload(providerId),
             });
 
             setReturnOptions(response.data?.return_options || []);
@@ -705,10 +708,10 @@ export default function SearchResults({ providers, providerSources = {}, query, 
             <div className={`max-w-7xl mx-auto py-8 px-4 ${((isRoundTripSearch && selectedOutboundFlight && selectedReturnFlight) || (!isRoundTripSearch && selectedOneWayFlight)) ? 'pb-28' : ''}`}>
                 <div className="flex flex-col md:flex-row md:items-end justify-between mb-10 gap-6">
                     <div>
-                        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary/10 text-primary text-xs font-bold uppercase tracking-wider mb-2">
+                        {/* <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary/10 text-primary text-xs font-bold uppercase tracking-wider mb-2">
                             <div className="size-1.5 rounded-full bg-primary animate-pulse" />
                             Search Results
-                        </div>
+                        </div> */}
                         <h2 className="text-4xl font-black tracking-tight flex items-center gap-3">
                             {activeOrigin} <ChevronRight className="h-8 w-8 text-muted-foreground/30" /> {activeDestination}
                         </h2>

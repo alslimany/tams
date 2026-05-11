@@ -64,6 +64,9 @@ class ProviderSourceSelector
             'provider_identity' => $allocation->provider_identity,
             'source_provider_model' => $allocation->source_provider_model,
             'source_provider_id' => $allocation->source_provider_id,
+            'commission_rate' => $allocation->commission_rate,
+            'markup_rate' => $allocation->markup_rate,
+            'financial_terms' => data_get($allocation->metadata, 'financial_terms'),
         ];
     }
 

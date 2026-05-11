@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Stancl\Tenancy\Contracts\TenantWithDatabase;
 use Stancl\Tenancy\Database\Concerns\HasDatabase;
@@ -17,6 +18,7 @@ class Tenant extends BaseTenant implements TenantWithDatabase
     {
         return [
             'id',
+            'agency_number',
             'company_name',
             'owner_name',
             'owner_email',
@@ -39,6 +41,26 @@ class Tenant extends BaseTenant implements TenantWithDatabase
             'is_default_agency' => 'boolean',
             'master_commission_rate' => 'decimal:2',
         ];
+    }
+
+    protected static function booted(): void
+    {
+        static::creating(function (Tenant $tenant): void {
+            $tenant->agency_number ??= static::nextAgencyNumber();
+        });
+    }
+
+    public static function nextAgencyNumber(): string
+    {
+        $latest = static::query()
+            ->whereNotNull('agency_number')
+            ->where('agency_number', 'like', 'AG-%')
+            ->orderByDesc(DB::raw('CAST(SUBSTR(agency_number, 4) AS INTEGER)'))
+            ->value('agency_number');
+
+        $sequence = is_string($latest) ? ((int) Str::after($latest, 'AG-')) + 1 : 100001;
+
+        return sprintf('AG-%06d', $sequence);
     }
 
     public function isDefaultAgency(): bool

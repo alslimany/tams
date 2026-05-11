@@ -19,6 +19,10 @@ use Illuminate\Support\Collection;
 use Inertia\Inertia;
 use Inertia\Response;
 use SimpleXMLElement;
+use Spatie\LaravelPdf\Enums\Format;
+use Spatie\LaravelPdf\Enums\Unit;
+
+use function Spatie\LaravelPdf\Support\pdf;
 
 class OrderController extends Controller
 {
@@ -32,7 +36,7 @@ class OrderController extends Controller
         $orders = Order::query()
             ->with([
                 'owner',
-                'items:id,order_id,type,product_subtype,provider,provider_reference,ticket_number,total,currency,status,item_details',
+                'items:id,order_id,type,product_type,product_subtype,provider,provider_reference,ticket_number,total,total_amount,currency,status,item_details,product_details',
             ])
             ->withCount('items')
             ->latest('issued_at')
@@ -105,6 +109,109 @@ class OrderController extends Controller
             'itemTransactions' => $itemTransactions,
             'voidRefundAccount' => $voidRefundAccount,
         ]);
+    }
+
+    public function flightTicketPdf(Order $order, OrderItem $item): \Spatie\LaravelPdf\PdfBuilder
+    {
+        abort_unless($item->order_id === $order->id, 404);
+        abort_unless((string) $item->type === 'flight' || (string) $item->product_type === 'flight', 404);
+
+        $order->loadMissing('owner');
+
+        $pnr = (array) $item->item_details;
+        $filename = 'flight-ticket-'.preg_replace('/[^A-Za-z0-9_-]/', '-', (string) ($item->provider_reference ?: $order->number)).'.pdf';
+
+        return pdf()
+            ->view('pdf.flight-ticket', [
+                'order' => $order,
+                'item' => $item,
+                'pnr' => $pnr,
+                'itineraries' => $this->ticketPdfItineraries($item),
+                'passengers' => (array) ($pnr['passengers'] ?? []),
+                'contacts' => (array) ($pnr['contacts'] ?? []),
+            ])
+            ->format(Format::A4)
+            ->margins(8, 8, 8, 8, Unit::Millimeter)
+            ->inline($filename);
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    protected function ticketPdfItineraries(OrderItem $item): array
+    {
+        $pnr = (array) $item->item_details;
+        $itineraries = (array) ($pnr['itineraries'] ?? []);
+
+        if ($itineraries !== []) {
+            return array_map(function (array $itinerary) use ($pnr): array {
+                $itinerary['tickets'] = $this->ticketsForItinerary((array) ($pnr['tickets'] ?? []), $itinerary);
+
+                return $itinerary;
+            }, $itineraries);
+        }
+
+        return array_map(function (array $segment) use ($pnr): array {
+            return [
+                'itinerary_id' => $segment['itinerary_id'] ?? null,
+                'airline_id' => $segment['airline_id'] ?? $pnr['iata'] ?? $pnr['airline_code'] ?? null,
+                'flight_number' => $segment['flight_number'] ?? null,
+                'class' => $segment['class'] ?? null,
+                'cabin' => $segment['cabin'] ?? $segment['class'] ?? null,
+                'class_band' => $segment['class_band'] ?? null,
+                'class_band_display_name' => $segment['class_band_display_name'] ?? null,
+                'date' => $segment['date'] ?? $segment['departure_date'] ?? null,
+                'from' => $segment['from'] ?? $segment['origin'] ?? $segment['departure_airport'] ?? null,
+                'to' => $segment['to'] ?? $segment['destination'] ?? $segment['arrival_airport'] ?? null,
+                'departure' => $segment['departure'] ?? $segment['departure_time'] ?? null,
+                'arrival' => $segment['arrival'] ?? $segment['arrival_time'] ?? null,
+                'status' => $segment['status'] ?? null,
+                'tickets' => (array) ($pnr['tickets'] ?? []),
+            ];
+        }, (array) ($item->product_details['segments'] ?? $pnr['segments'] ?? []));
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $tickets
+     * @param  array<string, mixed>  $itinerary
+     * @return array<int, array<string, mixed>>
+     */
+    protected function ticketsForItinerary(array $tickets, array $itinerary): array
+    {
+        return array_values(array_filter($tickets, function (array $ticket) use ($itinerary): bool {
+            $ticketSegmentNumber = $this->normalizedSegmentNumber($ticket['segment_number'] ?? null);
+            $itinerarySegmentNumber = $this->normalizedSegmentNumber($itinerary['itinerary_id'] ?? null);
+
+            if ($ticketSegmentNumber !== null && $itinerarySegmentNumber !== null && $ticketSegmentNumber === $itinerarySegmentNumber) {
+                return true;
+            }
+
+            return $this->flightNumberMatches($ticket['flight_number'] ?? null, $itinerary)
+                && (string) ($ticket['from'] ?? '') === (string) ($itinerary['from'] ?? '')
+                && (string) ($ticket['to'] ?? '') === (string) ($itinerary['to'] ?? '');
+        }));
+    }
+
+    /**
+     * @param  array<string, mixed>  $itinerary
+     */
+    protected function flightNumberMatches(mixed $ticketFlightNumber, array $itinerary): bool
+    {
+        if (! is_string($ticketFlightNumber) && ! is_numeric($ticketFlightNumber)) {
+            return false;
+        }
+
+        $compactTicketFlight = mb_strtoupper(preg_replace('/\s+/', '', (string) $ticketFlightNumber) ?? '');
+        $compactItineraryFlight = mb_strtoupper(preg_replace('/\s+/', '', (string) ($itinerary['airline_id'] ?? '').(string) ($itinerary['flight_number'] ?? '')) ?? '');
+
+        return $compactTicketFlight !== '' && $compactTicketFlight === $compactItineraryFlight;
+    }
+
+    protected function normalizedSegmentNumber(mixed $value): ?int
+    {
+        $number = (int) preg_replace('/^0+/', '', (string) $value);
+
+        return $number > 0 ? $number : null;
     }
 
     protected function syncOrderItemsFromPnrQuery(Order $order): void

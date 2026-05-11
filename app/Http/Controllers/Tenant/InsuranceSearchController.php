@@ -3,7 +3,6 @@
 namespace App\Http\Controllers\Tenant;
 
 use App\Http\Controllers\Controller;
-use App\Models\Tenant\TenantInsuranceProvider;
 use App\Services\Insurance\InsuranceProviderManager;
 use Illuminate\Http\JsonResponse;
 use Inertia\Inertia;
@@ -17,16 +16,8 @@ class InsuranceSearchController extends Controller
 
     public function index(): Response
     {
-        $provider = $this->providerManager->activeProvider();
-        $configuredProviders = TenantInsuranceProvider::query()
-            ->orderBy('name')
-            ->get()
-            ->map(fn (TenantInsuranceProvider $item): array => [
-                'provider_type' => $item->provider_type,
-                'name' => $item->name,
-                'is_active' => (bool) $item->is_active,
-            ])
-            ->values();
+        $activeProvider = $this->providerManager->activeProviderWithSource();
+        $provider = $activeProvider['provider'];
 
         return Inertia::render('Tenant/Insurance/Search', [
             'productTypes' => [
@@ -39,13 +30,14 @@ class InsuranceSearchController extends Controller
                 'travel' => ['zones', 'durations'],
                 'orange' => ['cars', 'countries', 'document_types', 'vehicle_nationalities'],
             ],
-            'providers' => $configuredProviders,
+            'providers' => $this->providerManager->configuredProviders(),
             'activeProvider' => [
                 'name' => $provider?->name ?? 'Not configured',
                 'type' => $provider?->provider_type,
                 'commission_compulsory' => (float) ($provider?->commission_compulsory ?? 0),
                 'commission_travel' => (float) ($provider?->commission_travel ?? 0),
                 'commission_orange' => (float) ($provider?->commission_orange ?? 0),
+                'source' => $activeProvider['source'],
             ],
         ]);
     }

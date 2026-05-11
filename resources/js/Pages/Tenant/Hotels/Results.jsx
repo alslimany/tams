@@ -1511,6 +1511,7 @@ export default function HotelResults({ searchUuid, search }) {
             currency: firstRoom.currency,
             available: rooms.every((r) => r.available),
             cancellation_policies: firstRoom.cancellation_policies || [],
+            provider_source: firstRoom.provider_source || hotel.provider_source || null,
             raw: { ...firstRoom.raw, search_code: firstRoom.search_code, selected_rooms: rooms },
         });
     };

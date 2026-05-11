@@ -2,11 +2,13 @@ import React, { useEffect } from 'react';
 import { Link, usePage } from '@inertiajs/react';
 import { Button } from '@/Components/ui/Button';
 import { Badge } from '@/Components/ui/Badge';
-import { Toaster, toast } from "sonner";
-import { LayoutDashboard, Users, Settings, LogOut, Plane, ShieldCheck, BarChart3 } from 'lucide-react';
+import { Toaster, toast } from 'sonner';
+import { LayoutDashboard, Users, Settings, LogOut, Plane, BarChart3 } from 'lucide-react';
+import { useTranslation } from '@/hooks/useTranslation';
 
 export default function LandlordLayout({ children }) {
     const { auth, flash } = usePage().props;
+    const { t } = useTranslation();
     const landlordUser = auth.landlordUser;
 
     useEffect(() => {
@@ -28,41 +30,41 @@ export default function LandlordLayout({ children }) {
                     </div>
                     <div>
                         <h1 className="text-xl font-black tracking-tighter">TAMS</h1>
-                        <p className="text-[10px] uppercase tracking-widest font-bold text-slate-400">Landlord Console</p>
+                        <p className="text-[10px] uppercase tracking-widest font-bold text-slate-400">{t('landlord.console.title')}</p>
                     </div>
                 </div>
 
                 <nav className="flex-1 p-6 space-y-2">
-                    <div className="text-[10px] uppercase tracking-[0.2em] font-black text-slate-400 mb-4 px-4">Management</div>
+                    <div className="text-[10px] uppercase tracking-[0.2em] font-black text-slate-400 mb-4 px-4">{t('landlord.console.management')}</div>
                     
                     <Link 
                         href={route('landlord.dashboard')} 
                         className={`flex items-center gap-3 px-4 py-3 text-sm font-bold rounded-xl transition-all ${route().current('landlord.dashboard') ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-900'}`}
                     >
-                        <LayoutDashboard className="h-5 w-5" /> Dashboard
+                        <LayoutDashboard className="h-5 w-5" /> {t('landlord.console.dashboard')}
                     </Link>
                     
                     <Link 
                         href={route('landlord.tenants.index')} 
                         className={`flex items-center gap-3 px-4 py-3 text-sm font-bold rounded-xl transition-all ${route().current('landlord.tenants.*') ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-900'}`}
                     >
-                        <Users className="h-5 w-5" /> Agencies
+                        <Users className="h-5 w-5" /> {t('landlord.console.agencies')}
                     </Link>
 
-                    <div className="pt-8 text-[10px] uppercase tracking-[0.2em] font-black text-slate-400 mb-4 px-4">System</div>
+                    <div className="pt-8 text-[10px] uppercase tracking-[0.2em] font-black text-slate-400 mb-4 px-4">{t('landlord.console.system')}</div>
                     
                     <Link 
                         href="#" 
                         className="flex items-center gap-3 px-4 py-3 text-sm font-bold rounded-xl text-slate-500 hover:bg-slate-100 hover:text-slate-900 transition-all"
                     >
-                        <BarChart3 className="h-5 w-5" /> Analytics
+                        <BarChart3 className="h-5 w-5" /> {t('landlord.console.analytics')}
                     </Link>
                     
                     <Link 
                         href={route('landlord.settings.flight-cache.index')} 
                         className={`flex items-center gap-3 px-4 py-3 text-sm font-bold rounded-xl transition-all ${route().current('landlord.settings.flight-cache.*') ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-900'}`}
                     >
-                        <Settings className="h-5 w-5" /> Flight Cache
+                        <Settings className="h-5 w-5" /> {t('landlord.console.flight_cache')}
                     </Link>
                 </nav>
 
@@ -82,7 +84,7 @@ export default function LandlordLayout({ children }) {
                         as="button" 
                         className="flex items-center justify-center gap-2 w-full px-4 py-3 text-xs font-black uppercase tracking-widest text-destructive hover:bg-destructive/5 rounded-xl transition-all border border-destructive/10"
                     >
-                        <LogOut className="h-4 w-4" /> Logout Console
+                        <LogOut className="h-4 w-4" /> {t('landlord.console.logout_console')}
                     </Link>
                 </div>
             </aside>
@@ -91,10 +93,10 @@ export default function LandlordLayout({ children }) {
             <div className="flex-1 flex flex-col min-h-screen">
                 <header className="h-20 border-b bg-white/80 backdrop-blur-md px-8 flex items-center justify-between sticky top-0 z-40">
                     <div className="flex items-center gap-4">
-                        <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-100 font-bold px-3 py-1">Platform Administrator</Badge>
+                        <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-100 font-bold px-3 py-1">{t('landlord.console.platform_administrator')}</Badge>
                     </div>
                     <div className="flex items-center gap-6">
-                        <Link href="/" className="text-xs font-black uppercase tracking-widest text-slate-400 hover:text-blue-600 transition-colors">View Storefront</Link>
+                        <Link href="/" className="text-xs font-black uppercase tracking-widest text-slate-400 hover:text-blue-600 transition-colors">{t('landlord.console.view_storefront')}</Link>
                         <div className="size-8 rounded-full bg-emerald-500/10 flex items-center justify-center">
                             <div className="size-2 rounded-full bg-emerald-500 animate-pulse" />
                         </div>
@@ -109,4 +111,3 @@ export default function LandlordLayout({ children }) {
         </div>
     );
 }
-

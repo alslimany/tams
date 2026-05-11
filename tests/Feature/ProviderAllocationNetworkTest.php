@@ -7,12 +7,14 @@ use App\Models\Tenant;
 use App\Models\Tenant\AgencySetting;
 use App\Models\Tenant\Order;
 use App\Models\Tenant\OrderItem;
+use App\Models\Tenant\TenantInsuranceProvider;
 use App\Models\TenantProvider;
 use App\Models\User;
 use App\Services\AgencyNetwork\MerchantProviderAllocationResolver;
 use App\Services\AgencyNetwork\ProviderSourceResolver;
 use App\Services\AgencyNetwork\ProviderSourceSelector;
 use App\Services\Airline\AgencyProviderResolver;
+use App\Services\Insurance\InsuranceProviderManager;
 use Illuminate\Support\Str;
 
 function createCentralTenant(string $prefix, string $companyName): Tenant
@@ -300,6 +302,140 @@ test('provider source resolver resolves own provider selector from current tenan
         ->and($resolved['is_default_agency_deprecated'])->toBeFalse();
 });
 
+test('provider source resolver resolves agency network insurance allocation from source tenant', function () {
+    $agency = createCentralTenant('ins-source-agency', 'Insurance Source Agency');
+    $merchant = createCentralTenant('ins-source-merchant', 'Insurance Source Merchant');
+
+    tenancy()->initialize($agency);
+    $provider = TenantInsuranceProvider::query()->create([
+        'provider_type' => 'albaraka',
+        'name' => 'Agency Al Baraka',
+        'credentials' => ['token' => 'agency-token', 'base_url' => 'https://agency-insurance.test'],
+        'is_active' => true,
+        'commission_compulsory' => 10,
+        'commission_travel' => 8,
+        'commission_orange' => 6,
+    ]);
+    tenancy()->end();
+
+    $membership = createActiveMembership($agency, $merchant);
+    $allocation = ProviderAllocation::query()->create([
+        'network_membership_id' => $membership->id,
+        'agency_tenant_id' => $agency->id,
+        'merchant_tenant_id' => $merchant->id,
+        'provider_type' => 'insurance',
+        'provider_driver' => 'albaraka',
+        'provider_identity' => 'ALBARAKA',
+        'source_provider_model' => TenantInsuranceProvider::class,
+        'source_provider_id' => $provider->id,
+        'status' => ProviderAllocation::StatusActive,
+    ]);
+
+    tenancy()->initialize($merchant);
+    $resolved = app(ProviderSourceResolver::class)->resolve("agency_network:{$allocation->id}");
+    tenancy()->end();
+
+    expect($resolved['provider'])->toBeInstanceOf(TenantInsuranceProvider::class)
+        ->and($resolved['provider']->id)->toBe($provider->id)
+        ->and($resolved['provider']->credentials['token'])->toBe('agency-token')
+        ->and($resolved['source_type'])->toBe('agency_network')
+        ->and($resolved['provider_selector'])->toBe("agency_network:{$allocation->id}")
+        ->and($resolved['resolved_tenant_id'])->toBe($agency->id)
+        ->and($resolved['provider_allocation_id'])->toBe($allocation->id);
+});
+
+test('insurance provider manager falls back to enabled agency network insurance provider', function () {
+    $agency = createCentralTenant('ins-manager-agency', 'Insurance Manager Agency');
+    $merchant = createCentralTenant('ins-manager-merchant', 'Insurance Manager Merchant');
+
+    tenancy()->initialize($agency);
+    $provider = TenantInsuranceProvider::query()->create([
+        'provider_type' => 'albaraka',
+        'name' => 'Network Al Baraka',
+        'credentials' => ['token' => 'network-token'],
+        'is_active' => true,
+        'commission_compulsory' => 12,
+        'commission_travel' => 9,
+        'commission_orange' => 7,
+    ]);
+    tenancy()->end();
+
+    $membership = createActiveMembership($agency, $merchant);
+    $allocation = ProviderAllocation::query()->create([
+        'network_membership_id' => $membership->id,
+        'agency_tenant_id' => $agency->id,
+        'merchant_tenant_id' => $merchant->id,
+        'provider_type' => 'insurance',
+        'provider_driver' => 'albaraka',
+        'provider_identity' => 'ALBARAKA',
+        'source_provider_model' => TenantInsuranceProvider::class,
+        'source_provider_id' => $provider->id,
+        'status' => ProviderAllocation::StatusActive,
+    ]);
+
+    tenancy()->initialize($merchant);
+    $resolved = app(InsuranceProviderManager::class)->activeProviderWithSource();
+    tenancy()->end();
+
+    expect($resolved['provider'])->toBeInstanceOf(TenantInsuranceProvider::class)
+        ->and($resolved['provider']->id)->toBe($provider->id)
+        ->and($resolved['source']['source_type'])->toBe('agency_network')
+        ->and($resolved['source']['provider_selector'])->toBe("agency_network:{$allocation->id}")
+        ->and($resolved['source']['provider_allocation_id'])->toBe($allocation->id);
+});
+
+test('insurance provider manager excludes disabled and suspended network insurance allocations', function () {
+    $agency = createCentralTenant('ins-disabled-agency', 'Insurance Disabled Agency');
+    $merchant = createCentralTenant('ins-disabled-merchant', 'Insurance Disabled Merchant');
+
+    tenancy()->initialize($agency);
+    $provider = TenantInsuranceProvider::query()->create([
+        'provider_type' => 'albaraka',
+        'name' => 'Disabled Network Al Baraka',
+        'credentials' => ['token' => 'disabled-token'],
+        'is_active' => true,
+    ]);
+    tenancy()->end();
+
+    $membership = createActiveMembership($agency, $merchant);
+    ProviderAllocation::query()->create([
+        'network_membership_id' => $membership->id,
+        'agency_tenant_id' => $agency->id,
+        'merchant_tenant_id' => $merchant->id,
+        'provider_type' => 'insurance',
+        'provider_driver' => 'albaraka',
+        'provider_identity' => 'ALBARAKA',
+        'source_provider_model' => TenantInsuranceProvider::class,
+        'source_provider_id' => $provider->id,
+        'status' => ProviderAllocation::StatusActive,
+        'is_enabled_by_merchant' => false,
+    ]);
+
+    $suspendedMembership = NetworkMembership::query()->create([
+        'agency_tenant_id' => $agency->id,
+        'merchant_tenant_id' => $merchant->id,
+        'status' => NetworkMembership::StatusSuspended,
+    ]);
+    ProviderAllocation::query()->create([
+        'network_membership_id' => $suspendedMembership->id,
+        'agency_tenant_id' => $agency->id,
+        'merchant_tenant_id' => $merchant->id,
+        'provider_type' => 'insurance',
+        'provider_driver' => 'albaraka',
+        'provider_identity' => 'TRAVEL',
+        'source_provider_model' => TenantInsuranceProvider::class,
+        'source_provider_id' => $provider->id,
+        'status' => ProviderAllocation::StatusActive,
+    ]);
+
+    tenancy()->initialize($merchant);
+    $resolved = app(InsuranceProviderManager::class)->activeProviderWithSource();
+    tenancy()->end();
+
+    expect($resolved['provider'])->toBeNull()
+        ->and($resolved['source'])->toBeNull();
+});
+
 test('provider source resolver resolves deprecated default agency provider selector from source tenant', function () {
     $defaultAgency = createCentralTenant('source-default-agency', 'Source Default Agency');
     $defaultAgency->update(['is_default_agency' => true]);
@@ -491,6 +627,90 @@ test('agency provider resolver resolves active airline network allocation from s
         ->and($resolved['network_membership_id'])->toBe($membership->id)
         ->and($resolved['provider_allocation_id'])->toBe($allocation->id)
         ->and($allocation->metadata ?? [])->not->toHaveKey('credentials');
+});
+
+test('merchant active providers include enabled agency network airline providers', function () {
+    $agency = createCentralTenant('search-net-agency', 'Search Network Agency');
+    $merchant = createCentralTenant('search-net-merchant', 'Search Network Merchant');
+
+    tenancy()->initialize($agency);
+    $provider = TenantProvider::query()->create([
+        'provider_type' => 'videcom',
+        'airline_code' => 'YI',
+        'airline_name' => 'Network Yemenia',
+        'account_name' => 'Agency Source',
+        'credentials' => ['username' => 'agency-secret', 'password' => 'hidden'],
+        'is_active' => true,
+    ]);
+    tenancy()->end();
+
+    $membership = createActiveMembership($agency, $merchant);
+    $allocation = ProviderAllocation::query()->create([
+        'network_membership_id' => $membership->id,
+        'agency_tenant_id' => $agency->id,
+        'merchant_tenant_id' => $merchant->id,
+        'provider_type' => 'airline',
+        'provider_driver' => 'videcom',
+        'provider_identity' => 'YI',
+        'source_provider_model' => TenantProvider::class,
+        'source_provider_id' => $provider->id,
+        'status' => ProviderAllocation::StatusActive,
+        'is_offered_by_agency' => true,
+        'is_enabled_by_merchant' => true,
+    ]);
+
+    tenancy()->initialize($merchant);
+    AgencySetting::current()->update([
+        'force_use_default_agency' => false,
+        'can_use_own_airline_credentials' => true,
+    ]);
+
+    $providers = app(AgencyProviderResolver::class)->getAllActiveProviders();
+    tenancy()->end();
+
+    expect($providers)->toHaveCount(1)
+        ->and($providers->first())->toBeInstanceOf(TenantProvider::class)
+        ->and($providers->first()->airline_code)->toBe('YI')
+        ->and(data_get($providers->first(), 'provider_source_metadata.source_type'))->toBe('agency_network')
+        ->and(data_get($providers->first(), 'provider_source_metadata.provider_selector'))->toBe("agency_network:{$allocation->id}")
+        ->and(data_get($providers->first(), 'provider_source_metadata.provider_allocation_id'))->toBe($allocation->id);
+});
+
+test('merchant active providers exclude disabled or suspended network allocations', function () {
+    $agency = createCentralTenant('exclude-net-agency', 'Exclude Network Agency');
+    $merchant = createCentralTenant('exclude-net-merchant', 'Exclude Network Merchant');
+
+    tenancy()->initialize($agency);
+    $provider = TenantProvider::query()->create([
+        'provider_type' => 'videcom',
+        'airline_code' => 'YI',
+        'airline_name' => 'Network Yemenia',
+        'account_name' => 'Agency Source',
+        'credentials' => ['currency' => 'LYD'],
+        'is_active' => true,
+    ]);
+    tenancy()->end();
+
+    $membership = createActiveMembership($agency, $merchant);
+    ProviderAllocation::query()->create([
+        'network_membership_id' => $membership->id,
+        'agency_tenant_id' => $agency->id,
+        'merchant_tenant_id' => $merchant->id,
+        'provider_type' => 'airline',
+        'provider_driver' => 'videcom',
+        'provider_identity' => 'YI',
+        'source_provider_model' => TenantProvider::class,
+        'source_provider_id' => $provider->id,
+        'status' => ProviderAllocation::StatusActive,
+        'is_offered_by_agency' => true,
+        'is_enabled_by_merchant' => false,
+    ]);
+
+    tenancy()->initialize($merchant);
+    $providers = app(AgencyProviderResolver::class)->getAllActiveProviders();
+    tenancy()->end();
+
+    expect($providers)->toBeEmpty();
 });
 
 test('agency provider resolver ignores inactive network allocation or membership', function () {

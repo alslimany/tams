@@ -13,6 +13,7 @@ use App\Http\Requests\Tenant\Insurance\TravelIssueRequest;
 use App\Http\Requests\Tenant\Insurance\TravelPriceRequest;
 use App\Models\Tenant\TenantInsuranceProvider;
 use App\Models\User;
+use App\Services\AgencyNetwork\MerchantAgencyWalletManager;
 use App\Services\Airline\AgencyProviderResolver;
 use App\Services\Insurance\InsuranceProviderManager;
 use App\Services\Insurance\Providers\AlBarakaProvider;
@@ -36,6 +37,7 @@ class TravelInsuranceController extends Controller
         protected ProcessWalletTransactions $processWalletTransactions,
         protected ProcessInsuranceProviderWalletTransactions $insuranceProviderWalletTransactions,
         protected AgencyProviderResolver $agencyProviderResolver,
+        protected MerchantAgencyWalletManager $merchantAgencyWalletManager,
     ) {}
 
     public function beneficiaryPage(string $quoteToken): Response|RedirectResponse
@@ -167,6 +169,7 @@ class TravelInsuranceController extends Controller
 
             $quote = [
                 'quote_token' => $quoteToken,
+                'provider_source' => $this->providerManager->activeProviderSource(),
                 'zone_id' => (int) $validated['zone_id'],
                 'zone_text' => $zoneText,
                 'duration_id' => (int) $resolvedDuration['id'],
@@ -215,10 +218,11 @@ class TravelInsuranceController extends Controller
         }
 
         $insuranceProvider = $this->providerManager->activeProvider();
+        $providerSource = is_array($quote['provider_source'] ?? null) ? $quote['provider_source'] : [];
         $useProviderWallet = $this->shouldUseInsuranceProviderWallet($insuranceProvider);
 
         try {
-            $this->assertTravelWalletBalance($quote, $issuer, $insuranceProvider, $useProviderWallet);
+            $this->assertTravelWalletBalance($quote, $issuer, $insuranceProvider, $useProviderWallet, $providerSource);
         } catch (InsufficientWalletBalanceException $exception) {
             if ($request->expectsJson()) {
                 return response()->json([
@@ -239,7 +243,7 @@ class TravelInsuranceController extends Controller
                 'currency' => (string) ($quote['currency'] ?? 'LYD'),
             ]);
 
-            $order = DB::transaction(function () use ($validated, $quote, $issuer, $insuranceProvider, $useProviderWallet) {
+            $order = DB::transaction(function () use ($validated, $quote, $issuer, $insuranceProvider, $useProviderWallet, $providerSource) {
                 $normalizedPhone = $this->normalizePhone((string) $validated['client_phone']);
                 $existingClientProfileId = $this->resolveExistingClientProfileId($normalizedPhone);
 
@@ -344,6 +348,7 @@ class TravelInsuranceController extends Controller
                     policyItems: $policyItems,
                     requestPayload: [
                         'quote' => $quote,
+                        'provider_source' => $quote['provider_source'] ?? null,
                         'issue_request' => $validated,
                     ],
                     insuranceProvider: $insuranceProvider,
@@ -351,6 +356,14 @@ class TravelInsuranceController extends Controller
                 );
 
                 if ($useProviderWallet && $insuranceProvider instanceof TenantInsuranceProvider) {
+                    if ((string) data_get($providerSource, 'source_type') === 'agency_network') {
+                        $order->loadMissing('items');
+
+                        foreach ($order->items as $item) {
+                            $this->merchantAgencyWalletManager->withdrawForOrderItem($order, $item, $issuer);
+                        }
+                    }
+
                     $this->insuranceProviderWalletTransactions->execute($order, $insuranceProvider);
 
                     try {
@@ -711,6 +724,7 @@ class TravelInsuranceController extends Controller
         User $issuer,
         ?TenantInsuranceProvider $insuranceProvider,
         bool $useProviderWallet,
+        array $providerSource = [],
     ): void {
         $requiredAmount = round((float) ($quote['total_premium'] ?? 0), 2);
         $currency = strtoupper((string) ($quote['currency'] ?? 'LYD'));
@@ -720,7 +734,11 @@ class TravelInsuranceController extends Controller
         }
 
         if ($useProviderWallet && $insuranceProvider instanceof TenantInsuranceProvider) {
-            $this->insuranceProviderWalletTransactions->assertCanWithdraw($insuranceProvider, $currency, $requiredAmount);
+            if ((string) data_get($providerSource, 'source_type') === 'agency_network') {
+                $this->merchantAgencyWalletManager->assertCanWithdrawForSource($issuer, $providerSource, $currency, $requiredAmount);
+            }
+
+            $this->insuranceProviderWalletTransactions->assertCanWithdrawForSource($providerSource, $insuranceProvider, $currency, $requiredAmount);
 
             return;
         }

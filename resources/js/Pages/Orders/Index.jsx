@@ -1,288 +1,422 @@
 import React from 'react';
 import { Head, Link } from '@inertiajs/react';
 import TenantSidebarLayout from '@/Layouts/TenantSidebarLayout';
-import { Card, CardContent, CardHeader, CardTitle } from '@/Components/ui/Card';
 import { Badge } from '@/Components/ui/Badge';
 import { Button } from '@/Components/ui/Button';
+import { Card, CardContent } from '@/Components/ui/Card';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/Components/ui/Table';
+import { formatMoney } from '@/lib/currency';
+import { useTranslation } from '@/hooks/useTranslation';
 import {
-    ArrowRight,
-    ArrowRightLeft,
     CalendarDays,
+    ChevronRight,
+    CircleDollarSign,
     Hotel,
     Plane,
-    PlaneTakeoff,
     ShieldCheck,
     Smartphone,
 } from 'lucide-react';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/Components/ui/Table';
+
+const statusStyles = (status) => {
+    const normalizedStatus = String(status ?? '').toLowerCase();
+
+    if (['issued', 'paid', 'confirmed'].includes(normalizedStatus)) {
+        return 'border-emerald-200 bg-emerald-50 text-emerald-700';
+    }
+
+    if (['voided', 'cancelled', 'refunded'].includes(normalizedStatus)) {
+        return 'border-rose-200 bg-rose-50 text-rose-700';
+    }
+
+    if (normalizedStatus === 'cancellation') {
+        return 'border-amber-200 bg-amber-50 text-amber-700';
+    }
+
+    return 'border-slate-200 bg-slate-100 text-slate-700';
+};
+
+const valueOrFallback = (...values) => values.find((value) => value !== undefined && value !== null && String(value).trim() !== '') ?? '-';
+
+const stripHtml = (value) => String(value ?? '')
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+const isLongToken = (value) => String(value ?? '').length > 28;
 
 export default function Index({ orders }) {
+    const { t, locale } = useTranslation();
     const rows = orders?.data ?? [];
+    const totalOrders = orders?.total ?? rows.length;
 
-    const formatDateTime = (value) => {
-        if (! value) {
+    function formatDate(value, options = {}) {
+        if (!value) {
             return '-';
         }
 
-        return new Date(value).toLocaleString('en-US', {
+        const date = new Date(value);
+
+        if (Number.isNaN(date.getTime())) {
+            return '-';
+        }
+
+        return date.toLocaleDateString(locale, {
+            year: 'numeric',
+            month: 'short',
+            day: '2-digit',
+            ...options,
+        });
+    }
+
+    function formatDateTime(value) {
+        if (!value) {
+            return '-';
+        }
+
+        const date = new Date(value);
+
+        if (Number.isNaN(date.getTime())) {
+            return '-';
+        }
+
+        return date.toLocaleString(locale, {
             year: 'numeric',
             month: 'short',
             day: '2-digit',
             hour: '2-digit',
             minute: '2-digit',
         });
-    };
+    }
 
-    const orderStatusVariant = (status) => {
-        const normalized = String(status ?? '').toLowerCase();
-
-        if (['issued', 'paid', 'confirmed'].includes(normalized)) {
-            return 'bg-emerald-50 text-emerald-700 border-emerald-200';
-        }
-
-        if (normalized === 'voided') {
-            return 'bg-amber-50 text-amber-700 border-amber-200';
-        }
-
-        if (normalized === 'refunded') {
-            return 'bg-rose-50 text-rose-700 border-rose-200';
-        }
-
-        return 'bg-slate-100 text-slate-700 border-slate-200';
-    };
-
-    const itemStatusVariant = (status) => {
-        return orderStatusVariant(status);
-    };
-
-    const itemTypeLabel = (item) => {
-        const type = String(item?.type ?? '').toLowerCase();
+    function productType(item) {
+        const type = String(item?.type ?? item?.product_type ?? '').toLowerCase();
         const subtype = String(item?.product_subtype ?? '').toLowerCase();
 
         if (type.includes('hotel') || subtype.includes('hotel')) {
-            return 'Hotel';
+            return 'hotel';
         }
 
-        if (type.includes('insurance') || subtype.includes('insurance')) {
-            return 'Insurance';
+        if (type.includes('insurance') || ['travel', 'orange', 'compulsory'].includes(subtype)) {
+            return 'insurance';
         }
 
         if (type.includes('esim') || subtype.includes('esim')) {
-            return 'eSIM';
+            return 'esim';
         }
 
-        return 'PNR';
-    };
+        return 'flight';
+    }
 
-    const itemTypeIcon = (item) => {
-        const label = itemTypeLabel(item);
+    function productIcon(item) {
+        const type = productType(item);
 
-        return {
-            PNR: <Plane className="h-3.5 w-3.5" />,
-            Hotel: <Hotel className="h-3.5 w-3.5" />,
-            Insurance: <ShieldCheck className="h-3.5 w-3.5" />,
-            eSIM: <Smartphone className="h-3.5 w-3.5" />,
-        }[label] ?? <CalendarDays className="h-3.5 w-3.5" />;
-    };
-
-    const resolveContactName = (order) => {
-        const contactFirstName = String(order?.contact?.first_name ?? '').trim();
-        const contactLastName = String(order?.contact?.last_name ?? '').trim();
-        const contactName = `${contactFirstName} ${contactLastName}`.trim();
-
-        if (contactName !== '') {
-            return contactName;
+        if (type === 'hotel') {
+            return Hotel;
         }
 
-        return 'N/A';
-    };
+        if (type === 'insurance') {
+            return ShieldCheck;
+        }
 
-    const renderItemDetails = (item) => {
+        if (type === 'esim') {
+            return Smartphone;
+        }
+
+        return Plane;
+    }
+
+    function productLabel(item) {
+        const type = productType(item);
+        const subtype = String(item?.product_subtype ?? '').toLowerCase();
+
+        if (type === 'hotel') {
+            return t('orders.product_hotel');
+        }
+
+        if (type === 'esim') {
+            return t('orders.product_esim');
+        }
+
+        if (type === 'insurance') {
+            if (subtype === 'orange') {
+                return t('orders.product_orange_insurance');
+            }
+
+            if (subtype === 'travel') {
+                return t('orders.product_travel_insurance');
+            }
+
+            return t('orders.product_compulsory_insurance');
+        }
+
+        return t('orders.product_flight');
+    }
+
+    function contactName(order) {
+        const firstName = String(order?.contact?.first_name ?? order?.contact?.firstName ?? '').trim();
+        const lastName = String(order?.contact?.last_name ?? order?.contact?.lastName ?? '').trim();
+        const directName = String(order?.contact?.full_name ?? order?.contact?.name ?? '').trim();
+        const fullName = `${firstName} ${lastName}`.trim();
+
+        return directName || fullName || order?.owner?.name || '-';
+    }
+
+    function itemReference(item) {
+        const policyDetails = item?.product_details?.policy_details ?? {};
         const details = item?.item_details ?? {};
-        const type = itemTypeLabel(item);
+        const product = item?.product_details ?? {};
+        const type = productType(item);
 
-        if (type === 'PNR') {
-            const airlineCode = String(details?.iata ?? details?.airline_code ?? '').toUpperCase();
-            const itineraries = details?.itineraries ?? details?.segments ?? [];
-            const itinerary = itineraries?.[0] ?? null;
-            const origin = itinerary?.from ?? itinerary?.departure_airport ?? itinerary?.origin ?? '-';
-            const destination = itinerary?.to ?? itinerary?.arrival_airport ?? itinerary?.destination ?? '-';
-            const travelDate = itinerary?.date ?? itinerary?.departure_time ?? '-';
-            const isReturnTrip = itineraries.length > 1 || String(item?.product_subtype ?? '').toLowerCase().includes('return');
-            const logoSrc = airlineCode !== ''
-                ? route('api.airlines.logo', { code: airlineCode })
-                : null;
+        if (type === 'flight') {
+            return valueOrFallback(item?.provider_reference, details?.rloc, details?.pnr);
+        }
 
-            return (
-                <div className="space-y-1.5">
-                    <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-slate-600">
-                        <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-slate-100 text-slate-700">
-                            {itemTypeIcon(item)}
-                        </span>
-                        {type} {item.provider_reference ? `• ${item.provider_reference}` : ''}
-                    </div>
-                    <div className="flex items-center gap-2 text-sm text-slate-800">
-                        {logoSrc ? (
-                            <img
-                                src={logoSrc}
-                                alt={airlineCode}
-                                className="h-4 w-4 rounded-full border border-slate-200 object-contain"
-                            />
-                        ) : null}
-                        <span className="inline-flex items-center gap-1 font-medium">
-                            <span>{origin}</span>
-                            <ArrowRight className="h-3 w-3 text-slate-400" />
-                            <span>{destination}</span>
-                        </span>
-                        <span className="text-slate-500">| {formatDateTime(travelDate)}</span>
-                    </div>
-                </div>
+        if (type === 'hotel') {
+            return valueOrFallback(details?.booking_id, item?.provider_reference, details?.booking_ref, item?.ticket_number);
+        }
+
+        if (type === 'insurance') {
+            return valueOrFallback(
+                policyDetails?.policy_number,
+                policyDetails?.card_number,
+                product?.policy_number,
+                item?.ticket_number,
+                policyDetails?.policy_id,
+                item?.provider_reference,
             );
         }
 
-        if (type === 'Hotel') {
-            const hotelName = details?.hotel_name ?? details?.name ?? details?.hotel?.name ?? 'Hotel';
-            const checkIn = details?.check_in ?? details?.checkin_date ?? '-';
-            const checkOut = details?.check_out ?? details?.checkout_date ?? '-';
+        return valueOrFallback(item?.ticket_number, item?.provider_reference);
+    }
 
-            return (
-                <div className="space-y-1.5">
-                    <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-600">
-                        <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-slate-100 text-slate-700">
-                            {itemTypeIcon(item)}
-                        </span>
-                        {type}
-                    </div>
-                    <p className="text-sm font-medium text-slate-800">{hotelName}</p>
-                    <p className="text-sm text-slate-600">{formatDateTime(checkIn)} - {formatDateTime(checkOut)}</p>
-                </div>
-            );
+    function safeItemReference(item) {
+        const reference = String(itemReference(item));
+
+        if (reference === '-' || isLongToken(reference)) {
+            return productType(item) === 'insurance' ? t('orders.policy_issued') : '-';
         }
+
+        return reference;
+    }
+
+    function itemTitle(item) {
+        const details = item?.item_details ?? {};
+        const product = item?.product_details ?? {};
+        const policyDetails = product?.policy_details ?? {};
+        const type = productType(item);
+
+        if (type === 'flight') {
+            return safeItemReference(item) === '-' ? t('orders.flight_booking') : `${t('orders.pnr')} ${safeItemReference(item)}`;
+        }
+
+        if (type === 'hotel') {
+            return valueOrFallback(product?.hotel?.name, product?.hotel?.hotel_name, details?.provider_booking?.hotel?.hotelName, t('orders.hotel_booking'));
+        }
+
+        if (type === 'insurance') {
+            return valueOrFallback(policyDetails?.policy_number, item?.ticket_number, product?.policy_number, t('orders.policy_issued'));
+        }
+
+        return safeItemReference(item);
+    }
+
+    function itemSubtitle(item) {
+        const details = item?.item_details ?? {};
+        const product = item?.product_details ?? {};
+        const policyDetails = product?.policy_details ?? {};
+        const type = productType(item);
+
+        if (type === 'flight') {
+            const itineraries = Array.isArray(details?.itineraries) ? details.itineraries : [];
+            const firstItinerary = itineraries[0] ?? {};
+            const origin = valueOrFallback(firstItinerary?.from, firstItinerary?.origin, firstItinerary?.departure_airport);
+            const destination = valueOrFallback(firstItinerary?.to, firstItinerary?.destination, firstItinerary?.arrival_airport);
+            const travelDate = formatDate(valueOrFallback(firstItinerary?.date, firstItinerary?.departure_time));
+
+            return `${origin} → ${destination} · ${travelDate}`;
+        }
+
+        if (type === 'hotel') {
+            const stay = product?.stay ?? details?.provider_booking ?? {};
+            const from = valueOrFallback(stay?.from, details?.search?.check_in);
+            const to = valueOrFallback(stay?.to, details?.search?.check_out);
+
+            return `${formatDate(from)} → ${formatDate(to)}`;
+        }
+
+        if (type === 'insurance') {
+            const start = valueOrFallback(policyDetails?.policy_date_from, policyDetails?.PolicyDateFrom, product?.beneficiary?.policy_date_from);
+            const end = valueOrFallback(policyDetails?.policy_date_to, policyDetails?.PolicyDateTo, product?.beneficiary?.policy_date_to);
+            const beneficiary = valueOrFallback(product?.beneficiary?.name, details?.beneficiary?.name, policyDetails?.vehicle_owner_name);
+
+            return [beneficiary, `${formatDate(start)} → ${formatDate(end)}`].filter((value) => value !== '-').join(' · ') || t('orders.policy_issued');
+        }
+
+        return stripHtml(item?.provider ?? '');
+    }
+
+    function primaryItem(order) {
+        return order?.items?.[0] ?? null;
+    }
+
+    function orderTotal(order) {
+        return Number(order?.amount_paid ?? order?.grand_total ?? 0);
+    }
+
+    function renderProductSummary(order) {
+        const item = primaryItem(order);
+
+        if (!item) {
+            return <span className="text-sm text-muted-foreground">{t('orders.no_items')}</span>;
+        }
+
+        const Icon = productIcon(item);
+        const extraItemsCount = Math.max(0, Number(order?.items_count ?? order?.items?.length ?? 1) - 1);
 
         return (
-            <div className="space-y-1.5">
-                <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-600">
-                    <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-slate-100 text-slate-700">
-                        {itemTypeIcon(item)}
-                    </span>
-                    {type}
+            <div className="flex min-w-0 items-start gap-3">
+                <span className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-slate-700">
+                    <Icon className="size-4" />
+                </span>
+                <div className="min-w-0 space-y-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                        <Badge variant="outline" className="border-slate-200 bg-white px-2 py-0.5 text-[10px] font-bold uppercase text-slate-600">
+                            {productLabel(item)}
+                        </Badge>
+                        <Badge variant="outline" className={statusStyles(item.status)}>
+                            {item.status ?? 'pending'}
+                        </Badge>
+                        {extraItemsCount > 0 ? (
+                            <span className="text-xs font-medium text-muted-foreground">+{extraItemsCount}</span>
+                        ) : null}
+                    </div>
+                    <p className="truncate text-sm font-semibold text-slate-950">{itemTitle(item)}</p>
+                    <p className="truncate text-xs text-slate-500">{itemSubtitle(item)}</p>
                 </div>
-                <p className="text-sm text-slate-700">
-                    {item.provider_reference || item.ticket_number || 'Details available in order view'}
-                </p>
             </div>
         );
-    };
+    }
 
     return (
         <TenantSidebarLayout>
-            <Head title="Orders" />
+            <Head title={t('orders.title')} />
 
-            <div className="mx-auto max-w-7xl space-y-6 px-4 py-8">
-                <Card className="overflow-hidden border border-slate-200/80 bg-white shadow-sm">
-                    <CardHeader className="border-b border-slate-200/70 bg-slate-50/60">
-                        <CardTitle className="flex items-center justify-between text-slate-900">
-                            <span className="text-xl font-semibold tracking-tight">Orders</span>
-                            <Badge variant="outline" className="border-slate-300 bg-white text-slate-700">{orders?.total ?? 0}</Badge>
-                        </CardTitle>
-                    </CardHeader>
-                    <CardContent>
+            <div className="space-y-4">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                    <div>
+                        <h1 className="text-2xl font-bold text-slate-950">{t('orders.title')}</h1>
+                        <p className="text-sm text-muted-foreground">{t('orders.description')}</p>
+                    </div>
+                    <Badge variant="outline" className="w-fit border-slate-200 bg-white text-slate-700">
+                        {t('orders.count', { count: totalOrders })}
+                    </Badge>
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-3">
+                    <Card>
+                        <CardContent className="flex items-center gap-3 p-4">
+                            <CircleDollarSign className="size-5 text-primary" />
+                            <div>
+                                <p className="text-xs text-muted-foreground">{t('orders.total_orders')}</p>
+                                <p className="text-xl font-bold tabular-nums text-slate-950">{totalOrders}</p>
+                            </div>
+                        </CardContent>
+                    </Card>
+                    <Card>
+                        <CardContent className="flex items-center gap-3 p-4">
+                            <CalendarDays className="size-5 text-primary" />
+                            <div>
+                                <p className="text-xs text-muted-foreground">{t('orders.latest_order')}</p>
+                                <p className="text-xl font-bold tabular-nums text-slate-950">{formatDate(rows[0]?.issued_at ?? rows[0]?.created_at)}</p>
+                            </div>
+                        </CardContent>
+                    </Card>
+                    <Card>
+                        <CardContent className="flex items-center gap-3 p-4">
+                            <ShieldCheck className="size-5 text-primary" />
+                            <div>
+                                <p className="text-xs text-muted-foreground">{t('orders.visible_items')}</p>
+                                <p className="text-xl font-bold tabular-nums text-slate-950">{rows.reduce((total, order) => total + Number(order.items_count ?? 0), 0)}</p>
+                            </div>
+                        </CardContent>
+                    </Card>
+                </div>
+
+                <Card>
+                    <CardContent className="p-0">
                         {rows.length === 0 ? (
-                            <div className="rounded-lg border border-dashed p-8 text-center text-muted-foreground">
-                                No orders found yet.
+                            <div className="p-8 text-center text-muted-foreground">
+                                {t('orders.empty')}
                             </div>
                         ) : (
                             <>
-                                <div className="space-y-3 md:hidden">
+                                <div className="divide-y md:hidden">
                                     {rows.map((order) => (
-                                        <div key={order.id} className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
-                                            <div className="mb-2 flex items-start justify-between gap-2">
-                                                <div>
-                                                    <p className="text-base font-semibold text-slate-900">{order.number}</p>
-                                                    <p className="text-xs text-slate-500">{resolveContactName(order)}</p>
+                                        <Link key={order.id} href={route('orders.show', { order: order.id })} className="block p-4 transition-colors hover:bg-slate-50">
+                                            <div className="flex items-start justify-between gap-3">
+                                                <div className="min-w-0 space-y-1">
+                                                    <p className="font-semibold text-slate-950">{order.number}</p>
+                                                    <p className="text-xs text-muted-foreground">{contactName(order)}</p>
                                                 </div>
-                                              
+                                                <Badge variant="outline" className={statusStyles(order.status)}>{order.status}</Badge>
                                             </div>
-
-                                            <div className="space-y-1.5">
-                                                {(order.items ?? []).map((item) => (
-                                                    <div key={item.id} className="rounded-lg border border-slate-200/80 bg-slate-50/60 p-2.5">
-                                                        <div className="flex items-start justify-between gap-2">
-                                                            <div className="min-w-0 flex-1">
-                                                                {renderItemDetails(item)}
-                                                            </div>
-                                                            <Badge variant="outline" className={`shrink-0 ${itemStatusVariant(item.status)}`}>
-                                                                {item.status}
-                                                            </Badge>
-                                                        </div>
-                                                    </div>
-                                                ))}
+                                            <div className="mt-3">{renderProductSummary(order)}</div>
+                                            <div className="mt-3 flex items-center justify-between gap-3 text-sm">
+                                                <span className="font-semibold tabular-nums text-slate-950">{formatMoney(orderTotal(order), order.currency)}</span>
+                                                <span className="text-xs text-muted-foreground">{formatDateTime(order.issued_at ?? order.created_at)}</span>
                                             </div>
-
-                                            <div className="mt-2 flex items-center justify-between text-xs text-slate-500">
-                                                <span>By {order.owner?.name ?? '-'}</span>
-                                                <span>{formatDateTime(order.created_at)}</span>
-                                            </div>
-
-                                            <div className="mt-2">
-                                                <Button asChild size="sm" variant="outline" className="w-full border-slate-300 bg-white text-slate-700">
-                                                    <Link href={route('orders.show', { order: order.id })}>Show Order</Link>
-                                                </Button>
-                                            </div>
-                                        </div>
+                                        </Link>
                                     ))}
                                 </div>
 
                                 <div className="hidden md:block">
                                     <Table>
                                         <TableHeader>
-                                            <TableRow className="hover:bg-transparent">
-                                                <TableHead className="h-9 w-37.5 px-3 text-[10px] uppercase tracking-[0.12em]">Order #</TableHead>
-                                                <TableHead className="h-9 w-50 px-3 text-[10px] uppercase tracking-[0.12em]">Contact</TableHead>
-                                                <TableHead className="h-9 px-3 text-[10px] uppercase tracking-[0.12em]">Order Items</TableHead>
-                                                <TableHead className="h-9 w-32.5 px-3 text-[10px] uppercase tracking-[0.12em]">Order Status</TableHead>
-                                                <TableHead className="h-9 w-37.5 px-3 text-[10px] uppercase tracking-[0.12em]">Owner</TableHead>
-                                                <TableHead className="h-9 w-47.5 px-3 text-[10px] uppercase tracking-[0.12em]">Created At</TableHead>
-                                                <TableHead className="h-9 w-27.5 px-3 text-right text-[10px] uppercase tracking-[0.12em]">Action</TableHead>
+                                            <TableRow>
+                                                <TableHead>{t('orders.table_order')}</TableHead>
+                                                <TableHead>{t('orders.table_product')}</TableHead>
+                                                <TableHead>{t('orders.table_customer')}</TableHead>
+                                                <TableHead className="text-end">{t('orders.table_total')}</TableHead>
+                                                <TableHead>{t('orders.table_issued')}</TableHead>
+                                                <TableHead className="text-end">{t('orders.table_action')}</TableHead>
                                             </TableRow>
                                         </TableHeader>
                                         <TableBody>
                                             {rows.map((order) => (
-                                                <TableRow key={order.id} className="cursor-default hover:bg-slate-50/80">
-                                                    <TableCell className="px-3 py-2.5">
-                                                        <p className="font-semibold text-slate-900">{order.number}</p>
-                                                        <p className="text-xs text-slate-500">{order.items_count} item(s)</p>
-                                                    </TableCell>
-                                                    <TableCell className="px-3 py-2.5">
-                                                        <p className="font-medium text-slate-900">{resolveContactName(order)}</p>
-                                                        <p className="text-xs text-slate-500">{order.contact?.email ?? '-'}</p>
-                                                    </TableCell>
-                                                    <TableCell className="px-3 py-2.5">
-                                                        <div className="space-y-1.5">
-                                                            {(order.items ?? []).map((item) => (
-                                                                <div key={item.id} className="rounded-md border border-slate-200/80 bg-slate-50/50 p-2">
-                                                                    <div className="flex items-start justify-between gap-2">
-                                                                        <div className="min-w-0 flex-1">
-                                                                            {renderItemDetails(item)}
-                                                                        </div>
-                                                                        <Badge variant="outline" className={`shrink-0 ${itemStatusVariant(item.status)}`}>
-                                                                            {item.status}
-                                                                        </Badge>
-                                                                    </div>
-                                                                </div>
-                                                            ))}
+                                                <TableRow key={order.id} className="hover:bg-slate-50/80">
+                                                    <TableCell className="w-44">
+                                                        <div className="space-y-1">
+                                                            <Link href={route('orders.show', { order: order.id })} className="font-semibold text-primary hover:underline">
+                                                                {order.number}
+                                                            </Link>
+                                                            <div className="flex flex-wrap items-center gap-2">
+                                                                <Badge variant="outline" className={statusStyles(order.status)}>
+                                                                    {order.status}
+                                                                </Badge>
+                                                                <span className="text-xs text-muted-foreground">{t('orders.items_count', { count: order.items_count ?? 0 })}</span>
+                                                            </div>
                                                         </div>
                                                     </TableCell>
-                                                    <TableCell className="px-3 py-2.5">
-                                                        <Badge variant="outline" className={orderStatusVariant(order.status)}>
-                                                            {order.status}
-                                                        </Badge>
+                                                    <TableCell className="min-w-100 max-w-140">
+                                                        {renderProductSummary(order)}
                                                     </TableCell>
-                                                    <TableCell className="px-3 py-2.5 text-slate-700">{order.owner?.name ?? '-'}</TableCell>
-                                                    <TableCell className="px-3 py-2.5 text-slate-700">{formatDateTime(order.created_at)}</TableCell>
-                                                    <TableCell className="px-3 py-2.5 text-right">
-                                                        <Button asChild size="sm" variant="outline" className="border-slate-300 bg-white text-slate-700 hover:bg-slate-50">
-                                                            <Link href={route('orders.show', { order: order.id })}>Show</Link>
+                                                    <TableCell className="w-56">
+                                                        <p className="truncate font-medium text-slate-950">{contactName(order)}</p>
+                                                        <p className="truncate text-xs text-muted-foreground">{valueOrFallback(order.contact?.email, order.owner?.email)}</p>
+                                                    </TableCell>
+                                                    <TableCell className="w-36 text-end font-semibold tabular-nums text-slate-950">
+                                                        {formatMoney(orderTotal(order), order.currency)}
+                                                    </TableCell>
+                                                    <TableCell className="w-44 text-sm text-muted-foreground">
+                                                        {formatDateTime(order.issued_at ?? order.created_at)}
+                                                    </TableCell>
+                                                    <TableCell className="w-24 text-end">
+                                                        <Button asChild size="sm" variant="outline" className="h-8 gap-1">
+                                                            <Link href={route('orders.show', { order: order.id })}>
+                                                                {t('common.view')}
+                                                                <ChevronRight className="size-4 rtl:rotate-180" />
+                                                            </Link>
                                                         </Button>
                                                     </TableCell>
                                                 </TableRow>
@@ -294,6 +428,26 @@ export default function Index({ orders }) {
                         )}
                     </CardContent>
                 </Card>
+
+                {orders?.links?.length > 3 ? (
+                    <div className="flex flex-wrap justify-end gap-2">
+                        {orders.links.map((link, index) => (
+                            <Button
+                                key={`${link.label}-${index}`}
+                                asChild={Boolean(link.url)}
+                                size="sm"
+                                variant={link.active ? 'default' : 'outline'}
+                                disabled={!link.url}
+                            >
+                                {link.url ? (
+                                    <Link href={link.url} preserveScroll dangerouslySetInnerHTML={{ __html: link.label }} />
+                                ) : (
+                                    <span dangerouslySetInnerHTML={{ __html: link.label }} />
+                                )}
+                            </Button>
+                        ))}
+                    </div>
+                ) : null}
             </div>
         </TenantSidebarLayout>
     );

@@ -12,6 +12,7 @@ use App\Http\Requests\Tenant\Insurance\OrangeIssueRequest;
 use App\Http\Requests\Tenant\Insurance\OrangePriceRequest;
 use App\Models\Tenant\TenantInsuranceProvider;
 use App\Models\User;
+use App\Services\AgencyNetwork\MerchantAgencyWalletManager;
 use App\Services\Insurance\InsuranceProviderManager;
 use App\Services\Insurance\Providers\AlBarakaProvider;
 use Carbon\CarbonImmutable;
@@ -31,6 +32,7 @@ class OrangeInsuranceController extends Controller
         protected InsuranceProviderManager $providerManager,
         protected CreateOrderFromInsuranceBooking $createOrderFromInsuranceBooking,
         protected ProcessInsuranceProviderWalletTransactions $insuranceProviderWalletTransactions,
+        protected MerchantAgencyWalletManager $merchantAgencyWalletManager,
     ) {}
 
     public function references(): JsonResponse
@@ -69,6 +71,7 @@ class OrangeInsuranceController extends Controller
             $quoteToken = (string) Str::uuid();
             $quote = [
                 'quote_token' => $quoteToken,
+                'provider_source' => $this->providerManager->activeProviderSource(),
                 'country' => (int) $validated['country'],
                 'document_type_id' => (int) $validated['document_type_id'],
                 'policy_date_from' => $dateFrom->toDateString(),
@@ -130,10 +133,21 @@ class OrangeInsuranceController extends Controller
         }
 
         $insuranceProvider = $this->providerManager->activeProvider();
+        $providerSource = is_array($quote['provider_source'] ?? null) ? $quote['provider_source'] : [];
 
         if ($insuranceProvider instanceof TenantInsuranceProvider) {
             try {
-                $this->insuranceProviderWalletTransactions->assertCanWithdraw(
+                if ((string) data_get($providerSource, 'source_type') === 'agency_network') {
+                    $this->merchantAgencyWalletManager->assertCanWithdrawForSource(
+                        $issuer,
+                        $providerSource,
+                        strtoupper((string) ($quote['currency'] ?? 'LYD')),
+                        round((float) ($quote['total_premium'] ?? 0), 3),
+                    );
+                }
+
+                $this->insuranceProviderWalletTransactions->assertCanWithdrawForSource(
+                    $providerSource,
                     $insuranceProvider,
                     strtoupper((string) ($quote['currency'] ?? 'LYD')),
                     round((float) ($quote['total_premium'] ?? 0), 3),
@@ -211,12 +225,21 @@ class OrangeInsuranceController extends Controller
                 beneficiaryData: $beneficiaryData,
                 requestPayload: [
                     'quote' => $quote,
+                    'provider_source' => $quote['provider_source'] ?? null,
                     'issue_request' => $validated,
                     'full_policy' => $fullPolicy,
                 ],
                 insuranceProvider: $insuranceProvider,
                 processAgencyWallet: false,
             );
+
+            if ((string) data_get($providerSource, 'source_type') === 'agency_network') {
+                $order->loadMissing('items');
+
+                foreach ($order->items as $item) {
+                    $this->merchantAgencyWalletManager->withdrawForOrderItem($order, $item, $issuer);
+                }
+            }
 
             if ($insuranceProvider instanceof TenantInsuranceProvider) {
                 $this->insuranceProviderWalletTransactions->execute($order, $insuranceProvider);

@@ -9,6 +9,7 @@ use App\DTOs\Insurance\InsuranceQuoteRequest;
 use App\DTOs\Insurance\InsuranceQuoteResult;
 use App\Models\Tenant\TenantInsuranceProvider;
 use App\Services\Insurance\InsuranceApiException;
+use App\Services\Insurance\InsuranceProviderManager;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Http;
@@ -702,6 +703,13 @@ class AlBarakaProvider implements InsuranceProviderInterface
 
     protected function activeProvider(): ?TenantInsuranceProvider
     {
+        $manager = app(InsuranceProviderManager::class);
+        $managerProvider = $manager->activeProviderWithSource()['provider'];
+
+        if ($managerProvider instanceof TenantInsuranceProvider) {
+            return $managerProvider;
+        }
+
         return TenantInsuranceProvider::query()
             ->where('provider_type', 'albaraka')
             ->where('is_active', true)

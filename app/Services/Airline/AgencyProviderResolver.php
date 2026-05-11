@@ -181,30 +181,36 @@ class AgencyProviderResolver
      */
     public function getAllActiveProviders(): \Illuminate\Support\Collection
     {
+        $networkProviders = $this->getAllNetworkAgencyProviders();
+
         try {
             $agencySettings = AgencySetting::current();
         } catch (\Throwable) {
-            return $this->fallbackActiveProviders();
+            return $this->mergeProviderSources($this->fallbackActiveProviders(), $networkProviders);
         }
 
         // If forced to use default agency, or not allowed to use own credentials...
         try {
             if ($agencySettings->isForcedToUseDefaultAgency() || ! $agencySettings->canUseOwnAirlineCredentials()) {
-                return $this->getAllDefaultAgencyProviders();
+                return $networkProviders->isNotEmpty()
+                    ? $networkProviders
+                    : $this->getAllDefaultAgencyProviders();
             }
         } catch (\Throwable) {
-            return $this->fallbackActiveProviders();
+            return $this->mergeProviderSources($this->fallbackActiveProviders(), $networkProviders);
         }
 
         // Try to use agency's own providers
         $ownProviders = $this->getAllAgencyProviders();
 
-        // If no own providers, fallback to default agency
-        if ($ownProviders->isEmpty()) {
+        $providers = $this->mergeProviderSources($ownProviders, $networkProviders);
+
+        // If no own/network providers, fallback to deprecated default agency
+        if ($providers->isEmpty()) {
             return $this->getAllDefaultAgencyProviders();
         }
 
-        return $ownProviders;
+        return $providers;
     }
 
     protected function fallbackActiveProviders(): \Illuminate\Support\Collection
@@ -261,6 +267,49 @@ class AgencyProviderResolver
     }
 
     /**
+     * @return \Illuminate\Support\Collection<int, TenantProvider>
+     */
+    public function getAllNetworkAgencyProviders(): \Illuminate\Support\Collection
+    {
+        $tenantId = tenant()?->id;
+
+        if ($tenantId === null) {
+            return collect();
+        }
+
+        return $this->networkAllocationResolver
+            ->forMerchant($tenantId)
+            ->filter(fn (ProviderAllocation $allocation): bool => $allocation->provider_type === 'airline')
+            ->map(function (ProviderAllocation $allocation): ?TenantProvider {
+                $resolved = $this->resolveNetworkProviderAllocation($allocation);
+                $provider = $resolved['provider'] ?? null;
+
+                if (! $provider instanceof TenantProvider) {
+                    return null;
+                }
+
+                $provider->setAttribute('provider_source_metadata', collect($resolved)->except('provider')->all());
+
+                return $provider;
+            })
+            ->filter()
+            ->values();
+    }
+
+    protected function mergeProviderSources(\Illuminate\Support\Collection $ownProviders, \Illuminate\Support\Collection $networkProviders): \Illuminate\Support\Collection
+    {
+        return $ownProviders
+            ->concat($networkProviders)
+            ->unique(function (TenantProvider $provider): string {
+                $sourceType = data_get($provider, 'provider_source_metadata.source_type', ProviderSourceSelector::SourceOwn);
+                $sourceKey = data_get($provider, 'provider_source_metadata.provider_allocation_id', $provider->id);
+
+                return $sourceType.':'.$sourceKey;
+            })
+            ->values();
+    }
+
+    /**
      * Find a provider by ID from the active providers.
      */
     public function findProviderById(int $providerId): ?TenantProvider
@@ -298,6 +347,10 @@ class AgencyProviderResolver
         }
 
         if ($allocation->networkMembership?->status !== \App\Models\NetworkMembership::StatusActive) {
+            return $metadata;
+        }
+
+        if ($allocation->is_offered_by_agency === false || $allocation->is_enabled_by_merchant === false) {
             return $metadata;
         }
 

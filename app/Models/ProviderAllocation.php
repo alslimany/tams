@@ -32,6 +32,9 @@ class ProviderAllocation extends Model
         'source_provider_model',
         'source_provider_id',
         'status',
+        'is_offered_by_agency',
+        'is_enabled_by_merchant',
+        'enabled_at',
         'commission_rate',
         'markup_rate',
         'limits',
@@ -48,7 +51,7 @@ class ProviderAllocation extends Model
         static::saving(function (ProviderAllocation $allocation): void {
             $allocation->normalizeIdentityFields();
 
-            if ($allocation->status === self::StatusActive && $allocation->hasActiveLogicalDuplicate()) {
+            if ($allocation->status === self::StatusActive && $allocation->is_enabled_by_merchant !== false && $allocation->hasActiveLogicalDuplicate()) {
                 throw new InvalidArgumentException('Merchant already has an active allocation for this provider identity.');
             }
         });
@@ -58,6 +61,9 @@ class ProviderAllocation extends Model
     {
         return [
             'source_provider_id' => 'integer',
+            'is_offered_by_agency' => 'boolean',
+            'is_enabled_by_merchant' => 'boolean',
+            'enabled_at' => 'datetime',
             'commission_rate' => 'decimal:2',
             'markup_rate' => 'decimal:2',
             'limits' => 'array',
@@ -87,7 +93,14 @@ class ProviderAllocation extends Model
 
     public function scopeActive(Builder $query): Builder
     {
-        return $query->where('status', self::StatusActive);
+        return $query
+            ->where('status', self::StatusActive)
+            ->where('is_enabled_by_merchant', true);
+    }
+
+    public function scopeOffered(Builder $query): Builder
+    {
+        return $query->where('is_offered_by_agency', true);
     }
 
     public function requestRemoval(): bool
@@ -107,6 +120,7 @@ class ProviderAllocation extends Model
             ->where('provider_driver', $this->provider_driver)
             ->where('provider_identity', $this->provider_identity)
             ->where('status', self::StatusActive)
+            ->where('is_enabled_by_merchant', true)
             ->exists();
     }
 

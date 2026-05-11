@@ -20,7 +20,8 @@ class MerchantProviderAllocationResolver
         return ProviderAllocation::query()
             ->with('networkMembership')
             ->where('merchant_tenant_id', $merchantTenantId)
-            ->where('status', ProviderAllocation::StatusActive)
+            ->active()
+            ->offered()
             ->whereHas('networkMembership', function ($query) use ($merchantTenantId): void {
                 $query->where('merchant_tenant_id', $merchantTenantId)
                     ->where('status', NetworkMembership::StatusActive);
