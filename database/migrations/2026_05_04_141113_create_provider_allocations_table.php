@@ -12,7 +12,7 @@ return new class extends Migration
             $table->id();
             $table->foreignId('network_membership_id')->constrained()->cascadeOnDelete();
             $table->string('agency_tenant_id', 64);
-            $table->string('merchant_tenant_id', 64);
+            $table->string('merchant_tenant_id', 64)->nullable();
             $table->string('provider_type', 32);
             $table->string('provider_driver', 64);
             $table->string('provider_identity', 128);
