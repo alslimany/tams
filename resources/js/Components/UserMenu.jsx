@@ -1,7 +1,7 @@
 import React from 'react';
 import { router, usePage } from '@inertiajs/react';
 import { useTranslation } from '@/hooks/useTranslation';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Avatar, AvatarFallback, AvatarImage } from '@/Components/ui/avatar';
 import { Button } from '@/Components/ui/Button';
 import {
     DropdownMenu,
@@ -11,7 +11,7 @@ import {
     DropdownMenuLabel,
     DropdownMenuSeparator,
     DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
+} from '@/Components/ui/dropdown-menu';
 import {
     User,
     Settings,

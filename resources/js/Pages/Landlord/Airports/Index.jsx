@@ -19,7 +19,7 @@ import {
     DropdownMenuContent,
     DropdownMenuItem,
     DropdownMenuTrigger,
-} from '@/Components/ui/Dropdown-menu';
+} from '@/Components/ui/dropdown-menu';
 import { Search, Plus, MoreHorizontal, Edit, Trash2, Eye, Filter } from 'lucide-react';
 
 export default function Index({ airports, filters }) {

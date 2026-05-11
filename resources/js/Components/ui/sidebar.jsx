@@ -5,8 +5,8 @@ import { Slot } from "radix-ui"
 
 import { useIsMobile } from "@/hooks/use-mobile"
 import { cn } from "@/Components/lib/utils"
-import { Button } from "@/Components/ui/button"
-import { Input } from "@/Components/ui/input"
+import { Button } from "@/Components/ui/Button"
+import { Input } from "@/Components/ui/Input"
 import { Separator } from "@/Components/ui/separator"
 import {
   Sheet,
