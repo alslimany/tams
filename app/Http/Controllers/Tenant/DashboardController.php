@@ -124,8 +124,10 @@ class DashboardController extends Controller
 
         foreach ($currencies as $currency) {
             $transactions = Transaction::query()
-                ->where('created_at', '>=', now()->subDays(30))
-                ->where('currency', $currency)
+                ->select('transactions.*')
+                ->join('wallets', 'wallets.id', '=', 'transactions.wallet_id')
+                ->where('transactions.created_at', '>=', now()->subDays(30))
+                ->where('wallets.meta->currency', $currency)
                 ->get();
 
             $deposits = $transactions->where('type', 'deposit')->sum('amount');
