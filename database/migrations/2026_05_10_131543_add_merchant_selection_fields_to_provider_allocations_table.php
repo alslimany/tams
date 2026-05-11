@@ -12,7 +12,7 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('provider_allocations', function (Blueprint $table) {
-            $table->string('merchant_tenant_id')->nullable()->change();
+            // $table->string('merchant_tenant_id')->nullable()->change();
             $table->boolean('is_offered_by_agency')->default(true)->after('status');
             $table->boolean('is_enabled_by_merchant')->default(true)->after('is_offered_by_agency');
             $table->timestamp('enabled_at')->nullable()->after('is_enabled_by_merchant');
