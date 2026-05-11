@@ -5,7 +5,7 @@ import { createRoot } from 'react-dom/client';
 import { createInertiaApp } from '@inertiajs/react';
 import { resolvePageComponent } from 'laravel-vite-plugin/inertia-helpers';
 import { route } from 'ziggy-js';
-import { DirectionProvider } from '@/components/ui/direction';
+import { DirectionProvider } from '@/Components/ui/direction';
 
 import { TooltipProvider } from '@/Components/ui/tooltip';
 
