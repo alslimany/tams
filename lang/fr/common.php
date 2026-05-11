@@ -397,6 +397,8 @@ return [
         'FQ' => 'Fly Crown',
     ],
     'switch_language' => 'Changer de langue',
+    'hotels' => 'ôtels',
+    'insurance_search' => 'Assurance',
     'hotel_search' => 'Recherche d\'hôtel',
     'hotels_by_3t' => 'Hôtels par 3T',
     'find_the_right_stay' => 'Trouvez le bon séjour',
