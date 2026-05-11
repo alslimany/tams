@@ -163,7 +163,7 @@ class VidecomClient
      */
     protected function runSoapCommand(string $command): string
     {
-        $soapUrl = "{$this->baseUrl}/vars/public/webservices/VRSXMLWebservice3.asmx";
+        $soapUrl = "{$this->baseUrl}/VRSXMLService/VRSXMLWebservice3.asmx?WSDL";
         $token = $this->config['token'] ?? '';
 
         if (empty($token)) {
@@ -175,24 +175,20 @@ class VidecomClient
             'endpoint' => $soapUrl,
         ]);
 
-        $xml = '<?xml version="1.0" encoding="utf-8"?>
-<soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
-  <soap:Body>
-    <RunVRSCommand xmlns="http://videcom.com/">
-      <msg>
-        <Token>'.htmlspecialchars($token).'</Token>
-        <Command>'.htmlspecialchars($command).'</Command>
-      </msg>
-    </RunVRSCommand>
-  </soap:Body>
-</soap:Envelope>';
+        $xml = '<?xml version="1.0" encoding="UTF-8"?>
+<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" xmlns:ns="http://videcom.com/">
+  <s:Body>
+    <ns:msg>
+      <ns:Token>'.htmlspecialchars($token, ENT_XML1).'</ns:Token>
+      <ns:Command>'.htmlspecialchars($command, ENT_XML1).'</ns:Command>
+    </ns:msg>
+  </s:Body>
+</s:Envelope>';
 
         $response = Http::withHeaders([
-            'Content-Type' => 'text/xml; charset=utf-8',
+            'Content-Type' => 'application/soap+xml',
             'SOAPAction' => 'http://videcom.com/RunVRSCommand',
-        ])->send('POST', $soapUrl, [
-            'body' => $xml,
-        ]);
+        ])->withBody($xml, 'text/xml')->post($soapUrl);
 
         if ($response->failed()) {
             throw new Exception('Videcom SOAP request failed: '.$response->body());
