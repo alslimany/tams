@@ -4,23 +4,27 @@ namespace App\Http\Controllers;
 
 use App\Models\Tenant;
 use App\Models\User;
+use App\Notifications\AgencyCreatedConfirmation;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules;
 use Inertia\Inertia;
+use Inertia\Response;
 
 class AgencyRegistrationController extends Controller
 {
-    public function show()
+    public function show(): Response
     {
         return Inertia::render('Agency/Register', [
             'tenantBaseDomain' => config('tenancy.tenant_base_domain'),
         ]);
     }
 
-    public function store(Request $request)
+    public function store(Request $request): RedirectResponse
     {
         $tenantBaseDomain = (string) config('tenancy.tenant_base_domain');
 
@@ -71,6 +75,36 @@ class AgencyRegistrationController extends Controller
             ]);
         });
 
-        return redirect()->to(config('tenancy.tenant_url_scheme').'://'.$tenantDomain.'/login');
+        $loginUrl = config('tenancy.tenant_url_scheme').'://'.$tenantDomain.'/login';
+        $ownerName = $request->owner_name ?: $request->company_name;
+
+        $registration = [
+            'agencyName' => $tenant->company_name,
+            'agencyNumber' => $tenant->agency_number,
+            'ownerName' => $ownerName,
+            'ownerEmail' => $request->email,
+            'domain' => $tenantDomain,
+            'loginUrl' => $loginUrl,
+        ];
+
+        Notification::route('mail', [$request->email => $ownerName])
+            ->notify(new AgencyCreatedConfirmation(...$registration));
+
+        return redirect()
+            ->route('agency.registration.success')
+            ->with('agency_registration', $registration);
+    }
+
+    public function success(): Response|RedirectResponse
+    {
+        $registration = session('agency_registration');
+
+        if (! is_array($registration)) {
+            return redirect()->route('agency.register');
+        }
+
+        return Inertia::render('Agency/Success', [
+            'registration' => $registration,
+        ]);
     }
 }
