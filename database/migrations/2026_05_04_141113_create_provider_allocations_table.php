@@ -11,14 +11,14 @@ return new class extends Migration
         Schema::create('provider_allocations', function (Blueprint $table) {
             $table->id();
             $table->foreignId('network_membership_id')->constrained()->cascadeOnDelete();
-            $table->string('agency_tenant_id');
-            $table->string('merchant_tenant_id');
-            $table->string('provider_type');
-            $table->string('provider_driver');
-            $table->string('provider_identity');
-            $table->string('source_provider_model');
+            $table->string('agency_tenant_id', 64);
+            $table->string('merchant_tenant_id', 64);
+            $table->string('provider_type', 32);
+            $table->string('provider_driver', 64);
+            $table->string('provider_identity', 128);
+            $table->string('source_provider_model', 191);
             $table->unsignedBigInteger('source_provider_id');
-            $table->string('status')->default('active');
+            $table->string('status', 32)->default('active');
             $table->decimal('commission_rate', 5, 2)->nullable();
             $table->decimal('markup_rate', 5, 2)->nullable();
             $table->json('limits')->nullable();
