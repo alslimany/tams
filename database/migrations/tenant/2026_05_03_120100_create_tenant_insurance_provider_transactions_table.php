@@ -14,7 +14,7 @@ return new class extends Migration
             $table->string('type');
             $table->decimal('amount', 15, 2);
             $table->decimal('balance_after', 15, 2);
-            $table->unsignedBigInteger('order_id')->nullable();
+            $table->uuid('order_id')->nullable();
             $table->unsignedBigInteger('order_item_id')->nullable();
             $table->string('external_reference')->nullable();
             $table->text('description')->nullable();

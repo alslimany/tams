@@ -52,6 +52,9 @@ test('tenant financial schema includes required columns', function () {
         'ledger_entry_id',
     ]))->toBeTrue();
 
+    expect(Schema::getColumnType('orders', 'id'))->toBe('uuid')
+        ->and(Schema::getColumnType('tenant_insurance_provider_transactions', 'order_id'))->toBe('uuid');
+
     $taxesColumnType = Schema::getColumnType('order_items', 'taxes');
 
     expect(in_array($taxesColumnType, ['json', 'text'], true))->toBeTrue();
