@@ -5,6 +5,9 @@ use App\Models\User;
 use Illuminate\Support\Str;
 
 test('agency registration creates central tenant metadata and tenant owner', function () {
+    config()->set('tenancy.tenant_base_domain', 'atom.ly');
+    config()->set('tenancy.tenant_url_scheme', 'https');
+
     $subdomain = 'atlas-'.Str::lower(Str::random(8));
 
     $response = $this->post('/register-agency', [
@@ -29,6 +32,7 @@ test('agency registration creates central tenant metadata and tenant owner', fun
     expect($owner)->not->toBeNull();
     expect($owner->role)->toBe('admin');
     expect($owner->is_active)->toBeTrue();
+    expect($tenant->domains()->first()->domain)->toBe($subdomain.'.atom.ly');
 
-    $response->assertRedirect();
+    $response->assertRedirect('https://'.$subdomain.'.atom.ly/login');
 });

@@ -28,8 +28,7 @@ class CompileTranslations extends Command
     {
         $specificLocale = $this->option('locale');
 
-        // Get all available locales
-        $langPath = lang_path();
+        $langPath = base_path('lang');
         if (! File::exists($langPath)) {
             $this->error('Language directory not found: '.$langPath);
 

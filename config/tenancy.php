@@ -6,6 +6,11 @@ use App\Models\Domain;
 use App\Models\Tenant;
 
 $tenantDatabaseDriver = env('TENANT_DB_DRIVER') ?: env('DB_CONNECTION', 'mysql');
+$appUrlHost = parse_url(env('APP_URL', 'http://localhost'), PHP_URL_HOST) ?: 'localhost';
+$appUrlScheme = parse_url(env('APP_URL', 'http://localhost'), PHP_URL_SCHEME) ?: 'http';
+$centralDomains = env('APP_CENTRAL_DOMAINS')
+    ? array_map('trim', explode(',', env('APP_CENTRAL_DOMAINS')))
+    : ['127.0.0.1', 'localhost', $appUrlHost];
 
 return [
     'tenant_model' => Tenant::class,
@@ -18,12 +23,10 @@ return [
      *
      * Only relevant if you're using the domain or subdomain identification middleware.
      */
-    'central_domains' => [
-        '127.0.0.1',
-        'localhost',
-        'tams.test',
-        parse_url(env('APP_URL', 'http://localhost'), PHP_URL_HOST),
-    ],
+    'central_domains' => array_values(array_unique(array_filter($centralDomains))),
+
+    'tenant_base_domain' => env('TENANT_BASE_DOMAIN', $appUrlHost),
+    'tenant_url_scheme' => env('TENANT_URL_SCHEME', $appUrlScheme),
 
     /**
      * Tenancy bootstrappers are executed when tenancy is initialized.

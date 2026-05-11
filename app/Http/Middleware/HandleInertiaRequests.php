@@ -86,14 +86,15 @@ class HandleInertiaRequests extends Middleware
             'locale' => session('locale', app()->getLocale()),
             'translations' => function () {
                 $locale = session('locale', app()->getLocale());
+                $sourceLangPath = base_path('lang');
                 $phpTranslations = [];
-                if (file_exists(lang_path($locale.'.json'))) {
-                    $phpTranslations = json_decode(file_get_contents(lang_path($locale.'.json')), true);
+                if (file_exists($sourceLangPath.'/'.$locale.'.json')) {
+                    $phpTranslations = json_decode(file_get_contents($sourceLangPath.'/'.$locale.'.json'), true);
                 }
 
                 $commonTranslations = [];
-                if (file_exists(lang_path($locale.'/common.php'))) {
-                    $commonTranslations = include lang_path($locale.'/common.php');
+                if (file_exists($sourceLangPath.'/'.$locale.'/common.php')) {
+                    $commonTranslations = include $sourceLangPath.'/'.$locale.'/common.php';
                 }
 
                 return array_merge($phpTranslations, ['common' => $commonTranslations]);

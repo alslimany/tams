@@ -5,7 +5,7 @@ import { Label } from '@/Components/ui/Label';
 import AuthSplitLayout from '@/Layouts/AuthSplitLayout';
 import { useTranslation } from '@/hooks/useTranslation';
 
-export default function Register() {
+export default function Register({ tenantBaseDomain }) {
     const { t } = useTranslation();
     const { data, setData, post, processing, errors, reset } = useForm({
         company_name: '',
@@ -96,7 +96,7 @@ export default function Register() {
                                 className="flex-1"
                                 required
                             />
-                            <span className="shrink-0 text-sm text-muted-foreground">.tams.test</span>
+                            <span className="shrink-0 text-sm text-muted-foreground">.{tenantBaseDomain}</span>
                         </div>
                         {errors.subdomain && <p className="text-sm text-destructive">{errors.subdomain}</p>}
                     </div>

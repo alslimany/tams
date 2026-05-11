@@ -24,15 +24,7 @@ export const useTranslation = () => {
                 setTranslations(payload || {});
             } catch (error) {
                 console.warn(`Failed to load translations from /lang for locale: ${currentLocale}`, error);
-
-                try {
-                    // Fallback for local/dev scenarios if public assets are stale.
-                    const module = await import(`../../lang/${currentLocale}.json`);
-                    setTranslations(module.default || {});
-                } catch (fallbackError) {
-                    console.warn(`Fallback import also failed for locale: ${currentLocale}`, fallbackError);
-                    setTranslations({});
-                }
+                setTranslations({});
             } finally {
                 setLoading(false);
             }

@@ -6,6 +6,8 @@ use App\Models\Tenant;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules;
 use Inertia\Inertia;
 
@@ -13,22 +15,36 @@ class AgencyRegistrationController extends Controller
 {
     public function show()
     {
-        return Inertia::render('Agency/Register');
+        return Inertia::render('Agency/Register', [
+            'tenantBaseDomain' => config('tenancy.tenant_base_domain'),
+        ]);
     }
 
     public function store(Request $request)
     {
+        $tenantBaseDomain = (string) config('tenancy.tenant_base_domain');
+
         $request->validate([
-            'company_name' => 'required|string|max:255',
-            'owner_name' => 'nullable|string|max:255',
-            'phone' => 'nullable|string|max:255',
-            'email' => 'required|string|email|max:255',
-            'subdomain' => 'required|string|alpha_dash|max:255|unique:domains,domain',
+            'company_name' => ['required', 'string', 'max:255'],
+            'owner_name' => ['nullable', 'string', 'max:255'],
+            'phone' => ['nullable', 'string', 'max:255'],
+            'email' => ['required', 'string', 'email', 'max:255'],
+            'subdomain' => [
+                'required',
+                'string',
+                'max:63',
+                'regex:/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/',
+                Rule::notIn(['admin', 'api', 'app', 'mail', 'www']),
+                Rule::unique('domains', 'domain')->where(fn ($query) => $query->where('domain', Str::lower($request->string('subdomain')).'.'.$tenantBaseDomain)),
+            ],
             'password' => ['required', 'confirmed', Rules\Password::defaults()],
         ]);
 
+        $subdomain = Str::lower($request->string('subdomain'));
+        $tenantDomain = $subdomain.'.'.$tenantBaseDomain;
+
         $tenant = Tenant::create([
-            'id' => $request->subdomain,
+            'id' => $subdomain,
             'company_name' => $request->company_name,
             'owner_name' => $request->owner_name ?: $request->company_name,
             'owner_email' => $request->email,
@@ -42,7 +58,7 @@ class AgencyRegistrationController extends Controller
         ]);
 
         $tenant->domains()->create([
-            'domain' => $request->subdomain.'.'.parse_url(config('app.url'), PHP_URL_HOST),
+            'domain' => $tenantDomain,
         ]);
 
         $tenant->run(function () use ($request) {
@@ -55,6 +71,6 @@ class AgencyRegistrationController extends Controller
             ]);
         });
 
-        return redirect()->to('http://'.$request->subdomain.'.'.parse_url(config('app.url'), PHP_URL_HOST).'/login');
+        return redirect()->to(config('tenancy.tenant_url_scheme').'://'.$tenantDomain.'/login');
     }
 }
