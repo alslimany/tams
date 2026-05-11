@@ -5,6 +5,8 @@ declare(strict_types=1);
 use App\Models\Domain;
 use App\Models\Tenant;
 
+$tenantDatabaseDriver = env('TENANT_DB_DRIVER') ?: env('DB_CONNECTION', 'mysql');
+
 return [
     'tenant_model' => Tenant::class,
     'id_generator' => Stancl\Tenancy\UUIDGenerator::class,
@@ -47,14 +49,14 @@ return [
          * Connection used as a "template" for the dynamically created tenant database connection.
          * Note: don't name your template connection tenant. That name is reserved by package.
          */
-        'template_tenant_connection' => null,
+        'template_tenant_connection' => env('TENANT_DB_TEMPLATE_CONNECTION'),
 
         /**
          * Tenant database names are created like this:
          * prefix + tenant_id + suffix.
          */
-        'prefix' => 'tenant',
-        'suffix' => '.sqlite',
+        'prefix' => env('TENANT_DB_PREFIX', 'tenant'),
+        'suffix' => env('TENANT_DB_SUFFIX', $tenantDatabaseDriver === 'sqlite' ? '.sqlite' : ''),
 
         /**
          * TenantDatabaseManagers are classes that handle the creation & deletion of tenant databases.
