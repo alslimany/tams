@@ -220,10 +220,7 @@ class VidecomClient
             return $soapResponse;
         }
 
-        $xml->registerXPathNamespace('soap', 'http://schemas.xmlsoap.org/soap/envelope/');
-        $xml->registerXPathNamespace('ns', 'http://videcom.com/');
-
-        $results = $xml->xpath('//ns:RunVRSCommandResult');
+        $results = $xml->xpath('//*[local-name()="RunVRSCommandResult"]');
 
         return ! empty($results) ? (string) $results[0] : $soapResponse;
     }
