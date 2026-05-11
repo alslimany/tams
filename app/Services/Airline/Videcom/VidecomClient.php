@@ -216,12 +216,27 @@ class VidecomClient
     protected function parseSoapResponse(string $soapResponse): string
     {
         $xml = simplexml_load_string($soapResponse);
-        if (! $xml) {
-            return $soapResponse;
+
+        if ($xml) {
+            $results = $xml->xpath('//*[local-name()="RunVRSCommandResult"]');
+
+            if (! empty($results)) {
+                return html_entity_decode((string) $results[0], ENT_QUOTES | ENT_XML1, 'UTF-8');
+            }
         }
 
-        $results = $xml->xpath('//*[local-name()="RunVRSCommandResult"]');
+        if (preg_match('/<RunVRSCommandResult(?:\s[^>]*)?>(.*?)<\/RunVRSCommandResult>/s', $soapResponse, $matches) === 1) {
+            return html_entity_decode($matches[1], ENT_QUOTES | ENT_XML1, 'UTF-8');
+        }
 
-        return ! empty($results) ? (string) $results[0] : $soapResponse;
+        if (preg_match('/<\w+:RunVRSCommandResult(?:\s[^>]*)?>(.*?)<\/\w+:RunVRSCommandResult>/s', $soapResponse, $matches) === 1) {
+            return html_entity_decode($matches[1], ENT_QUOTES | ENT_XML1, 'UTF-8');
+        }
+
+        if (preg_match('/<[^>]*RunVRSCommandResult(?:\s[^>]*)?>(.*?)<\/[^>]*RunVRSCommandResult>/s', $soapResponse, $matches) === 1) {
+            return html_entity_decode($matches[1], ENT_QUOTES | ENT_XML1, 'UTF-8');
+        }
+
+        return $soapResponse;
     }
 }
