@@ -390,9 +390,9 @@ class BookingController extends Controller
             $validated['provider_selector'] ?? null,
         );
 
-        $providers = $resolvedOutboundProvider instanceof TenantProvider
-            ? collect([$resolvedOutboundProvider])->where('provider_type', '=', 'videcom')
-            : collect();
+        $providers = $this->providerResolver->getAllActiveProviders()
+            ->filter(fn (TenantProvider $provider): bool => $provider->provider_type === 'videcom')
+            ->values();
 
         $returnOptions = [];
 
@@ -426,7 +426,7 @@ class BookingController extends Controller
                 foreach ($returnFlights as $returnFlight) {
                     $returnFlightData = is_array($returnFlight) ? $returnFlight : (array) $returnFlight;
 
-                    if ((int) $providerConfig->id === $outboundProviderId) {
+                    if ($this->isSameProviderForRoundTripPricing($providerConfig, $resolvedOutboundProvider, $outboundProviderId)) {
                         try {
                             $pricing = $this->roundTripPriceManager->priceWithCaching(
                                 $provider,
@@ -1150,6 +1150,31 @@ class BookingController extends Controller
         }
 
         return $this->providerResolver->findProviderById($providerId);
+    }
+
+    protected function isSameProviderForRoundTripPricing(TenantProvider $candidate, ?TenantProvider $outboundProvider, int $outboundProviderId): bool
+    {
+        if (! $outboundProvider instanceof TenantProvider) {
+            return (int) $candidate->id === $outboundProviderId;
+        }
+
+        $candidateSelector = data_get($candidate, 'provider_source_metadata.provider_selector');
+        $outboundSelector = data_get($outboundProvider, 'provider_source_metadata.provider_selector');
+
+        if (is_string($candidateSelector) && $candidateSelector !== '' && is_string($outboundSelector) && $outboundSelector !== '') {
+            return $candidateSelector === $outboundSelector;
+        }
+
+        $candidateSourceType = data_get($candidate, 'provider_source_metadata.source_type');
+        $outboundSourceType = data_get($outboundProvider, 'provider_source_metadata.source_type');
+        $candidateAllocationId = data_get($candidate, 'provider_source_metadata.provider_allocation_id');
+        $outboundAllocationId = data_get($outboundProvider, 'provider_source_metadata.provider_allocation_id');
+
+        if ($candidateSourceType !== null && $outboundSourceType !== null && $candidateAllocationId !== null && $outboundAllocationId !== null) {
+            return $candidateSourceType === $outboundSourceType && (string) $candidateAllocationId === (string) $outboundAllocationId;
+        }
+
+        return (int) $candidate->id === (int) $outboundProvider->id;
     }
 
     protected function hasSelectedSourceProvider(OrderItem $item): bool
