@@ -453,6 +453,7 @@ return [
     'refund_rules_available' => 'Refund rules available',
     'refund_rules_unknown' => 'Refund rules unknown',
     'refundable' => 'Refundable',
+    'baggage_allowance' => 'Baggage Allowance',
     'non_refundable' => 'Non-Refundable',
     'expand_rooms_hint' => 'Expand a room to compare boards and rates.',
     'see_availability' => 'See Availability',

@@ -53,7 +53,7 @@ return [
     'examples' => 'أمثلة',
     'guest' => 'ضيف',
     'user' => 'مستخدم',
-    'my_orders' => 'طلباتي',
+    'my_orders' => 'الحجوزات',
 
     // Navigation
     'home' => 'الرئيسية',
@@ -324,7 +324,7 @@ return [
     'tax' => 'الضريبة',
     'total' => 'المجموع',
     'grand_total' => 'المجموع الكلي',
-    'feature' => 'المميزة',
+    'feature' => 'الميزة',
     'select' => 'اختر',
     'sold_out' => 'نفذت الكمية',
     'offer_summary' => 'ملخص العرض',
@@ -466,6 +466,7 @@ return [
     'refund_rules_available' => 'شروط الاسترداد متوفرة',
     'refund_rules_unknown' => 'شروط الاسترداد غير معروفة',
     'refundable' => 'قابل للاسترداد',
+    'baggage_allowance' => 'الوزن المسموح',
     'non_refundable' => 'غير قابل للاسترداد',
     'expand_rooms_hint' => 'وسّع الغرفة لمقارنة أنظمة الإقامة والأسعار.',
     'see_availability' => 'عرض التوفر',

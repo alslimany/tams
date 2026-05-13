@@ -183,7 +183,7 @@ export default function FlightGroupCard({
                             >
                                 <div className="flex justify-between items-start mb-6">
                                     <div>
-                                        <p className="text-xs font-bold uppercase tracking-widest text-primary mb-1">
+                                        <p className="text-xs font-bold  tracking-widest text-primary mb-1">
                                             {t('common.carrier')}
                                         </p>
                                         <p className="text-lg font-black">
@@ -191,7 +191,7 @@ export default function FlightGroupCard({
                                         </p>
                                     </div>
                                     <div className="text-right">
-                                        <p className="text-xs font-bold uppercase tracking-widest text-primary mb-1">
+                                        <p className="text-xs font-bold  tracking-widest text-primary mb-1">
                                             {t('common.aircraft')}
                                         </p>
                                         <p className="text-lg font-black">
@@ -212,7 +212,7 @@ export default function FlightGroupCard({
                                         </p>
                                     </div>
                                     <div className="flex flex-col items-center gap-2">
-                                        <div className="flex items-center gap-2 text-primary font-bold text-xs uppercase bg-primary/10 px-3 py-1 rounded-full">
+                                        <div className="flex items-center gap-2 text-primary font-bold text-xs  bg-primary/10 px-3 py-1 rounded-full">
                                             <Clock className="h-3 w-3" />
                                             {formatDuration(segment.duration)}
                                         </div>
@@ -221,7 +221,7 @@ export default function FlightGroupCard({
                                                 <Plane className="h-3 w-3 text-primary" />
                                             </div>
                                         </div>
-                                        <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-tighter">
+                                        <p className="text-[10px] font-bold text-muted-foreground  tracking-tighter">
                                             Non-stop
                                         </p>
                                     </div>
@@ -283,7 +283,7 @@ export default function FlightGroupCard({
                             <div className="bg-primary/5 rounded-2xl p-6 border-l-4 border-primary">
                                 <div className="flex items-center gap-3 mb-3">
                                     <Briefcase className="h-5 w-5 text-primary" />
-                                    <p className="text-sm font-black uppercase tracking-widest text-primary">
+                                    <p className="text-sm font-black  tracking-widest text-primary">
                                         {t('common.fare_features')}
                                     </p>
                                 </div>
@@ -296,7 +296,7 @@ export default function FlightGroupCard({
                         <div>
                             <div className="flex items-center gap-3 mb-6">
                                 <ReceiptText className="h-5 w-5 text-primary" />
-                                <p className="text-sm font-black uppercase tracking-widest">
+                                <p className="text-sm font-black  tracking-widest">
                                     {t('common.passenger_breakdown')}
                                 </p>
                             </div>
@@ -377,29 +377,43 @@ export default function FlightGroupCard({
     };
 
     const renderComparisonTable = (offers) => {
-        const featureKeys = [];
-        const featureLabels = [];
         const offersFeatures = offers.map((offer) =>
             parseBrandDetails(offer.pricing?.brand_details),
         );
 
-        const seenKeys = new Set();
-        offersFeatures.forEach((features) => {
-            Object.keys(features).forEach((key) => {
-                if (!seenKeys.has(key)) {
-                    seenKeys.add(key);
-                    featureKeys.push(key);
-                    featureLabels.push(key);
-                }
-            });
-        });
+        // Fixed feature rows: Baggage, Refundable
+        const featureRows = [
+            {
+                key: 'baggage',
+                label: t('common.baggage_allowance') || 'Baggage Allowance',
+                extract: (features) => {
+                    const found = Object.keys(features).find(
+                        (k) =>
+                            k.toLowerCase().includes('bag') ||
+                            k.toLowerCase().includes('weight') ||
+                            k.toLowerCase().includes('kg'),
+                    );
+                    return found ? features[found] : null;
+                },
+            },
+            {
+                key: 'refundable',
+                label: t('common.refundable') || 'Refundable',
+                extract: (features) => {
+                    const found = Object.keys(features).find(
+                        (k) => k.toLowerCase().includes('refund'),
+                    );
+                    return found ? features[found] : null;
+                },
+            },
+        ];
 
         return (
             <div className="overflow-x-auto rounded-xl border bg-muted/10">
                 <table className="w-full text-sm">
                     <thead>
                         <tr className="border-b bg-muted/30">
-                            <th className="text-left py-3 px-4 font-bold text-xs uppercase tracking-wider text-muted-foreground min-w-[120px]">
+                            <th className=" py-3 px-4 font-bold text-xs  tracking-wider text-muted-foreground min-w-[120px]">
                                 {t('common.feature')}
                             </th>
                             {offers.map((offer) => (
@@ -412,11 +426,11 @@ export default function FlightGroupCard({
                                             variant="outline"
                                             className="text-[11px] font-bold px-2.5 py-0.5 bg-background shadow-sm"
                                         >
-                                            {offer.pricing?.brand_name ||
-                                                `${t('common.class')} ${offer.pricing?.class_code || "Y"}`}
+                                            {offer.pricing?.brand_details ||
+                                                `${t('common.class')} ${offer.pricing?.class_code || 'Y'}`}
                                         </Badge>
-                                        <span className="text-[10px] text-muted-foreground font-semibold uppercase">
-                                            ({offer.pricing?.class_code || "Y"})
+                                        <span className="text-[10px] text-muted-foreground font-semibold ">
+                                            ({offer.pricing?.brand_name || 'Y'})
                                         </span>
                                     </div>
                                 </th>
@@ -424,36 +438,28 @@ export default function FlightGroupCard({
                         </tr>
                     </thead>
                     <tbody>
-                        {featureKeys.map((key, idx) => (
+                        {featureRows.map((row, idx) => (
                             <tr
-                                key={key}
-                                className={`border-b ${idx % 2 === 0 ? "bg-muted/5" : ""} hover:bg-muted/15 transition-colors`}
+                                key={row.key}
+                                className={`border-b ${idx % 2 === 0 ? 'bg-muted/5' : ''} hover:bg-muted/15 transition-colors`}
                             >
                                 <td className="py-2.5 px-4 font-semibold text-xs text-muted-foreground whitespace-nowrap">
-                                    {featureLabels[idx]}
+                                    {row.label}
                                 </td>
-                                {offers.map((offer) => {
-                                    const features = parseBrandDetails(
-                                        offer.pricing?.brand_details,
-                                    );
-                                    const value = features[key] || "";
+                                {offersFeatures.map((features, i) => {
+                                    const value = row.extract(features);
                                     return (
                                         <td
-                                            key={offer.id}
+                                            key={offers[i].id}
                                             className="py-2.5 px-4 text-center text-xs font-medium"
                                         >
                                             {value ? (
                                                 <span
                                                     className={
-                                                        value.toLowerCase() ===
-                                                            "no" ||
-                                                        value
-                                                            .toLowerCase()
-                                                            .includes(
-                                                                "not avail",
-                                                            )
-                                                            ? "text-destructive/70"
-                                                            : "text-foreground"
+                                                        value.toLowerCase() === 'no' ||
+                                                        value.toLowerCase().includes('not avail')
+                                                            ? 'text-destructive/70'
+                                                            : 'text-foreground'
                                                     }
                                                 >
                                                     {value}
@@ -470,7 +476,7 @@ export default function FlightGroupCard({
                         ))}
 
                         <tr className="border-b bg-muted/5">
-                            <td className="py-2.5 px-4 font-bold text-xs uppercase tracking-wider text-muted-foreground">
+                            <td className="py-2.5 px-4 font-bold text-xs  tracking-wider text-muted-foreground">
                                 {t('common.price')}
                             </td>
                             {offers.map((offer) => (
@@ -491,7 +497,7 @@ export default function FlightGroupCard({
                         </tr>
 
                         <tr className="border-b bg-muted/5">
-                            <td className="py-2.5 px-4 font-bold text-xs uppercase tracking-wider text-muted-foreground">
+                            <td className="py-2.5 px-4 font-bold text-xs  tracking-wider text-muted-foreground">
                                 {t('common.seats')}
                             </td>
                             {offers.map((offer) => (
@@ -516,7 +522,7 @@ export default function FlightGroupCard({
                         </tr>
 
                         <tr className="bg-primary/5">
-                            <td className="py-3 px-4 font-bold text-xs uppercase tracking-wider text-muted-foreground">
+                            <td className="py-3 px-4 font-bold text-xs  tracking-wider text-muted-foreground">
                                 {t('common.action')}
                             </td>
                             {offers.map((offer) => {
@@ -637,7 +643,7 @@ export default function FlightGroupCard({
                                                     </div>
 
                                                     <div>
-                                                        <p className="font-bold mb-3 uppercase tracking-widest text-xs text-muted-foreground">
+                                                        <p className="font-bold mb-3  tracking-widest text-xs text-muted-foreground">
                                                             {t('common.flight_segments')}
                                                         </p>
                                                         <div className="space-y-3">
@@ -804,7 +810,7 @@ export default function FlightGroupCard({
                                 <p className="font-bold text-sm sm:text-lg">
                                     {getAirlineName(flightGroup.airline_code) || flightGroup.airline_name?.split(" (")[0]}
                                 </p>
-                                <p className="text-[11px] text-muted-foreground font-semibold uppercase tracking-widest">
+                                <p className="text-[11px] text-muted-foreground font-semibold  tracking-widest">
                                     {flightGroup.airline_code}
                                     {flightGroup.flight_number}
                                 </p>
@@ -837,11 +843,11 @@ export default function FlightGroupCard({
                                     <div className="h-2 w-2 rounded-full border-2 border-primary shrink-0" />
                                 </div>
                                 {segments.length <= 1 ? (
-                                        <p className="text-[10px] font-semibold text-primary uppercase">
+                                        <p className="text-[10px] font-semibold text-primary ">
                                             {t('common.non_stop')}
                                         </p>
                                 ) : (
-                                    <p className="text-[10px] font-semibold text-amber-600 uppercase">
+                                    <p className="text-[10px] font-semibold text-amber-600 ">
                                         {segments.length - 1} {segments.length - 1 === 1 ? t('common.stop') : t('common.stops')}
                                     </p>
                                 )}
@@ -876,7 +882,7 @@ export default function FlightGroupCard({
                                             )
                                         }
                                         className={`
-                                        inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs sm:text-sm font-bold uppercase tracking-wider
+                                        inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs sm:text-sm font-bold  tracking-wider
                                         transition-all duration-200 border
                                         ${
                                             isExpanded
@@ -915,7 +921,7 @@ export default function FlightGroupCard({
                 <div className="bg-muted/5 p-4 sm:p-6 animate-in slide-in-from-top-2 duration-200">
                     {/* hide using if statement */}
                     {false && (
-                    <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground mb-4">
+                    <p className="text-xs font-bold  tracking-widest text-muted-foreground mb-4">
                         {getCabinName(expandedCabin)} {t('common.class_comparison')} &mdash; {cabins[expandedCabin].length} {t('common.offer')}{cabins[expandedCabin].length !== 1 ? t('common.plural_suffix') : ''}
                     </p>
                     )}

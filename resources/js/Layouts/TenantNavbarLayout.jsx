@@ -1,7 +1,7 @@
 import React from 'react';
 import { Link, usePage } from '@inertiajs/react';
 import { ChevronDown, MenuIcon, Package2, Plane, ShieldCheck } from 'lucide-react';
-
+import { useTranslation } from "@/hooks/useTranslation";
 import { cn } from '@/lib/utils';
 import { Button } from '@/Components/ui/Button';
 import {
@@ -27,35 +27,34 @@ const Navbar = ({ children }) => {
     const tenantName = props.tenant?.companyName || props.tenant?.id || 'BookNow';
     const logoUrl = '/img/logo-light.svg';
 
+
+     const { t } = useTranslation();
     const navLinks = [
+       
         {
-            title: 'Home',
-            href: route('dashboard'),
-            active: route().current('dashboard'),
+            title: t('common.flights'),
+            href: route('flights.index'),
+            active: route().current('flights.*'),
         },
         {
-            title: 'Orders',
+            title: t('common.insurance_search'),
+            href: route('insurance.search'),
+            active: route().current('insurance.*'),
+        },
+        {
+            title: t('common.hotels'),
+            href: route('hotels.index'),
+            active: route().current('hotels.*'),
+        },
+
+         {
+            title: t('common.my_orders'),
             href: route('orders.index'),
             active: route().current('orders.*'),
         },
     ];
 
-    const productLinks = [
-        {
-            title: 'Flight Search',
-            description: 'Search airline offers, compare fares, and start new bookings.',
-            href: route('flights.index'),
-            icon: Plane,
-            active: route().current('flights.*'),
-        },
-        {
-            title: 'Insurance',
-            description: 'Search compulsory insurance offers and issue policies from one flow.',
-            href: route('insurance.search'),
-            icon: ShieldCheck,
-            active: route().current('insurance.*'),
-        },
-    ];
+    
 
     return (
         <div dir={isRTL ? 'rtl' : 'ltr'} className={isRTL ? 'rtl' : ''}>
@@ -96,48 +95,7 @@ const Navbar = ({ children }) => {
                                 </Link>
                             ))}
 
-                            <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                    <button
-                                        type="button"
-                                        className={cn(
-                                            'inline-flex items-center rounded-full px-4 py-2 text-sm font-semibold transition-colors',
-                                            productLinks.some((item) => item.active)
-                                                ? 'bg-slate-950 text-white shadow-sm'
-                                                : 'text-slate-600 hover:bg-slate-100 hover:text-slate-950'
-                                        )}
-                                    >
-                                        Products
-                                        <ChevronDown className="ms-2 h-4 w-4" />
-                                    </button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent align="start" className="w-104 rounded-2xl border border-slate-200 p-2 shadow-xl">
-                                    <div className="grid gap-2 md:grid-cols-2">
-                                        {productLinks.map((item) => {
-                                            const Icon = item.icon;
-
-                                            return (
-                                                <DropdownMenuItem key={item.title} asChild className="cursor-pointer rounded-xl p-0 focus:bg-transparent">
-                                                    <Link
-                                                        href={item.href}
-                                                        className="flex min-h-28 flex-col gap-3 rounded-xl border border-transparent bg-white p-4 outline-none transition hover:border-slate-200 hover:bg-slate-50"
-                                                    >
-                                                        <div className="flex items-center gap-3">
-                                                            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-950 text-white">
-                                                                <Icon className="h-5 w-5" />
-                                                            </div>
-                                                            <div>
-                                                                <p className="text-sm font-bold text-slate-950">{item.title}</p>
-                                                            </div>
-                                                        </div>
-                                                        <p className="text-sm leading-relaxed text-slate-500">{item.description}</p>
-                                                    </Link>
-                                                </DropdownMenuItem>
-                                            );
-                                        })}
-                                    </div>
-                                </DropdownMenuContent>
-                            </DropdownMenu>
+                           
                         </nav>
                     </div>
 
