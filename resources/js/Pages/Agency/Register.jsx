@@ -1,20 +1,22 @@
-import { Head, Link, useForm } from '@inertiajs/react';
+import { Head, useForm } from '@inertiajs/react';
 import { Button } from '@/Components/ui/Button';
 import { Input } from '@/Components/ui/Input';
 import { Label } from '@/Components/ui/Label';
 import AuthSplitLayout from '@/Layouts/AuthSplitLayout';
 import { useTranslation } from '@/hooks/useTranslation';
 
-export default function Register({ tenantBaseDomain }) {
+export default function Register({ centralDomain }) {
     const { t } = useTranslation();
-    const { data, setData, post, processing, errors, reset } = useForm({
+    const { data, setData, post, processing, errors } = useForm({
         company_name: '',
         owner_name: '',
         phone: '',
         email: '',
-        subdomain: '',
+        agency_path: '',
         password: '',
         password_confirmation: '',
+        commercial_register: null,
+        passport: null,
     });
 
     const submit = (e) => {
@@ -27,11 +29,11 @@ export default function Register({ tenantBaseDomain }) {
             brandHref={route('agency.register')}
             title={t('landlord.auth.register_title')}
             description={t('landlord.auth.register_description')}
-            footer={(
+            footer={
                 <p className="text-center text-sm text-muted-foreground text-pretty">
                     {t('landlord.auth.already_have_workspace')}
                 </p>
-            )}
+            }
         >
             <Head title={t('landlord.auth.register_head_title')} />
 
@@ -86,19 +88,47 @@ export default function Register({ tenantBaseDomain }) {
                     </div>
 
                     <div className="space-y-2 sm:col-span-2">
-                        <Label htmlFor="subdomain">{t('landlord.auth.subdomain')}</Label>
+                        <Label htmlFor="agency_path">{t('landlord.auth.agency_path')}</Label>
                         <div className="flex items-center gap-2">
+                            <span className="shrink-0 text-sm text-muted-foreground">{centralDomain}/agency/</span>
                             <Input
-                                id="subdomain"
+                                id="agency_path"
                                 type="text"
-                                value={data.subdomain}
-                                onChange={(e) => setData('subdomain', e.target.value)}
+                                value={data.agency_path}
+                                onChange={(e) => setData('agency_path', e.target.value)}
                                 className="flex-1"
+                                placeholder="my-agency"
                                 required
                             />
-                            <span className="shrink-0 text-sm text-muted-foreground">.{tenantBaseDomain}</span>
                         </div>
-                        {errors.subdomain && <p className="text-sm text-destructive">{errors.subdomain}</p>}
+                        <p className="text-xs text-muted-foreground">{t('landlord.auth.agency_path_hint')}</p>
+                        {errors.agency_path && <p className="text-sm text-destructive">{errors.agency_path}</p>}
+                    </div>
+
+                    <div className="space-y-2 sm:col-span-2">
+                        <Label htmlFor="commercial_register">{t('landlord.auth.commercial_register')}</Label>
+                        <Input
+                            id="commercial_register"
+                            type="file"
+                            accept=".pdf,.jpg,.jpeg,.png"
+                            onChange={(e) => setData('commercial_register', e.target.files[0])}
+                            required
+                        />
+                        <p className="text-xs text-muted-foreground">{t('landlord.auth.commercial_register_hint')}</p>
+                        {errors.commercial_register && <p className="text-sm text-destructive">{errors.commercial_register}</p>}
+                    </div>
+
+                    <div className="space-y-2 sm:col-span-2">
+                        <Label htmlFor="passport">{t('landlord.auth.passport')}</Label>
+                        <Input
+                            id="passport"
+                            type="file"
+                            accept=".pdf,.jpg,.jpeg,.png"
+                            onChange={(e) => setData('passport', e.target.files[0])}
+                            required
+                        />
+                        <p className="text-xs text-muted-foreground">{t('landlord.auth.passport_hint')}</p>
+                        {errors.passport && <p className="text-sm text-destructive">{errors.passport}</p>}
                     </div>
 
                     <div className="space-y-2">

@@ -1,5 +1,5 @@
 import { Head, Link } from '@inertiajs/react';
-import { CheckCircle2, Copy, ExternalLink } from 'lucide-react';
+import { CheckCircle2, Clock, Copy, ExternalLink } from 'lucide-react';
 
 import { Button } from '@/Components/ui/Button';
 import { Card, CardContent } from '@/Components/ui/Card';
@@ -17,21 +17,20 @@ function DetailRow({ label, value }) {
 
 export default function Success({ registration }) {
     const { t } = useTranslation();
+    const isFrozen = registration.status === 'frozen';
 
     const details = [
         { label: t('landlord.auth.success.agency_name'), value: registration.agencyName },
         { label: t('landlord.auth.success.agency_number'), value: registration.agencyNumber },
+        { label: t('landlord.auth.success.agency_path'), value: registration.agencyPath },
         { label: t('landlord.auth.success.owner_name'), value: registration.ownerName },
         { label: t('landlord.auth.success.owner_email'), value: registration.ownerEmail },
-        { label: t('landlord.auth.success.domain'), value: registration.domain },
+        { label: t('landlord.auth.success.workspace_url'), value: registration.workspaceUrl },
     ];
 
     const copyLoginUrl = async () => {
-        if (!navigator.clipboard) {
-            return;
-        }
-
-        await navigator.clipboard.writeText(registration.loginUrl);
+        if (!navigator.clipboard) return;
+        await navigator.clipboard.writeText(registration.workspaceUrl);
     };
 
     return (
@@ -39,19 +38,26 @@ export default function Success({ registration }) {
             brandHref={route('agency.register')}
             title={t('landlord.auth.success.title')}
             description={t('landlord.auth.success.description')}
-            footer={(
+            footer={
                 <p className="text-center text-sm text-muted-foreground text-pretty">
                     {t('landlord.auth.success.email_notice')}
                 </p>
-            )}
+            }
         >
             <Head title={t('landlord.auth.success.head_title')} />
 
             <div className="space-y-5">
-                <div className="flex items-start gap-3 rounded-xl border border-primary/20 bg-primary/5 p-4 text-primary">
-                    <CheckCircle2 className="mt-0.5 size-5 shrink-0" />
-                    <p className="text-sm text-pretty">{t('landlord.auth.success.ready_message')}</p>
-                </div>
+                {isFrozen ? (
+                    <div className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-700 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-300">
+                        <Clock className="mt-0.5 size-5 shrink-0" />
+                        <p className="text-sm text-pretty">{t('landlord.auth.success.under_review')}</p>
+                    </div>
+                ) : (
+                    <div className="flex items-start gap-3 rounded-xl border border-primary/20 bg-primary/5 p-4 text-primary">
+                        <CheckCircle2 className="mt-0.5 size-5 shrink-0" />
+                        <p className="text-sm text-pretty">{t('landlord.auth.success.ready_message')}</p>
+                    </div>
+                )}
 
                 <Card className="shadow-sm">
                     <CardContent className="space-y-3 p-4">
@@ -64,15 +70,21 @@ export default function Success({ registration }) {
                 </Card>
 
                 <div className="space-y-3">
-                    <Button asChild className="w-full">
-                        <a href={registration.loginUrl}>
-                            {t('landlord.auth.success.open_login')}
-                            <ExternalLink className="size-4" />
-                        </a>
-                    </Button>
+                    {isFrozen ? (
+                        <div className="rounded-lg border bg-muted/30 p-4 text-center">
+                            <p className="text-sm text-muted-foreground">{t('landlord.auth.success.activation_notice')}</p>
+                        </div>
+                    ) : (
+                        <Button asChild className="w-full">
+                            <a href={registration.workspaceUrl}>
+                                {t('landlord.auth.success.open_workspace')}
+                                <ExternalLink className="size-4" />
+                            </a>
+                        </Button>
+                    )}
 
                     <Button type="button" variant="outline" className="w-full" onClick={copyLoginUrl}>
-                        {t('landlord.auth.success.copy_login_url')}
+                        {t('landlord.auth.success.copy_workspace_url')}
                         <Copy className="size-4" />
                     </Button>
 

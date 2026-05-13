@@ -57,12 +57,13 @@ class HandleInertiaRequests extends Middleware
                 ];
             }
         }
-
+    
         return [
             ...parent::share($request),
             'app' => [
                 'name' => __('common.book_now'), // Translates based on active locale
             ],
+            'csrf_token' => csrf_token(),
             'auth' => [
                 'user' => $request->user(),
                 'landlordUser' => auth('landlord')->user(),
@@ -82,6 +83,9 @@ class HandleInertiaRequests extends Middleware
             'ziggy' => fn () => [
                 ...(new Ziggy)->toArray(),
                 'location' => $request->url(),
+                'defaults' => [
+                    'tenant' => function_exists('tenant') && tenant() ? tenant()->id : $request->route('tenant'),
+                ],
             ],
             'locale' => session('locale', app()->getLocale()),
             'translations' => function () {

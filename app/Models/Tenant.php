@@ -18,11 +18,14 @@ class Tenant extends BaseTenant implements TenantWithDatabase
     {
         return [
             'id',
+            'path',
             'agency_number',
             'company_name',
             'owner_name',
             'owner_email',
             'owner_phone',
+            'commercial_register_path',
+            'passport_path',
             'status',
             'subscription_status',
             'subscription_plan',

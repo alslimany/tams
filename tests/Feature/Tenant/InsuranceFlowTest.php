@@ -106,9 +106,19 @@ function bindInsuranceManagerFake(): void
             return 'https://example.com/report?ref='.$reportReference;
         }
 
-        public function cancel(string $productType, int $insurancePolicyId, string $remarks): bool
+        public function cancel(string $productType, int $insurancePolicyId, string $remarks): array
         {
-            return true;
+            return ['cancelled' => true];
+        }
+
+        public function fetchPolicyReport(string $productType, string $reportReference): array
+        {
+            return ['content' => '<pdf-content>', 'content_type' => 'application/pdf'];
+        }
+
+        public function listCancellationRequests(string $dateFrom, string $dateTo): array
+        {
+            return [];
         }
     };
 

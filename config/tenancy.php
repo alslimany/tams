@@ -27,6 +27,14 @@ return [
 
     'tenant_base_domain' => env('TENANT_BASE_DOMAIN', $appUrlHost),
     'tenant_url_scheme' => env('TENANT_URL_SCHEME', $appUrlScheme),
+    'tenant_path_prefix' => env('TENANT_PATH_PREFIX', 'agency'),
+
+    /**
+     * Path-based identification uses the tenant's URL path (e.g. /agency/{tenant})
+     * instead of a subdomain. The PathTenantResolver looks up the tenant by the
+     * route parameter named 'tenant' by default.
+     */
+    'path_identification' => true,
 
     /**
      * Tenancy bootstrappers are executed when tenancy is initialized.
@@ -185,7 +193,7 @@ return [
      * enabled. But it may be useful to disable them if you use external
      * storage (e.g. S3 / Dropbox) or have a custom asset controller.
      */
-    'routes' => true,
+    'routes' => false,
 
     /**
      * Parameters used by the tenants:migrate command.

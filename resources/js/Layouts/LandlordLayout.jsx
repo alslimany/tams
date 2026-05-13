@@ -10,6 +10,7 @@ export default function LandlordLayout({ children }) {
     const { auth, flash } = usePage().props;
     const { t } = useTranslation();
     const landlordUser = auth.landlordUser;
+const { csrf_token } = usePage().props;
 
     useEffect(() => {
         if (flash?.success) {
@@ -19,6 +20,13 @@ export default function LandlordLayout({ children }) {
             toast.error(flash.error);
         }
     }, [flash]);
+
+    useEffect(() => {
+        if (csrf_token) {
+            // Re-bind the new token to axios defaults dynamically
+            axios.defaults.headers.common['X-CSRF-TOKEN'] = csrf_token;
+        }
+    }, [csrf_token]);
 
     return (
         <div className="min-h-screen bg-slate-50 text-slate-950 flex">

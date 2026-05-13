@@ -1,0 +1,891 @@
+{
+  "info": {
+    "name": "Booknow API v1",
+    "description": "## Booknow REST API v1 — Mobile Application\n\n**Base URL**: `{{base_url}}/api/v1`  \n**Auth**: Bearer token (set via `{{token}}` variable after Login)  \n**Content-Type**: `application/json`\n\n### Quick Start\n1. Set `base_url` to your tenant domain (e.g. `https://agency.atom.ly`)\n2. Run **Login** — copy the returned `token` to the `{{token}}` collection variable\n3. All other endpoints use `{{token}}` automatically\n\n### Response Format\n```json\n{ \"success\": true|false, \"message\": \"...\", \"data\": {...} }\n```",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      { "key": "token", "value": "{{token}}" }
+    ]
+  },
+  "variable": [
+    { "key": "base_url", "value": "https://agency.atom.ly" },
+    { "key": "token", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "🔐 Auth",
+      "description": "Authentication endpoints. Run Login first to get a token.",
+      "item": [
+        {
+          "name": "Login — Get Token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var json = pm.response.json();",
+                  "if (json.success && json.data.token) {",
+                  "    pm.collectionVariables.set('token', json.data.token);",
+                  "    console.log('Token set: ' + json.data.token.substring(0, 20) + '...');",
+                  "}",
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Returns token', () => pm.expect(json.data.token).to.be.a('string'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"agent@example.com\",\n  \"password\": \"your-password\",\n  \"device_name\": \"Postman\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/token",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "auth", "token"]
+            },
+            "description": "Authenticate and receive a Bearer token. The token is automatically saved to `{{token}}` collection variable."
+          },
+          "response": [
+            {
+              "name": "200 — Success",
+              "status": "OK",
+              "code": 200,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"success\": true,\n  \"message\": \"Token created successfully.\",\n  \"data\": {\n    \"token\": \"1|abcdef123456...\",\n    \"user\": {\n      \"id\": 1,\n      \"name\": \"John Doe\",\n      \"email\": \"agent@example.com\",\n      \"role\": \"agent\",\n      \"is_active\": true,\n      \"initials\": \"JD\",\n      \"last_login_at\": \"2026-05-13T10:00:00.000Z\"\n    }\n  }\n}"
+            },
+            {
+              "name": "403 — Deactivated",
+              "status": "Forbidden",
+              "code": 403,
+              "body": "{\n  \"success\": false,\n  \"message\": \"Your account has been deactivated.\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Get Me — Current User",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/me",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "auth", "me"]
+            },
+            "description": "Returns the currently authenticated user profile."
+          },
+          "response": [
+            {
+              "name": "200",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"id\": 1,\n    \"name\": \"John Doe\",\n    \"email\": \"agent@example.com\",\n    \"role\": \"agent\",\n    \"is_active\": true,\n    \"initials\": \"JD\"\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "List Tokens",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/tokens",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "auth", "tokens"]
+            },
+            "description": "List all active API tokens for the current user."
+          },
+          "response": [
+            {
+              "name": "200",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"success\": true,\n  \"data\": [\n    { \"id\": 1, \"name\": \"Postman\", \"abilities\": [], \"last_used_at\": \"...\", \"created_at\": \"...\" }\n  ]\n}"
+            }
+          ]
+        },
+        {
+          "name": "Revoke Token — Logout",
+          "request": {
+            "method": "DELETE",
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/token",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "auth", "token"]
+            },
+            "description": "Revoke the current Bearer token. After this, the token is invalid."
+          },
+          "response": [
+            {
+              "name": "200",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"success\": true,\n  \"message\": \"Token revoked.\",\n  \"data\": null\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "📚 Reference Data",
+      "item": [
+        {
+          "name": "Airports Search",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/airports/search?q=MJI",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "airports", "search"],
+              "query": [
+                { "key": "q", "value": "MJI", "description": "IATA code (3 chars) or city/country name. Empty returns popular airports." }
+              ]
+            },
+            "description": "Search airports by IATA code, city, or country name."
+          },
+          "response": [
+            {
+              "name": "200",
+              "status": "OK",
+              "code": 200,
+              "body": "[\n  {\n    \"id\": 1,\n    \"iata_code\": \"MJI\",\n    \"name\": \"Mitiga Airport\",\n    \"city\": \"Tripoli\",\n    \"country\": \"Libya\",\n    \"display_name\": \"MJI - Mitiga Airport, Tripoli, Libya\"\n  }\n]"
+            }
+          ]
+        },
+        {
+          "name": "Airlines List",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/airlines",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "airlines"]
+            },
+            "description": "Returns all active airlines available to the tenant."
+          },
+          "response": [
+            {
+              "name": "200",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"success\": true,\n  \"data\": [\n    { \"airline_code\": \"YI\", \"airline_name\": \"Yemenia Airways\" }\n  ]\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "✈️ Flights",
+      "description": "Flight search, pricing, and booking flow.\n\n**Flow**: Search → Results → Calendar/Return-Options → Select → Book",
+      "item": [
+        {
+          "name": "1. Search Flights",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var json = pm.response.json();",
+                  "if (json.success && json.data.uuid) {",
+                  "    pm.collectionVariables.set('flight_uuid', json.data.uuid);",
+                  "    pm.collectionVariables.set('flight_provider_id', json.data.providers[0]?.id || '');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"origin\": \"MJI\",\n  \"destination\": \"IST\",\n  \"date\": \"2026-06-15\",\n  \"adults\": 1,\n  \"children\": 0,\n  \"infants\": 0,\n  \"is_return\": false\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/flights/search",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "flights", "search"]
+            },
+            "description": "Create a flight search session. Returns a UUID to use in subsequent calls.\n\n**Round-trip**: set `is_return: true` and add `return_date`."
+          },
+          "response": [
+            {
+              "name": "200",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"success\": true,\n  \"message\": \"Search created.\",\n  \"data\": {\n    \"uuid\": \"550e8400-e29b-41d4-a716-446655440000\",\n    \"providers\": [\n      { \"id\": 1, \"airline_code\": \"YI\", \"airline_name\": \"Yemenia Airways\", \"provider_type\": \"videcom\", \"is_active\": true, \"commission_own\": 5.0 }\n    ],\n    \"search_params\": { \"origin\": \"MJI\", \"destination\": \"IST\", \"date\": \"2026-06-15\", ... }\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "2. Fetch Results",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/flights/results/{{flight_uuid}}?provider_id={{flight_provider_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "flights", "results", "{{flight_uuid}}"],
+              "query": [
+                { "key": "provider_id", "value": "{{flight_provider_id}}", "description": "Provider ID from search response" }
+              ]
+            },
+            "description": "Fetch flight offers from a specific provider for the given search session."
+          },
+          "response": [
+            {
+              "name": "200",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"uuid\": \"...\",\n    \"provider_id\": 1,\n    \"airline_code\": \"YI\",\n    \"airline_name\": \"Yemenia Airways\",\n    \"offers\": [\n      {\n        \"flight_number\": \"YI500\",\n        \"departure_airport\": \"MJI\",\n        \"arrival_airport\": \"IST\",\n        \"departure_time\": \"2026-06-15T10:00:00\",\n        \"arrival_time\": \"2026-06-15T14:00:00\",\n        \"class\": \"Y\",\n        \"pricing\": { \"total\": 450, \"currency\": \"LYD\", \"base\": 400, \"tax\": 50 }\n      }\n    ]\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "3. Fare Calendar",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/flights/calendar-hints?origin=MJI&destination=IST&month=2026-06",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "flights", "calendar-hints"],
+              "query": [
+                { "key": "origin", "value": "MJI" },
+                { "key": "destination", "value": "IST" },
+                { "key": "month", "value": "2026-06", "description": "YYYY-MM" }
+              ]
+            },
+            "description": "Lowest priced date hints for a full month. `null` means no cached fare for that date."
+          },
+          "response": [
+            {
+              "name": "200",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"origin\": \"MJI\",\n  \"destination\": \"IST\",\n  \"month\": \"2026-06\",\n  \"hints\": {\n    \"2026-06-01\": 450,\n    \"2026-06-02\": null,\n    \"2026-06-03\": 380\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "4. Return Options (Round-Trip)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"uuid\": \"{{flight_uuid}}\",\n  \"outbound_provider_id\": {{flight_provider_id}},\n  \"outbound_flight\": {},\n  \"return_date\": \"2026-06-20\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/flights/return-options",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "flights", "return-options"]
+            },
+            "description": "Fetch return flight options for a round-trip booking. Pass the selected outbound flight."
+          },
+          "response": [
+            {
+              "name": "200",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"return_options\": [ ... ],\n  \"outbound_provider_id\": 1,\n  \"return_date\": \"2026-06-20\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "5. Select Flight",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"uuid\": \"{{flight_uuid}}\",\n  \"provider_id\": {{flight_provider_id}},\n  \"flight\": {\n    \"flight_number\": \"YI500\",\n    \"departure_airport\": \"MJI\",\n    \"arrival_airport\": \"IST\",\n    \"departure_time\": \"2026-06-15T10:00:00\",\n    \"arrival_time\": \"2026-06-15T14:00:00\",\n    \"class\": \"Y\",\n    \"pricing\": { \"total\": 450, \"currency\": \"LYD\" }\n  },\n  \"reservation_type\": \"NN\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/flights/select",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "flights", "select"]
+            },
+            "description": "Select a flight offer for booking. Caches the selection server-side."
+          },
+          "response": [
+            {
+              "name": "200",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"success\": true,\n  \"message\": \"Flight selected. Proceed to book with passengers.\",\n  \"data\": {\n    \"provider_id\": 1,\n    \"provider_name\": \"Yemenia Airways\",\n    \"provider_code\": \"YI\",\n    \"flight\": { ... },\n    \"selected_at\": \"2026-05-13T10:00:00.000Z\"\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "6. Book Flight — Issue Ticket",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"uuid\": \"{{flight_uuid}}\",\n  \"passengers\": [\n    {\n      \"type\": \"adult\",\n      \"first_name\": \"John\",\n      \"last_name\": \"Doe\",\n      \"dob\": \"1990-01-15\",\n      \"gender\": \"M\",\n      \"passport_number\": \"A1234567\",\n      \"passport_expiry\": \"2028-06-01\",\n      \"passport_issue_country\": \"LBY\",\n      \"nationality\": \"LBY\"\n    }\n  ],\n  \"customer\": {\n    \"first_name\": \"John\",\n    \"last_name\": \"Doe\",\n    \"email\": \"john@example.com\",\n    \"phone\": \"+218911234567\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/flights/book",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "flights", "book"]
+            },
+            "description": "Finalize booking — issue ticket, create order, process wallet. Must call **Select Flight** first."
+          },
+          "response": [
+            {
+              "name": "201 — Booked",
+              "status": "Created",
+              "code": 201,
+              "body": "{\n  \"success\": true,\n  \"message\": \"Booking confirmed successfully.\",\n  \"data\": {\n    \"id\": \"uuid\",\n    \"number\": \"ORD-2026-0001\",\n    \"status\": \"confirmed\",\n    \"total\": 450.0,\n    \"currency\": \"LYD\",\n    \"issued_at\": \"2026-05-13T10:00:00.000Z\",\n    \"items\": [\n      {\n        \"id\": 1,\n        \"type\": \"flight\",\n        \"product_type\": \"ticket\",\n        \"provider_reference\": \"AAJ6DU\",\n        \"status\": \"confirmed\",\n        \"total\": 450.0,\n        \"currency\": \"LYD\"\n      }\n    ]\n  }\n}"
+            },
+            {
+              "name": "402 — Insufficient Balance",
+              "status": "Payment Required",
+              "code": 402,
+              "body": "{\n  \"success\": false,\n  \"message\": \"Insufficient wallet balance: requires 450.00 LYD, available 100.00 LYD\"\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "🏨 Hotels",
+      "description": "Hotel search and booking.\n\n**Flow**: Autocomplete → Search → Details → Select → Book",
+      "item": [
+        {
+          "name": "Autocomplete — Destinations",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/hotels/autocomplete?q=par",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "hotels", "autocomplete"],
+              "query": [
+                { "key": "q", "value": "par", "description": "Search term for city/destination" }
+              ]
+            },
+            "description": "Search for hotel destinations by name."
+          },
+          "response": [
+            {
+              "name": "200",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"destinations\": [\n      { \"uid\": \"city_1\", \"label\": \"Paris, France\", \"subLabel\": \"Ile-de-France\" }\n    ]\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Search Hotels",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var json = pm.response.json();",
+                  "if (json.success && json.data.uuid) {",
+                  "    pm.collectionVariables.set('hotel_search_uuid', json.data.uuid);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"city_id\": \"city_1\",\n  \"check_in\": \"2026-07-01\",\n  \"check_out\": \"2026-07-05\",\n  \"rooms\": 1,\n  \"adults\": 2,\n  \"children\": 0,\n  \"page\": 1\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/hotels/search",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "hotels", "search"]
+            },
+            "description": "Search for available hotels in a destination."
+          },
+          "response": [
+            {
+              "name": "200",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"uuid\": \"search-uuid\",\n    \"hotels\": [\n      {\n        \"hotel\": { \"hotelId\": 45, \"name\": \"Hotel Paris\", \"rating\": 4 },\n        \"rooms\": [\n          { \"rateKey\": \"rate_123\", \"price\": 150, \"currency\": \"EUR\", \"boardName\": \"B&B\" }\n        ]\n      }\n    ],\n    \"hotels_count\": 1,\n    \"pages\": 1\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Hotel Details",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/hotels/details?hotel_id=45&city_id=city_1",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "hotels", "details"],
+              "query": [
+                { "key": "hotel_id", "value": "45" },
+                { "key": "city_id", "value": "city_1" },
+                { "key": "source", "value": "129", "disabled": true }
+              ]
+            },
+            "description": "Get full hotel details, description, images, and amenities."
+          },
+          "response": [
+            {
+              "name": "200",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"hotel\": {\n      \"response\": {\n        \"hotel\": {\n          \"name\": \"Hotel Paris\",\n          \"description\": \"A beautiful hotel...\",\n          \"images\": [\"img1.jpg\"]\n        }\n      }\n    }\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Select Hotel Offer",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var json = pm.response.json();",
+                  "if (json.success && json.data.booking_uuid) {",
+                  "    pm.collectionVariables.set('hotel_booking_uuid', json.data.booking_uuid);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"search_uuid\": \"{{hotel_search_uuid}}\",\n  \"rate_key\": \"rate_123\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/hotels/select",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "hotels", "select"]
+            },
+            "description": "Select a specific room/rate and check availability. Returns a booking UUID for the next step."
+          },
+          "response": [
+            {
+              "name": "200",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"success\": true,\n  \"message\": \"Hotel selected. Proceed to book with guest details.\",\n  \"data\": {\n    \"booking_uuid\": \"booking-uuid\",\n    \"selected_offer\": { ... }\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Book Hotel",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"booking_uuid\": \"{{hotel_booking_uuid}}\",\n  \"rooms\": [\n    {\n      \"guests\": [\n        { \"civility\": \"Mr\", \"first_name\": \"John\", \"last_name\": \"Doe\" },\n        { \"civility\": \"Mme\", \"first_name\": \"Jane\", \"last_name\": \"Doe\" }\n      ]\n    }\n  ],\n  \"customer\": {\n    \"first_name\": \"John\",\n    \"last_name\": \"Doe\",\n    \"email\": \"john@example.com\",\n    \"phone\": \"+218911234567\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/hotels/book",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "hotels", "book"]
+            },
+            "description": "Finalize hotel booking with guest details. Must call **Select Hotel Offer** first."
+          },
+          "response": [
+            {
+              "name": "201",
+              "status": "Created",
+              "code": 201,
+              "body": "{\n  \"success\": true,\n  \"message\": \"Hotel booked successfully.\",\n  \"data\": { \"booking\": { ... } }\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "🛡️ Insurance — Compulsory",
+      "item": [
+        {
+          "name": "References — All Types",
+          "item": [
+            {
+              "name": "Durations",
+              "request": {
+                "method": "GET",
+                "url": {
+                  "raw": "{{base_url}}/api/v1/insurance/compulsory/references/durations",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "v1", "insurance", "compulsory", "references", "durations"]
+                }
+              }
+            },
+            {
+              "name": "Document Types",
+              "request": {
+                "method": "GET",
+                "url": {
+                  "raw": "{{base_url}}/api/v1/insurance/compulsory/references/document-types",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "v1", "insurance", "compulsory", "references", "document-types"]
+                }
+              }
+            },
+            {
+              "name": "Vehicle Types",
+              "request": {
+                "method": "GET",
+                "url": {
+                  "raw": "{{base_url}}/api/v1/insurance/compulsory/references/vehicle-types",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "v1", "insurance", "compulsory", "references", "vehicle-types"]
+                }
+              }
+            },
+            {
+              "name": "Colors",
+              "request": {
+                "method": "GET",
+                "url": {
+                  "raw": "{{base_url}}/api/v1/insurance/compulsory/references/colors",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "v1", "insurance", "compulsory", "references", "colors"]
+                }
+              }
+            },
+            {
+              "name": "Licensing Authorities",
+              "request": {
+                "method": "GET",
+                "url": {
+                  "raw": "{{base_url}}/api/v1/insurance/compulsory/references/licensing-authorities",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "v1", "insurance", "compulsory", "references", "licensing-authorities"]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "Price Quote",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var json = pm.response.json();",
+                  "if (json.success && json.data.quote_token) {",
+                  "    pm.collectionVariables.set('compulsory_quote_token', json.data.quote_token);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"document_type_id\": 1,\n  \"duration_id\": 2,\n  \"seats\": 4,\n  \"payload\": null\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/insurance/compulsory/price",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "insurance", "compulsory", "price"]
+            },
+            "description": "Calculate compulsory vehicle insurance premium."
+          },
+          "response": [
+            {
+              "name": "200",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"success\": true,\n  \"message\": \"Price calculated successfully.\",\n  \"data\": {\n    \"quote_token\": \"uuid\",\n    \"document_type_id\": 1,\n    \"duration_id\": 2,\n    \"seats\": 4,\n    \"total_premium\": 150.0,\n    \"net_premium\": 140.0,\n    \"tax_amount\": 10.0,\n    \"currency\": \"LYD\"\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Issue Policy",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"quote_token\": \"{{compulsory_quote_token}}\",\n  \"beneficiary_name\": \"John Doe\",\n  \"beneficiary_phone\": \"+218911234567\",\n  \"vehicle_type_id\": 1,\n  \"vehicle_color_id\": 1,\n  \"vehicle_licensing_authority_id\": 1,\n  \"vehicle_manufacture_year\": 2020,\n  \"vehicle_chassis_number\": \"CHS123456\",\n  \"vehicle_plate_number\": \"ABC-123\",\n  \"policy_date_from\": \"2026-06-01\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/insurance/compulsory/issue",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "insurance", "compulsory", "issue"]
+            },
+            "description": "Issue a compulsory vehicle insurance policy. Must call **Price Quote** first."
+          },
+          "response": [
+            {
+              "name": "201",
+              "status": "Created",
+              "code": 201,
+              "body": "{\n  \"success\": true,\n  \"message\": \"Policy issued successfully.\",\n  \"data\": {\n    \"order_id\": \"uuid\",\n    \"order_number\": \"ORD-2026-0002\",\n    \"policy_number\": \"POL-123\",\n    \"policy_id\": 456,\n    \"report_reference\": \"ENC789\",\n    \"total_amount\": 150.0,\n    \"currency\": \"LYD\"\n  }\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "🛡️ Insurance — Travel",
+      "item": [
+        {
+          "name": "References",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/insurance/travel/references",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "insurance", "travel", "references"]
+            },
+            "description": "Get zones, durations, nationalities, and genders for travel insurance."
+          },
+          "response": [
+            {
+              "name": "200",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"zones\": [ { \"id\": 1, \"name\": \"Zone A\" } ],\n  \"durations\": [ { \"id\": 1, \"days\": 7, \"name\": \"7 Days\" } ],\n  \"nationalities\": [ { \"id\": 1, \"name\": \"Libyan\" } ],\n  \"genders\": [ { \"id\": 1, \"name\": \"Male\" }, { \"id\": 2, \"name\": \"Female\" } ]\n}"
+            }
+          ]
+        },
+        {
+          "name": "Price Quote",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"zone_id\": 1,\n  \"policy_date_from\": \"2026-06-01\",\n  \"policy_date_to\": \"2026-06-07\",\n  \"passengers\": [\n    {\n      \"first_name\": \"John\",\n      \"last_name\": \"Doe\",\n      \"birth_date\": \"1990-01-15\",\n      \"gender_id\": 1,\n      \"nationality_id\": 1,\n      \"passport_number\": \"A1234567\"\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/insurance/travel/price",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "insurance", "travel", "price"]
+            },
+            "description": "Calculate travel insurance premium for one or more passengers. Use either `passengers` array or `adult_count`/`child_count`/`senior_count` counts."
+          },
+          "response": [
+            {
+              "name": "200",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"quote_token\": \"uuid\",\n  \"zone_id\": 1,\n  \"zone_text\": \"Zone A\",\n  \"duration_days\": 7,\n  \"total_premium\": 75.0,\n  \"total_net_premium\": 70.0,\n  \"total_tax\": 5.0,\n  \"currency\": \"LYD\",\n  \"passenger_breakdown\": {\n    \"adult\": { \"count\": 1, \"unit_total_premium\": 75.0, \"total_premium\": 75.0 }\n  }\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "🛡️ Insurance — Orange",
+      "item": [
+        {
+          "name": "References",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/insurance/orange/references",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "insurance", "orange", "references"]
+            },
+            "description": "Get countries, document types, cars, and vehicle nationalities for orange insurance."
+          },
+          "response": [
+            {
+              "name": "200",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"countries\": [ { \"id\": 1, \"name\": \"Libya\" } ],\n  \"documentTypes\": [ { \"id\": 1, \"name\": \"Passport\" } ],\n  \"cars\": [ { \"id\": 1, \"name\": \"Sedan\" } ],\n  \"vehicleNationalities\": [ { \"id\": 1, \"name\": \"Libyan\" } ]\n}"
+            }
+          ]
+        },
+        {
+          "name": "Price Quote",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"country\": 1,\n  \"document_type_id\": 1,\n  \"policy_date_from\": \"2026-06-01\",\n  \"policy_date_to\": \"2026-06-07\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/insurance/orange/price",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "insurance", "orange", "price"]
+            },
+            "description": "Calculate orange insurance premium."
+          },
+          "response": [
+            {
+              "name": "200",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"quote_token\": \"uuid\",\n  \"country\": 1,\n  \"document_type_id\": 1,\n  \"policy_date_from\": \"2026-06-01\",\n  \"policy_date_to\": \"2026-06-07\",\n  \"number_of_days\": 7,\n  \"total_premium\": 35.0,\n  \"net_premium\": 32.0,\n  \"tax_amount\": 3.0,\n  \"currency\": \"LYD\"\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "📦 Orders",
+      "item": [
+        {
+          "name": "Order List",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/orders?per_page=20&product_type=flight&status=confirmed",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "orders"],
+              "query": [
+                { "key": "per_page", "value": "20" },
+                { "key": "product_type", "value": "flight", "description": "flight | insurance | hotel" },
+                { "key": "status", "value": "confirmed", "disabled": true },
+                { "key": "date_from", "value": "2026-05-01", "disabled": true },
+                { "key": "date_to", "value": "2026-05-31", "disabled": true }
+              ]
+            },
+            "description": "Paginated order list with filters by product type, status, and date range."
+          }
+        },
+        {
+          "name": "Order Detail",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/orders/{order_id}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "orders", "{order_id}"]
+            },
+            "description": "Full order details with items, passengers, segments, and wallet transactions."
+          }
+        },
+        {
+          "name": "Flight Ticket PDF",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/orders/{order_id}/flight-items/{item_id}/ticket-pdf",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "orders", "{order_id}", "flight-items", "{item_id}", "ticket-pdf"]
+            },
+            "description": "Download flight ticket as PDF. Returns binary PDF, not JSON."
+          }
+        }
+      ]
+    },
+    {
+      "name": "📊 Dashboard & Reports",
+      "item": [
+        {
+          "name": "Dashboard",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/dashboard",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "dashboard"]
+            },
+            "description": "Revenue, order counts, growth percentages, ticket status, and recent bookings."
+          },
+          "response": [
+            {
+              "name": "200",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"current_month\": { \"revenue\": 15000.0, \"orders_count\": 45 },\n    \"growth\": { \"revenue_percent\": 12.5, \"orders_percent\": 8.3 },\n    \"ticket_status\": { \"issued\": 40 },\n    \"recent_bookings\": [ ... ]\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Sales Report",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/reports/sales?start_date=2026-05-01&end_date=2026-05-31",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "reports", "sales"],
+              "query": [
+                { "key": "start_date", "value": "2026-05-01" },
+                { "key": "end_date", "value": "2026-05-31" }
+              ]
+            },
+            "description": "Daily sales breakdown by product type and currency. Defaults to last 30 days."
+          }
+        },
+        {
+          "name": "Commission Report",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/reports/commissions?start_date=2026-05-01&end_date=2026-05-31",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "reports", "commissions"],
+              "query": [
+                { "key": "start_date", "value": "2026-05-01" },
+                { "key": "end_date", "value": "2026-05-31" }
+              ]
+            },
+            "description": "Commission breakdown per order item. Only items with commission > 0."
+          }
+        }
+      ]
+    },
+    {
+      "name": "💰 Wallet",
+      "item": [
+        {
+          "name": "Balance",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/wallet/balance",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "wallet", "balance"]
+            },
+            "description": "Current wallet balances per currency."
+          },
+          "response": [
+            {
+              "name": "200",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"success\": true,\n  \"data\": [\n    { \"currency\": \"LYD\", \"balance\": 5000.0 },\n    { \"currency\": \"USD\", \"balance\": 200.0 }\n  ]\n}"
+            }
+          ]
+        },
+        {
+          "name": "Transactions",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/wallet/transactions?currency=LYD&per_page=20",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "wallet", "transactions"],
+              "query": [
+                { "key": "currency", "value": "LYD" },
+                { "key": "per_page", "value": "20" },
+                { "key": "date_from", "value": "2026-05-01", "disabled": true },
+                { "key": "date_to", "value": "2026-05-31", "disabled": true }
+              ]
+            },
+            "description": "Paginated wallet transaction history with optional currency and date filters."
+          }
+        }
+      ]
+    }
+  ]
+}

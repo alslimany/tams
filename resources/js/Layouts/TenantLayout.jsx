@@ -43,6 +43,7 @@ export default function TenantLayout({ children }) {
     const currentPath = usePage().url;
     const { t } = useTranslation();
     const isRtl = locale === 'ar';
+    const { csrf_token } = usePage().props;
 
     const isAdmin = auth.user?.role === 'admin';
     const canManageProviders = agencySettings?.can_manage_providers ?? true;
@@ -58,6 +59,13 @@ export default function TenantLayout({ children }) {
             });
         }
     }, [flash]);
+
+    useEffect(() => {
+        if (csrf_token) {
+            // Re-bind the new token to axios defaults dynamically
+            axios.defaults.headers.common['X-CSRF-TOKEN'] = csrf_token;
+        }
+    }, [csrf_token]);
 
     const hasRoute = (routeName) => {
         try {

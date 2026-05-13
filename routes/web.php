@@ -25,6 +25,10 @@ foreach (config('tenancy.central_domains', []) as $centralDomain) {
 Route::get('/register-agency', [AgencyRegistrationController::class, 'show'])->name('agency.register');
 Route::post('/register-agency', [AgencyRegistrationController::class, 'store']);
 Route::get('/register-agency/success', [AgencyRegistrationController::class, 'success'])->name('agency.registration.success');
+Route::get('/agency', fn () => Inertia::render('Agency/Login'))->name('agency.login');
+
+// API routes (path-based tenancy)
+require __DIR__.'/api.php';
 
 Route::prefix('admin')->name('landlord.')->group(function () {
     Route::get('login', [LandlordAuthenticatedSessionController::class, 'create'])->name('login');

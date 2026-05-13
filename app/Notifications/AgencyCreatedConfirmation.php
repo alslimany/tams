@@ -14,54 +14,63 @@ class AgencyCreatedConfirmation extends Notification implements ShouldQueue
     public function __construct(
         public string $agencyName,
         public string $agencyNumber,
+        public string $agencyPath,
         public string $ownerName,
         public string $ownerEmail,
-        public string $domain,
-        public string $loginUrl,
+        public string $workspaceUrl,
+        public string $status = 'frozen',
     ) {
         $this->afterCommit();
     }
 
-    /**
-     * Get the notification's delivery channels.
-     *
-     * @return array<int, string>
-     */
     public function via(object $notifiable): array
     {
         return ['mail'];
     }
 
-    /**
-     * Get the mail representation of the notification.
-     */
     public function toMail(object $notifiable): MailMessage
     {
-        return (new MailMessage)
-            ->subject('Your Booknow agency workspace is ready')
-            ->greeting('Hello '.$this->ownerName.',')
-            ->line('Your agency workspace has been created successfully.')
-            ->line('Agency: '.$this->agencyName)
-            ->line('Agency number: '.$this->agencyNumber)
-            ->line('Domain: '.$this->domain)
-            ->line('Owner email: '.$this->ownerEmail)
-            ->action('Sign in to your agency', $this->loginUrl)
-            ->line('Use the password you created during registration to sign in.');
+        $message = (new MailMessage)
+            ->subject('Your Booknow agency registration is under review')
+            ->greeting('Hello '.$this->ownerName.',');
+
+        if ($this->status === 'frozen') {
+            $message
+                ->line('Thank you for registering your agency with Booknow.')
+                ->line('Your registration has been received and is currently under review.')
+                ->line('Agency: '.$this->agencyName)
+                ->line('Agency Number: '.$this->agencyNumber)
+                ->line('Agency ID: '.$this->agencyPath)
+                ->line('Owner Email: '.$this->ownerEmail)
+                ->line('')
+                ->line('Your submitted documents (commercial register and passport) are being verified.')
+                ->line('You will receive another email once your agency has been activated.')
+                ->line('')
+                ->line('Your workspace will be available at: '.$this->workspaceUrl)
+                ->line('(You will be able to log in after activation)');
+        } else {
+            $message
+                ->line('Your agency workspace has been created successfully.')
+                ->line('Agency: '.$this->agencyName)
+                ->line('Agency Number: '.$this->agencyNumber)
+                ->line('Agency ID: '.$this->agencyPath)
+                ->line('Owner Email: '.$this->ownerEmail)
+                ->action('Sign in to your agency', $this->workspaceUrl)
+                ->line('Use the password you created during registration to sign in.');
+        }
+
+        return $message;
     }
 
-    /**
-     * Get the array representation of the notification.
-     *
-     * @return array<string, string>
-     */
     public function toArray(object $notifiable): array
     {
         return [
             'agency_name' => $this->agencyName,
             'agency_number' => $this->agencyNumber,
+            'agency_path' => $this->agencyPath,
             'owner_email' => $this->ownerEmail,
-            'domain' => $this->domain,
-            'login_url' => $this->loginUrl,
+            'workspace_url' => $this->workspaceUrl,
+            'status' => $this->status,
         ];
     }
 }

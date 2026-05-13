@@ -9,6 +9,9 @@ use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Validation\Rules\Password;
+use Illuminate\Support\Facades\URL;
+use Stancl\Tenancy\Events\TenancyInitialized;
+use Illuminate\Support\Facades\Event;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -26,6 +29,13 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         $this->configureDefaults();
+
+         // Whenever a tenant is initialized, tell Laravel to use its ID as the default route parameter
+        Event::listen(TenancyInitialized::class, function (TenancyInitialized $event) {
+            URL::defaults([
+                'tenant' => $event->tenancy->tenant->id,
+            ]);
+        });
     }
 
     /**
@@ -48,5 +58,7 @@ class AppServiceProvider extends ServiceProvider
                 ->uncompromised()
             : null
         );
+
+        
     }
 }

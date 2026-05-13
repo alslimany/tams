@@ -115,6 +115,11 @@ export default function Welcome() {
                                         {t('landlord.explore_capabilities')}
                                     </Link>
                                 </Button>
+                                <Button asChild variant="outline" size="lg" className="font-semibold h-11 px-6 border-slate-200 hover:bg-slate-50">
+                                    <Link href="/agency">
+                                        <Building2 className="mr-2 h-4 w-4" /> {t('landlord.agent_login')}
+                                    </Link>
+                                </Button>
                             </div>
                         </div>
                     </div>
