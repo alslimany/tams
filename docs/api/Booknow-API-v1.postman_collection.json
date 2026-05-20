@@ -1,26 +1,35 @@
 {
   "info": {
     "name": "Booknow API v1",
-    "description": "## Booknow REST API v1 — Mobile Application\n\n**Base URL**: `{{base_url}}/api/v1`  \n**Auth**: Bearer token (set via `{{token}}` variable after Login)  \n**Content-Type**: `application/json`\n\n### Quick Start\n1. Set `base_url` to your tenant domain (e.g. `https://agency.atom.ly`)\n2. Run **Login** — copy the returned `token` to the `{{token}}` collection variable\n3. All other endpoints use `{{token}}` automatically\n\n### Response Format\n```json\n{ \"success\": true|false, \"message\": \"...\", \"data\": {...} }\n```",
+    "description": "## Booknow REST API v1 \u2014 Mobile Application\n\n**Base URL**: `{{base_url}}/api/v1`  \n**Auth**: Bearer token (set via `{{token}}` variable after Login)  \n**Content-Type**: `application/json`\n\n### Quick Start\n1. Set `base_url` to your tenant domain (e.g. `https://agency.atom.ly`)\n2. Run **Login** \u2014 copy the returned `token` to the `{{token}}` collection variable\n3. All other endpoints use `{{token}}` automatically\n\n### Response Format\n```json\n{ \"success\": true|false, \"message\": \"...\", \"data\": {...} }\n```",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "auth": {
     "type": "bearer",
     "bearer": [
-      { "key": "token", "value": "{{token}}" }
+      {
+        "key": "token",
+        "value": "{{token}}"
+      }
     ]
   },
   "variable": [
-    { "key": "base_url", "value": "https://agency.atom.ly" },
-    { "key": "token", "value": "" }
+    {
+      "key": "base_url",
+      "value": "https://agency.atom.ly"
+    },
+    {
+      "key": "token",
+      "value": ""
+    }
   ],
   "item": [
     {
-      "name": "🔐 Auth",
+      "name": "\ud83d\udd10 Auth",
       "description": "Authentication endpoints. Run Login first to get a token.",
       "item": [
         {
-          "name": "Login — Get Token",
+          "name": "Login \u2014 Get Token",
           "event": [
             {
               "listen": "test",
@@ -40,28 +49,47 @@
           ],
           "request": {
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"email\": \"agent@example.com\",\n  \"password\": \"your-password\",\n  \"device_name\": \"Postman\"\n}"
             },
             "url": {
-              "raw": "{{base_url}}/api/v1/auth/token",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "auth", "token"]
+              "raw": "{{base_url}}/agency/{{tenant}}/api/v1/auth/token",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "agency",
+                "{{tenant}}",
+                "api",
+                "v1",
+                "auth",
+                "token"
+              ]
             },
             "description": "Authenticate and receive a Bearer token. The token is automatically saved to `{{token}}` collection variable."
           },
           "response": [
             {
-              "name": "200 — Success",
+              "name": "200 \u2014 Success",
               "status": "OK",
               "code": 200,
-              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
               "body": "{\n  \"success\": true,\n  \"message\": \"Token created successfully.\",\n  \"data\": {\n    \"token\": \"1|abcdef123456...\",\n    \"user\": {\n      \"id\": 1,\n      \"name\": \"John Doe\",\n      \"email\": \"agent@example.com\",\n      \"role\": \"agent\",\n      \"is_active\": true,\n      \"initials\": \"JD\",\n      \"last_login_at\": \"2026-05-13T10:00:00.000Z\"\n    }\n  }\n}"
             },
             {
-              "name": "403 — Deactivated",
+              "name": "403 \u2014 Deactivated",
               "status": "Forbidden",
               "code": 403,
               "body": "{\n  \"success\": false,\n  \"message\": \"Your account has been deactivated.\"\n}"
@@ -69,13 +97,22 @@
           ]
         },
         {
-          "name": "Get Me — Current User",
+          "name": "Get Me \u2014 Current User",
           "request": {
             "method": "GET",
             "url": {
-              "raw": "{{base_url}}/api/v1/auth/me",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "auth", "me"]
+              "raw": "{{base_url}}/agency/{{tenant}}/api/v1/auth/me",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "agency",
+                "{{tenant}}",
+                "api",
+                "v1",
+                "auth",
+                "me"
+              ]
             },
             "description": "Returns the currently authenticated user profile."
           },
@@ -93,9 +130,18 @@
           "request": {
             "method": "GET",
             "url": {
-              "raw": "{{base_url}}/api/v1/auth/tokens",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "auth", "tokens"]
+              "raw": "{{base_url}}/agency/{{tenant}}/api/v1/auth/tokens",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "agency",
+                "{{tenant}}",
+                "api",
+                "v1",
+                "auth",
+                "tokens"
+              ]
             },
             "description": "List all active API tokens for the current user."
           },
@@ -109,13 +155,22 @@
           ]
         },
         {
-          "name": "Revoke Token — Logout",
+          "name": "Revoke Token \u2014 Logout",
           "request": {
             "method": "DELETE",
             "url": {
-              "raw": "{{base_url}}/api/v1/auth/token",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "auth", "token"]
+              "raw": "{{base_url}}/agency/{{tenant}}/api/v1/auth/token",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "agency",
+                "{{tenant}}",
+                "api",
+                "v1",
+                "auth",
+                "token"
+              ]
             },
             "description": "Revoke the current Bearer token. After this, the token is invalid."
           },
@@ -131,18 +186,31 @@
       ]
     },
     {
-      "name": "📚 Reference Data",
+      "name": "\ud83d\udcda Reference Data",
       "item": [
         {
           "name": "Airports Search",
           "request": {
             "method": "GET",
             "url": {
-              "raw": "{{base_url}}/api/v1/airports/search?q=MJI",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "airports", "search"],
+              "raw": "{{base_url}}/agency/{{tenant}}/api/v1/airports/search?q=MJI",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "agency",
+                "{{tenant}}",
+                "api",
+                "v1",
+                "airports",
+                "search"
+              ],
               "query": [
-                { "key": "q", "value": "MJI", "description": "IATA code (3 chars) or city/country name. Empty returns popular airports." }
+                {
+                  "key": "q",
+                  "value": "MJI",
+                  "description": "IATA code (3 chars) or city/country name. Empty returns popular airports."
+                }
               ]
             },
             "description": "Search airports by IATA code, city, or country name."
@@ -161,9 +229,17 @@
           "request": {
             "method": "GET",
             "url": {
-              "raw": "{{base_url}}/api/v1/airlines",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "airlines"]
+              "raw": "{{base_url}}/agency/{{tenant}}/api/v1/airlines",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "agency",
+                "{{tenant}}",
+                "api",
+                "v1",
+                "airlines"
+              ]
             },
             "description": "Returns all active airlines available to the tenant."
           },
@@ -179,8 +255,8 @@
       ]
     },
     {
-      "name": "✈️ Flights",
-      "description": "Flight search, pricing, and booking flow.\n\n**Flow**: Search → Results → Calendar/Return-Options → Select → Book",
+      "name": "\u2708\ufe0f Flights",
+      "description": "Flight search, pricing, and booking flow.\n\n**Flow**: Search \u2192 Results \u2192 Calendar/Return-Options \u2192 Select \u2192 Book",
       "item": [
         {
           "name": "1. Search Flights",
@@ -201,15 +277,29 @@
           ],
           "request": {
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"origin\": \"MJI\",\n  \"destination\": \"IST\",\n  \"date\": \"2026-06-15\",\n  \"adults\": 1,\n  \"children\": 0,\n  \"infants\": 0,\n  \"is_return\": false\n}"
             },
             "url": {
-              "raw": "{{base_url}}/api/v1/flights/search",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "flights", "search"]
+              "raw": "{{base_url}}/agency/{{tenant}}/api/v1/flights/search",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "agency",
+                "{{tenant}}",
+                "api",
+                "v1",
+                "flights",
+                "search"
+              ]
             },
             "description": "Create a flight search session. Returns a UUID to use in subsequent calls.\n\n**Round-trip**: set `is_return: true` and add `return_date`."
           },
@@ -227,11 +317,25 @@
           "request": {
             "method": "GET",
             "url": {
-              "raw": "{{base_url}}/api/v1/flights/results/{{flight_uuid}}?provider_id={{flight_provider_id}}",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "flights", "results", "{{flight_uuid}}"],
+              "raw": "{{base_url}}/agency/{{tenant}}/api/v1/flights/results/{{flight_uuid}}?provider_id={{flight_provider_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "agency",
+                "{{tenant}}",
+                "api",
+                "v1",
+                "flights",
+                "results",
+                "{{flight_uuid}}"
+              ],
               "query": [
-                { "key": "provider_id", "value": "{{flight_provider_id}}", "description": "Provider ID from search response" }
+                {
+                  "key": "provider_id",
+                  "value": "{{flight_provider_id}}",
+                  "description": "Provider ID from search response"
+                }
               ]
             },
             "description": "Fetch flight offers from a specific provider for the given search session."
@@ -250,13 +354,32 @@
           "request": {
             "method": "GET",
             "url": {
-              "raw": "{{base_url}}/api/v1/flights/calendar-hints?origin=MJI&destination=IST&month=2026-06",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "flights", "calendar-hints"],
+              "raw": "{{base_url}}/agency/{{tenant}}/api/v1/flights/calendar-hints?origin=MJI&destination=IST&month=2026-06",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "agency",
+                "{{tenant}}",
+                "api",
+                "v1",
+                "flights",
+                "calendar-hints"
+              ],
               "query": [
-                { "key": "origin", "value": "MJI" },
-                { "key": "destination", "value": "IST" },
-                { "key": "month", "value": "2026-06", "description": "YYYY-MM" }
+                {
+                  "key": "origin",
+                  "value": "MJI"
+                },
+                {
+                  "key": "destination",
+                  "value": "IST"
+                },
+                {
+                  "key": "month",
+                  "value": "2026-06",
+                  "description": "YYYY-MM"
+                }
               ]
             },
             "description": "Lowest priced date hints for a full month. `null` means no cached fare for that date."
@@ -274,15 +397,29 @@
           "name": "4. Return Options (Round-Trip)",
           "request": {
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"uuid\": \"{{flight_uuid}}\",\n  \"outbound_provider_id\": {{flight_provider_id}},\n  \"outbound_flight\": {},\n  \"return_date\": \"2026-06-20\"\n}"
             },
             "url": {
-              "raw": "{{base_url}}/api/v1/flights/return-options",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "flights", "return-options"]
+              "raw": "{{base_url}}/agency/{{tenant}}/api/v1/flights/return-options",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "agency",
+                "{{tenant}}",
+                "api",
+                "v1",
+                "flights",
+                "return-options"
+              ]
             },
             "description": "Fetch return flight options for a round-trip booking. Pass the selected outbound flight."
           },
@@ -299,15 +436,29 @@
           "name": "5. Select Flight",
           "request": {
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"uuid\": \"{{flight_uuid}}\",\n  \"provider_id\": {{flight_provider_id}},\n  \"flight\": {\n    \"flight_number\": \"YI500\",\n    \"departure_airport\": \"MJI\",\n    \"arrival_airport\": \"IST\",\n    \"departure_time\": \"2026-06-15T10:00:00\",\n    \"arrival_time\": \"2026-06-15T14:00:00\",\n    \"class\": \"Y\",\n    \"pricing\": { \"total\": 450, \"currency\": \"LYD\" }\n  },\n  \"reservation_type\": \"NN\"\n}"
             },
             "url": {
-              "raw": "{{base_url}}/api/v1/flights/select",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "flights", "select"]
+              "raw": "{{base_url}}/agency/{{tenant}}/api/v1/flights/select",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "agency",
+                "{{tenant}}",
+                "api",
+                "v1",
+                "flights",
+                "select"
+              ]
             },
             "description": "Select a flight offer for booking. Caches the selection server-side."
           },
@@ -321,30 +472,44 @@
           ]
         },
         {
-          "name": "6. Book Flight — Issue Ticket",
+          "name": "6. Book Flight \u2014 Issue Ticket",
           "request": {
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"uuid\": \"{{flight_uuid}}\",\n  \"passengers\": [\n    {\n      \"type\": \"adult\",\n      \"first_name\": \"John\",\n      \"last_name\": \"Doe\",\n      \"dob\": \"1990-01-15\",\n      \"gender\": \"M\",\n      \"passport_number\": \"A1234567\",\n      \"passport_expiry\": \"2028-06-01\",\n      \"passport_issue_country\": \"LBY\",\n      \"nationality\": \"LBY\"\n    }\n  ],\n  \"customer\": {\n    \"first_name\": \"John\",\n    \"last_name\": \"Doe\",\n    \"email\": \"john@example.com\",\n    \"phone\": \"+218911234567\"\n  }\n}"
             },
             "url": {
-              "raw": "{{base_url}}/api/v1/flights/book",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "flights", "book"]
+              "raw": "{{base_url}}/agency/{{tenant}}/api/v1/flights/book",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "agency",
+                "{{tenant}}",
+                "api",
+                "v1",
+                "flights",
+                "book"
+              ]
             },
-            "description": "Finalize booking — issue ticket, create order, process wallet. Must call **Select Flight** first."
+            "description": "Finalize booking \u2014 issue ticket, create order, process wallet. Must call **Select Flight** first."
           },
           "response": [
             {
-              "name": "201 — Booked",
+              "name": "201 \u2014 Booked",
               "status": "Created",
               "code": 201,
               "body": "{\n  \"success\": true,\n  \"message\": \"Booking confirmed successfully.\",\n  \"data\": {\n    \"id\": \"uuid\",\n    \"number\": \"ORD-2026-0001\",\n    \"status\": \"confirmed\",\n    \"total\": 450.0,\n    \"currency\": \"LYD\",\n    \"issued_at\": \"2026-05-13T10:00:00.000Z\",\n    \"items\": [\n      {\n        \"id\": 1,\n        \"type\": \"flight\",\n        \"product_type\": \"ticket\",\n        \"provider_reference\": \"AAJ6DU\",\n        \"status\": \"confirmed\",\n        \"total\": 450.0,\n        \"currency\": \"LYD\"\n      }\n    ]\n  }\n}"
             },
             {
-              "name": "402 — Insufficient Balance",
+              "name": "402 \u2014 Insufficient Balance",
               "status": "Payment Required",
               "code": 402,
               "body": "{\n  \"success\": false,\n  \"message\": \"Insufficient wallet balance: requires 450.00 LYD, available 100.00 LYD\"\n}"
@@ -354,19 +519,32 @@
       ]
     },
     {
-      "name": "🏨 Hotels",
-      "description": "Hotel search and booking.\n\n**Flow**: Autocomplete → Search → Details → Select → Book",
+      "name": "\ud83c\udfe8 Hotels",
+      "description": "Hotel search and booking.\n\n**Flow**: Autocomplete \u2192 Search \u2192 Details \u2192 Select \u2192 Book",
       "item": [
         {
-          "name": "Autocomplete — Destinations",
+          "name": "Autocomplete \u2014 Destinations",
           "request": {
             "method": "GET",
             "url": {
-              "raw": "{{base_url}}/api/v1/hotels/autocomplete?q=par",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "hotels", "autocomplete"],
+              "raw": "{{base_url}}/agency/{{tenant}}/api/v1/hotels/autocomplete?q=par",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "agency",
+                "{{tenant}}",
+                "api",
+                "v1",
+                "hotels",
+                "autocomplete"
+              ],
               "query": [
-                { "key": "q", "value": "par", "description": "Search term for city/destination" }
+                {
+                  "key": "q",
+                  "value": "par",
+                  "description": "Search term for city/destination"
+                }
               ]
             },
             "description": "Search for hotel destinations by name."
@@ -398,15 +576,29 @@
           ],
           "request": {
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"city_id\": \"city_1\",\n  \"check_in\": \"2026-07-01\",\n  \"check_out\": \"2026-07-05\",\n  \"rooms\": 1,\n  \"adults\": 2,\n  \"children\": 0,\n  \"page\": 1\n}"
             },
             "url": {
-              "raw": "{{base_url}}/api/v1/hotels/search",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "hotels", "search"]
+              "raw": "{{base_url}}/agency/{{tenant}}/api/v1/hotels/search",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "agency",
+                "{{tenant}}",
+                "api",
+                "v1",
+                "hotels",
+                "search"
+              ]
             },
             "description": "Search for available hotels in a destination."
           },
@@ -424,13 +616,32 @@
           "request": {
             "method": "GET",
             "url": {
-              "raw": "{{base_url}}/api/v1/hotels/details?hotel_id=45&city_id=city_1",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "hotels", "details"],
+              "raw": "{{base_url}}/agency/{{tenant}}/api/v1/hotels/details?hotel_id=45&city_id=city_1",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "agency",
+                "{{tenant}}",
+                "api",
+                "v1",
+                "hotels",
+                "details"
+              ],
               "query": [
-                { "key": "hotel_id", "value": "45" },
-                { "key": "city_id", "value": "city_1" },
-                { "key": "source", "value": "129", "disabled": true }
+                {
+                  "key": "hotel_id",
+                  "value": "45"
+                },
+                {
+                  "key": "city_id",
+                  "value": "city_1"
+                },
+                {
+                  "key": "source",
+                  "value": "129",
+                  "disabled": true
+                }
               ]
             },
             "description": "Get full hotel details, description, images, and amenities."
@@ -462,15 +673,29 @@
           ],
           "request": {
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"search_uuid\": \"{{hotel_search_uuid}}\",\n  \"rate_key\": \"rate_123\"\n}"
             },
             "url": {
-              "raw": "{{base_url}}/api/v1/hotels/select",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "hotels", "select"]
+              "raw": "{{base_url}}/agency/{{tenant}}/api/v1/hotels/select",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "agency",
+                "{{tenant}}",
+                "api",
+                "v1",
+                "hotels",
+                "select"
+              ]
             },
             "description": "Select a specific room/rate and check availability. Returns a booking UUID for the next step."
           },
@@ -487,15 +712,29 @@
           "name": "Book Hotel",
           "request": {
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"booking_uuid\": \"{{hotel_booking_uuid}}\",\n  \"rooms\": [\n    {\n      \"guests\": [\n        { \"civility\": \"Mr\", \"first_name\": \"John\", \"last_name\": \"Doe\" },\n        { \"civility\": \"Mme\", \"first_name\": \"Jane\", \"last_name\": \"Doe\" }\n      ]\n    }\n  ],\n  \"customer\": {\n    \"first_name\": \"John\",\n    \"last_name\": \"Doe\",\n    \"email\": \"john@example.com\",\n    \"phone\": \"+218911234567\"\n  }\n}"
             },
             "url": {
-              "raw": "{{base_url}}/api/v1/hotels/book",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "hotels", "book"]
+              "raw": "{{base_url}}/agency/{{tenant}}/api/v1/hotels/book",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "agency",
+                "{{tenant}}",
+                "api",
+                "v1",
+                "hotels",
+                "book"
+              ]
             },
             "description": "Finalize hotel booking with guest details. Must call **Select Hotel Offer** first."
           },
@@ -511,19 +750,30 @@
       ]
     },
     {
-      "name": "🛡️ Insurance — Compulsory",
+      "name": "\ud83d\udee1\ufe0f Insurance \u2014 Compulsory",
       "item": [
         {
-          "name": "References — All Types",
+          "name": "References \u2014 All Types",
           "item": [
             {
               "name": "Durations",
               "request": {
                 "method": "GET",
                 "url": {
-                  "raw": "{{base_url}}/api/v1/insurance/compulsory/references/durations",
-                  "host": ["{{base_url}}"],
-                  "path": ["api", "v1", "insurance", "compulsory", "references", "durations"]
+                  "raw": "{{base_url}}/agency/{{tenant}}/api/v1/insurance/compulsory/references/durations",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "agency",
+                    "{{tenant}}",
+                    "api",
+                    "v1",
+                    "insurance",
+                    "compulsory",
+                    "references",
+                    "durations"
+                  ]
                 }
               }
             },
@@ -532,9 +782,20 @@
               "request": {
                 "method": "GET",
                 "url": {
-                  "raw": "{{base_url}}/api/v1/insurance/compulsory/references/document-types",
-                  "host": ["{{base_url}}"],
-                  "path": ["api", "v1", "insurance", "compulsory", "references", "document-types"]
+                  "raw": "{{base_url}}/agency/{{tenant}}/api/v1/insurance/compulsory/references/document-types",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "agency",
+                    "{{tenant}}",
+                    "api",
+                    "v1",
+                    "insurance",
+                    "compulsory",
+                    "references",
+                    "document-types"
+                  ]
                 }
               }
             },
@@ -543,9 +804,20 @@
               "request": {
                 "method": "GET",
                 "url": {
-                  "raw": "{{base_url}}/api/v1/insurance/compulsory/references/vehicle-types",
-                  "host": ["{{base_url}}"],
-                  "path": ["api", "v1", "insurance", "compulsory", "references", "vehicle-types"]
+                  "raw": "{{base_url}}/agency/{{tenant}}/api/v1/insurance/compulsory/references/vehicle-types",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "agency",
+                    "{{tenant}}",
+                    "api",
+                    "v1",
+                    "insurance",
+                    "compulsory",
+                    "references",
+                    "vehicle-types"
+                  ]
                 }
               }
             },
@@ -554,9 +826,20 @@
               "request": {
                 "method": "GET",
                 "url": {
-                  "raw": "{{base_url}}/api/v1/insurance/compulsory/references/colors",
-                  "host": ["{{base_url}}"],
-                  "path": ["api", "v1", "insurance", "compulsory", "references", "colors"]
+                  "raw": "{{base_url}}/agency/{{tenant}}/api/v1/insurance/compulsory/references/colors",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "agency",
+                    "{{tenant}}",
+                    "api",
+                    "v1",
+                    "insurance",
+                    "compulsory",
+                    "references",
+                    "colors"
+                  ]
                 }
               }
             },
@@ -565,9 +848,20 @@
               "request": {
                 "method": "GET",
                 "url": {
-                  "raw": "{{base_url}}/api/v1/insurance/compulsory/references/licensing-authorities",
-                  "host": ["{{base_url}}"],
-                  "path": ["api", "v1", "insurance", "compulsory", "references", "licensing-authorities"]
+                  "raw": "{{base_url}}/agency/{{tenant}}/api/v1/insurance/compulsory/references/licensing-authorities",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "agency",
+                    "{{tenant}}",
+                    "api",
+                    "v1",
+                    "insurance",
+                    "compulsory",
+                    "references",
+                    "licensing-authorities"
+                  ]
                 }
               }
             }
@@ -591,15 +885,30 @@
           ],
           "request": {
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"document_type_id\": 1,\n  \"duration_id\": 2,\n  \"seats\": 4,\n  \"payload\": null\n}"
             },
             "url": {
-              "raw": "{{base_url}}/api/v1/insurance/compulsory/price",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "insurance", "compulsory", "price"]
+              "raw": "{{base_url}}/agency/{{tenant}}/api/v1/insurance/compulsory/price",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "agency",
+                "{{tenant}}",
+                "api",
+                "v1",
+                "insurance",
+                "compulsory",
+                "price"
+              ]
             },
             "description": "Calculate compulsory vehicle insurance premium."
           },
@@ -616,15 +925,30 @@
           "name": "Issue Policy",
           "request": {
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"quote_token\": \"{{compulsory_quote_token}}\",\n  \"beneficiary_name\": \"John Doe\",\n  \"beneficiary_phone\": \"+218911234567\",\n  \"vehicle_type_id\": 1,\n  \"vehicle_color_id\": 1,\n  \"vehicle_licensing_authority_id\": 1,\n  \"vehicle_manufacture_year\": 2020,\n  \"vehicle_chassis_number\": \"CHS123456\",\n  \"vehicle_plate_number\": \"ABC-123\",\n  \"policy_date_from\": \"2026-06-01\"\n}"
             },
             "url": {
-              "raw": "{{base_url}}/api/v1/insurance/compulsory/issue",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "insurance", "compulsory", "issue"]
+              "raw": "{{base_url}}/agency/{{tenant}}/api/v1/insurance/compulsory/issue",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "agency",
+                "{{tenant}}",
+                "api",
+                "v1",
+                "insurance",
+                "compulsory",
+                "issue"
+              ]
             },
             "description": "Issue a compulsory vehicle insurance policy. Must call **Price Quote** first."
           },
@@ -640,16 +964,26 @@
       ]
     },
     {
-      "name": "🛡️ Insurance — Travel",
+      "name": "\ud83d\udee1\ufe0f Insurance \u2014 Travel",
       "item": [
         {
           "name": "References",
           "request": {
             "method": "GET",
             "url": {
-              "raw": "{{base_url}}/api/v1/insurance/travel/references",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "insurance", "travel", "references"]
+              "raw": "{{base_url}}/agency/{{tenant}}/api/v1/insurance/travel/references",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "agency",
+                "{{tenant}}",
+                "api",
+                "v1",
+                "insurance",
+                "travel",
+                "references"
+              ]
             },
             "description": "Get zones, durations, nationalities, and genders for travel insurance."
           },
@@ -666,15 +1000,30 @@
           "name": "Price Quote",
           "request": {
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"zone_id\": 1,\n  \"policy_date_from\": \"2026-06-01\",\n  \"policy_date_to\": \"2026-06-07\",\n  \"passengers\": [\n    {\n      \"first_name\": \"John\",\n      \"last_name\": \"Doe\",\n      \"birth_date\": \"1990-01-15\",\n      \"gender_id\": 1,\n      \"nationality_id\": 1,\n      \"passport_number\": \"A1234567\"\n    }\n  ]\n}"
             },
             "url": {
-              "raw": "{{base_url}}/api/v1/insurance/travel/price",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "insurance", "travel", "price"]
+              "raw": "{{base_url}}/agency/{{tenant}}/api/v1/insurance/travel/price",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "agency",
+                "{{tenant}}",
+                "api",
+                "v1",
+                "insurance",
+                "travel",
+                "price"
+              ]
             },
             "description": "Calculate travel insurance premium for one or more passengers. Use either `passengers` array or `adult_count`/`child_count`/`senior_count` counts."
           },
@@ -690,16 +1039,26 @@
       ]
     },
     {
-      "name": "🛡️ Insurance — Orange",
+      "name": "\ud83d\udee1\ufe0f Insurance \u2014 Orange",
       "item": [
         {
           "name": "References",
           "request": {
             "method": "GET",
             "url": {
-              "raw": "{{base_url}}/api/v1/insurance/orange/references",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "insurance", "orange", "references"]
+              "raw": "{{base_url}}/agency/{{tenant}}/api/v1/insurance/orange/references",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "agency",
+                "{{tenant}}",
+                "api",
+                "v1",
+                "insurance",
+                "orange",
+                "references"
+              ]
             },
             "description": "Get countries, document types, cars, and vehicle nationalities for orange insurance."
           },
@@ -716,15 +1075,30 @@
           "name": "Price Quote",
           "request": {
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"country\": 1,\n  \"document_type_id\": 1,\n  \"policy_date_from\": \"2026-06-01\",\n  \"policy_date_to\": \"2026-06-07\"\n}"
             },
             "url": {
-              "raw": "{{base_url}}/api/v1/insurance/orange/price",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "insurance", "orange", "price"]
+              "raw": "{{base_url}}/agency/{{tenant}}/api/v1/insurance/orange/price",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "agency",
+                "{{tenant}}",
+                "api",
+                "v1",
+                "insurance",
+                "orange",
+                "price"
+              ]
             },
             "description": "Calculate orange insurance premium."
           },
@@ -740,22 +1114,49 @@
       ]
     },
     {
-      "name": "📦 Orders",
+      "name": "\ud83d\udce6 Orders",
       "item": [
         {
           "name": "Order List",
           "request": {
             "method": "GET",
             "url": {
-              "raw": "{{base_url}}/api/v1/orders?per_page=20&product_type=flight&status=confirmed",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "orders"],
+              "raw": "{{base_url}}/agency/{{tenant}}/api/v1/orders?per_page=20&product_type=flight&status=confirmed",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "agency",
+                "{{tenant}}",
+                "api",
+                "v1",
+                "orders"
+              ],
               "query": [
-                { "key": "per_page", "value": "20" },
-                { "key": "product_type", "value": "flight", "description": "flight | insurance | hotel" },
-                { "key": "status", "value": "confirmed", "disabled": true },
-                { "key": "date_from", "value": "2026-05-01", "disabled": true },
-                { "key": "date_to", "value": "2026-05-31", "disabled": true }
+                {
+                  "key": "per_page",
+                  "value": "20"
+                },
+                {
+                  "key": "product_type",
+                  "value": "flight",
+                  "description": "flight | insurance | hotel"
+                },
+                {
+                  "key": "status",
+                  "value": "confirmed",
+                  "disabled": true
+                },
+                {
+                  "key": "date_from",
+                  "value": "2026-05-01",
+                  "disabled": true
+                },
+                {
+                  "key": "date_to",
+                  "value": "2026-05-31",
+                  "disabled": true
+                }
               ]
             },
             "description": "Paginated order list with filters by product type, status, and date range."
@@ -766,9 +1167,18 @@
           "request": {
             "method": "GET",
             "url": {
-              "raw": "{{base_url}}/api/v1/orders/{order_id}",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "orders", "{order_id}"]
+              "raw": "{{base_url}}/agency/{{tenant}}/api/v1/orders/{order_id}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "agency",
+                "{{tenant}}",
+                "api",
+                "v1",
+                "orders",
+                "{order_id}"
+              ]
             },
             "description": "Full order details with items, passengers, segments, and wallet transactions."
           }
@@ -778,9 +1188,21 @@
           "request": {
             "method": "GET",
             "url": {
-              "raw": "{{base_url}}/api/v1/orders/{order_id}/flight-items/{item_id}/ticket-pdf",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "orders", "{order_id}", "flight-items", "{item_id}", "ticket-pdf"]
+              "raw": "{{base_url}}/agency/{{tenant}}/api/v1/orders/{order_id}/flight-items/{item_id}/ticket-pdf",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "agency",
+                "{{tenant}}",
+                "api",
+                "v1",
+                "orders",
+                "{order_id}",
+                "flight-items",
+                "{item_id}",
+                "ticket-pdf"
+              ]
             },
             "description": "Download flight ticket as PDF. Returns binary PDF, not JSON."
           }
@@ -788,16 +1210,24 @@
       ]
     },
     {
-      "name": "📊 Dashboard & Reports",
+      "name": "\ud83d\udcca Dashboard & Reports",
       "item": [
         {
           "name": "Dashboard",
           "request": {
             "method": "GET",
             "url": {
-              "raw": "{{base_url}}/api/v1/dashboard",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "dashboard"]
+              "raw": "{{base_url}}/agency/{{tenant}}/api/v1/dashboard",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "agency",
+                "{{tenant}}",
+                "api",
+                "v1",
+                "dashboard"
+              ]
             },
             "description": "Revenue, order counts, growth percentages, ticket status, and recent bookings."
           },
@@ -815,12 +1245,27 @@
           "request": {
             "method": "GET",
             "url": {
-              "raw": "{{base_url}}/api/v1/reports/sales?start_date=2026-05-01&end_date=2026-05-31",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "reports", "sales"],
+              "raw": "{{base_url}}/agency/{{tenant}}/api/v1/reports/sales?start_date=2026-05-01&end_date=2026-05-31",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "agency",
+                "{{tenant}}",
+                "api",
+                "v1",
+                "reports",
+                "sales"
+              ],
               "query": [
-                { "key": "start_date", "value": "2026-05-01" },
-                { "key": "end_date", "value": "2026-05-31" }
+                {
+                  "key": "start_date",
+                  "value": "2026-05-01"
+                },
+                {
+                  "key": "end_date",
+                  "value": "2026-05-31"
+                }
               ]
             },
             "description": "Daily sales breakdown by product type and currency. Defaults to last 30 days."
@@ -831,12 +1276,27 @@
           "request": {
             "method": "GET",
             "url": {
-              "raw": "{{base_url}}/api/v1/reports/commissions?start_date=2026-05-01&end_date=2026-05-31",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "reports", "commissions"],
+              "raw": "{{base_url}}/agency/{{tenant}}/api/v1/reports/commissions?start_date=2026-05-01&end_date=2026-05-31",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "agency",
+                "{{tenant}}",
+                "api",
+                "v1",
+                "reports",
+                "commissions"
+              ],
               "query": [
-                { "key": "start_date", "value": "2026-05-01" },
-                { "key": "end_date", "value": "2026-05-31" }
+                {
+                  "key": "start_date",
+                  "value": "2026-05-01"
+                },
+                {
+                  "key": "end_date",
+                  "value": "2026-05-31"
+                }
               ]
             },
             "description": "Commission breakdown per order item. Only items with commission > 0."
@@ -845,16 +1305,25 @@
       ]
     },
     {
-      "name": "💰 Wallet",
+      "name": "\ud83d\udcb0 Wallet",
       "item": [
         {
           "name": "Balance",
           "request": {
             "method": "GET",
             "url": {
-              "raw": "{{base_url}}/api/v1/wallet/balance",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "wallet", "balance"]
+              "raw": "{{base_url}}/agency/{{tenant}}/api/v1/wallet/balance",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "agency",
+                "{{tenant}}",
+                "api",
+                "v1",
+                "wallet",
+                "balance"
+              ]
             },
             "description": "Current wallet balances per currency."
           },
@@ -872,14 +1341,37 @@
           "request": {
             "method": "GET",
             "url": {
-              "raw": "{{base_url}}/api/v1/wallet/transactions?currency=LYD&per_page=20",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "wallet", "transactions"],
+              "raw": "{{base_url}}/agency/{{tenant}}/api/v1/wallet/transactions?currency=LYD&per_page=20",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "agency",
+                "{{tenant}}",
+                "api",
+                "v1",
+                "wallet",
+                "transactions"
+              ],
               "query": [
-                { "key": "currency", "value": "LYD" },
-                { "key": "per_page", "value": "20" },
-                { "key": "date_from", "value": "2026-05-01", "disabled": true },
-                { "key": "date_to", "value": "2026-05-31", "disabled": true }
+                {
+                  "key": "currency",
+                  "value": "LYD"
+                },
+                {
+                  "key": "per_page",
+                  "value": "20"
+                },
+                {
+                  "key": "date_from",
+                  "value": "2026-05-01",
+                  "disabled": true
+                },
+                {
+                  "key": "date_to",
+                  "value": "2026-05-31",
+                  "disabled": true
+                }
               ]
             },
             "description": "Paginated wallet transaction history with optional currency and date filters."

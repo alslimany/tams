@@ -15,6 +15,12 @@ pest()->extend(Tests\TestCase::class)
     ->use(Illuminate\Foundation\Testing\RefreshDatabase::class)
     ->in('Feature');
 
+// Accounting tests manage their own tenant lifecycle (SQLite per-tenant DBs).
+// They must NOT use RefreshDatabase — it runs migrate:fresh on every test which
+// causes memory exhaustion when combined with the full abivia CoA bootstrap.
+pest()->extend(Tests\AccountingTestCase::class)
+    ->in('Accounting');
+
 /*
 |--------------------------------------------------------------------------
 | Expectations

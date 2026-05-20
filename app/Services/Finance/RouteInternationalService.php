@@ -4,7 +4,6 @@ namespace App\Services\Finance;
 
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
 
 class RouteInternationalService
 {
@@ -32,29 +31,32 @@ class RouteInternationalService
         $cacheKey = sprintf('finance:airport_country:%s', $normalizedAirport);
 
         return Cache::remember($cacheKey, now()->addDay(), function () use ($connection, $normalizedAirport): ?string {
-            $query = DB::connection($connection)->table('airport_countries');
+            $row = DB::connection($connection)
+                ->table('airports')
+                ->where('iata_code', $normalizedAirport)
+                ->value('country');
 
-            if (Schema::connection($connection)->hasColumn('airport_countries', 'is_active')) {
-                $query->where('is_active', true);
+            if ($row === null) {
+                return null;
             }
 
-            if (Schema::connection($connection)->hasColumn('airport_countries', 'airport_code')) {
-                $countryCode = $query->where('airport_code', $normalizedAirport)->value('country_code');
+            $countryData = json_decode((string) $row, true);
 
-                if ($countryCode !== null) {
-                    return strtoupper((string) $countryCode);
-                }
+            if (! is_array($countryData)) {
+                return null;
+            }
 
-                $query = DB::connection($connection)->table('airport_countries');
-
-                if (Schema::connection($connection)->hasColumn('airport_countries', 'is_active')) {
-                    $query->where('is_active', true);
+            // Prefer the 'en' key; it is usually a 2-letter ISO code.
+            // Some records store a full country name in 'en' (e.g. "Libya") — in that
+            // case fall back to 'fr' which consistently holds the ISO code.
+            foreach (['en', 'fr'] as $lang) {
+                $value = strtoupper(trim((string) ($countryData[$lang] ?? '')));
+                if ($value !== '' && strlen($value) <= 3) {
+                    return $value;
                 }
             }
 
-            $countryCode = $query->where('country_code', $normalizedAirport)->value('country_code');
-
-            return $countryCode !== null ? strtoupper((string) $countryCode) : null;
+            return null;
         });
     }
 }

@@ -12,6 +12,8 @@ use App\Http\Requests\Tenant\Insurance\CompulsoryIssueRequest;
 use App\Http\Requests\Tenant\Insurance\CompulsoryPriceRequest;
 use App\Models\Tenant\Order;
 use App\Models\User;
+use App\Notifications\Orders\OrderContact;
+use App\Notifications\Orders\PolicyIssued;
 use App\Services\AgencyNetwork\MerchantAgencyWalletManager;
 use App\Services\Insurance\InsuranceProviderManager;
 use App\Services\Insurance\Providers\AlBarakaProvider;
@@ -280,6 +282,14 @@ class CompulsoryInsuranceController extends Controller
             app(PostToLedger::class)->execute($order, includeOwnCredentials: false);
 
             $this->forgetQuote((string) $validated['quote_token']);
+
+            $order->loadMissing('items');
+            $insuranceItem = $order->items->where('product_type', 'insurance')->first();
+            $contact = OrderContact::fromOrder($order);
+
+            if ($insuranceItem !== null && (filled($contact->email) || filled($contact->phone))) {
+                $contact->notify(new PolicyIssued($order, $insuranceItem));
+            }
 
             return redirect()
                 ->route('insurance.compulsory.issued', $order)

@@ -51,11 +51,7 @@ export default function Welcome() {
                         </CardHeader>
                         <CardContent className="p-6">
                             <div className="grid gap-4">
-                                <Button asChild size="lg" className="w-full font-semibold h-11">
-                                    <Link href={route('login')}>
-                                        <LogIn className="mr-2 h-4 w-4" /> Login to Agency
-                                    </Link>
-                                </Button>
+                                
                                 <div className="p-3 rounded-lg bg-amber-50 border border-amber-100 flex gap-2 items-start">
                                     <ShieldCheck className="h-4 w-4 text-amber-600 mt-0.5 shrink-0" />
                                     <p className="text-xs text-amber-900 font-medium leading-relaxed">
@@ -115,11 +111,7 @@ export default function Welcome() {
                                         {t('landlord.explore_capabilities')}
                                     </Link>
                                 </Button>
-                                <Button asChild variant="outline" size="lg" className="font-semibold h-11 px-6 border-slate-200 hover:bg-slate-50">
-                                    <Link href="/agency">
-                                        <Building2 className="mr-2 h-4 w-4" /> {t('landlord.agent_login')}
-                                    </Link>
-                                </Button>
+                               
                             </div>
                         </div>
                     </div>

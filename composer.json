@@ -29,6 +29,7 @@
         "tightenco/ziggy": "*"
     },
     "require-dev": {
+        "cweagans/composer-patches": "^2.0",
         "fakerphp/faker": "^1.23",
         "laravel/boost": "^2.4",
         "laravel/pail": "^1.2.2",
@@ -99,6 +100,11 @@
     "extra": {
         "laravel": {
             "dont-discover": []
+        },
+        "patches": {
+            "abivia/ledger": {
+                "Fix CarbonImmutable TypeError in Revision::create()": "patches/abivia/ledger/fix-carbon-immutable.patch"
+            }
         }
     },
     "config": {
@@ -107,7 +113,8 @@
         "sort-packages": true,
         "allow-plugins": {
             "pestphp/pest-plugin": true,
-            "php-http/discovery": true
+            "php-http/discovery": true,
+            "cweagans/composer-patches": true
         }
     },
     "minimum-stability": "stable",

@@ -28,6 +28,9 @@ return Application::configure(basePath: dirname(__DIR__))
             'wallet.balance' => \App\Http\Middleware\EnsureSufficientWalletBalance::class,
             'abilities' => CheckAbilities::class,
             'ability' => CheckForAnyAbility::class,
+            'idempotency' => \App\Http\Middleware\IdempotencyMiddleware::class,
+            'audit.api' => \App\Http\Middleware\AuditApiRequestMiddleware::class,
+            'audit.recorder' => \App\Audit\AuditRecorderMiddleware::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

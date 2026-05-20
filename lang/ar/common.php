@@ -54,7 +54,7 @@ return [
     'guest' => 'ضيف',
     'user' => 'مستخدم',
     'my_orders' => 'الحجوزات',
-
+    'modify_search' => 'تعديل البحث',
     // Navigation
     'home' => 'الرئيسية',
     'flights' => 'الرحلات',

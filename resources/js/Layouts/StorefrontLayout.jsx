@@ -63,6 +63,9 @@ export default function StorefrontLayout({ children }) {
                             )
                         ) : (
                             <>
+                                <Button asChild variant="outline" className="rounded-full font-medium px-5">    
+                                    <Link href="/agency">{t('landlord.agent_login')}</Link>
+                                </Button>
                                 <Button asChild className="rounded-full font-medium px-5">
                                     <Link href="/register-agency">{t('landlord.get_started')}</Link>
                                 </Button>

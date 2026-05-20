@@ -15,8 +15,8 @@ class CommissionCalculator
         $isInternational = $this->routeInternationalService->isInternational($origin, $destination);
 
         $commissionPercent = $isInternational
-            ? (float) (data_get($tenantProvider, 'commission_international') ?? data_get($tenantProvider, 'international_commission_rate') ?? 0)
-            : (float) (data_get($tenantProvider, 'commission_domestic') ?? data_get($tenantProvider, 'domestic_commission_rate') ?? 0);
+            ? (float) (data_get($tenantProvider, 'international_commission_rate') ?? data_get($tenantProvider, 'commission_international') ?? 0)
+            : (float) (data_get($tenantProvider, 'domestic_commission_rate') ?? data_get($tenantProvider, 'commission_domestic') ?? 0);
 
         $commissionAmount = round($netFare * $commissionPercent / 100, 2);
         $netAfterCommission = round($netFare - $commissionAmount, 2);

@@ -19,5 +19,11 @@ return [
         'taxes' => 'Taxes',
         'wallet_transactions' => 'Wallet Transactions',
         'reconciliation' => 'Reconciliation',
+        'accounting' => 'Accounting',
+        'accounting_dashboard' => 'Accounting Dashboard',
+        'accounting_wallets' => 'Wallets & Balances',
+        'accounting_providers' => 'Provider Accounts',
+        'accounting_journal' => 'Journal Entries',
+        'accounting_reports' => 'Reports',
     ],
 ];

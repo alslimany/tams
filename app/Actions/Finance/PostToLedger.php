@@ -4,13 +4,13 @@ namespace App\Actions\Finance;
 
 use App\Models\Tenant\Order;
 use App\Models\Tenant\OrderItem;
-use App\Services\Finance\LedgerDriver;
+use App\Services\Accounting\LedgerPostingService;
 use Illuminate\Support\Facades\DB;
 
 class PostToLedger
 {
     public function __construct(
-        protected LedgerDriver $ledgerDriver,
+        protected LedgerPostingService $ledgerPostingService,
     ) {}
 
     public function execute(Order $order, bool $includeOwnCredentials = true): void
@@ -23,14 +23,16 @@ class PostToLedger
                     continue;
                 }
 
-                $journalId = $this->ledgerDriver->postOperationJournal(
-                    source: 'order_'.$order->id,
+                $journalEntry = $this->ledgerPostingService->post(
+                    journal: $this->resolveJournal((string) $item->product_type),
                     description: "Sale of {$item->product_type} for order {$order->number}",
-                    entries: $this->buildEntries($item),
+                    reference: "order:{$order->id}|item:{$item->id}",
+                    clearing: true,
+                    details: $this->buildDetails($item),
                 );
 
                 $item->update([
-                    'ledger_entry_id' => $journalId,
+                    'ledger_entry_id' => $journalEntry->journalEntryId,
                 ]);
             }
         });
@@ -46,49 +48,77 @@ class PostToLedger
     }
 
     /**
-     * @return array<int, array{account:string, direction:string, amount:float}>
+     * Build the abivia-format detail lines for a sale journal entry.
+     *
+     * Correct balanced entry for an airline ticket sale (6 lines when taxes > 0):
+     *
+     *   Entry 1 — Customer sale (revenue side):
+     *     Dr 1310  Customer Receivable      → full selling price (base fare + taxes)
+     *     Cr 4xxx  Revenue Account          → base fare net of commission
+     *     Cr 4500  Service Fees & Markup    → commission amount (omitted if zero)
+     *     Cr 2410  Airline Tax Payable      → tax total (omitted if zero)
+     *
+     *   Entry 2 — Provider cost (wallet side):
+     *     Dr 5xxx  Provider Cost (COGS)     → true provider cost (base fare net of commission + taxes)
+     *     Cr 1xxx  Provider Wallet          → same amount (prepaid asset consumed)
+     *
+     * net_fare = base fare only (set by ApplyFinancialSourceAndCommission from fare_store).
+     * total_tax = tax total (set by ApplyFinancialSourceAndCommission from fare_store).
+     * commission is on base fare only — taxes are always pass-through.
+     *
+     * @return array<int, array{code: string, debit?: string, credit?: string}>
      */
-    protected function buildEntries(OrderItem $item): array
+    protected function buildDetails(OrderItem $item): array
     {
-        $entries = [
-            [
-                'account' => '1300',
-                'direction' => 'debit',
-                'amount' => (float) $item->total_amount,
-            ],
-            [
-                'account' => $this->revenueAccountForProduct((string) $item->product_type),
-                'direction' => 'credit',
-                'amount' => (float) $item->net_fare,
-            ],
-        ];
+        $productType = $this->normalizeProductType((string) $item->product_type);
+        $baseFare = round((float) $item->net_fare, 3);
+        $taxTotal = round((float) $item->total_tax, 3);
+        $sellingPrice = round((float) $item->total_amount, 3);
+        $commissionAmount = round($this->resolveCommissionAmount($item), 3);
 
-        foreach ($this->normalizeTaxes($item->taxes) as $tax) {
-            $entries[] = [
-                'account' => $this->taxAccountForCode((string) ($tax['code'] ?? 'GEN')),
-                'direction' => 'credit',
-                'amount' => (float) ($tax['amount'] ?? 0),
-            ];
+        // True provider cost = base fare net of commission + taxes (pass-through)
+        $providerCost = round($baseFare - $commissionAmount + $taxTotal, 3);
+
+        // Revenue posted = base fare net of commission (taxes go to 2410, not revenue)
+        $revenueAmount = round($baseFare - $commissionAmount, 3);
+
+        $revenueAccount = $this->ledgerPostingService->revenueAccount($productType);
+        $costAccount = $this->ledgerPostingService->costAccount($productType);
+        $providerWalletAccount = $this->ledgerPostingService->providerWalletAccount($productType);
+
+        $details = [];
+
+        // Dr 1310 — Customer Receivable (full selling price = base fare + taxes)
+        if ($sellingPrice > 0) {
+            $details[] = ['code' => '1310', 'debit' => (string) $sellingPrice];
         }
 
-        $commissionAmount = $this->resolveCommissionAmount($item);
+        // Cr 4xxx — Revenue (base fare net of commission; taxes excluded)
+        if ($revenueAmount > 0) {
+            $details[] = ['code' => $revenueAccount, 'credit' => (string) $revenueAmount];
+        }
+
+        // Cr 4500 — Service Fees & Markup (commission on base fare)
         if ($commissionAmount > 0) {
-            $entries[] = [
-                'account' => '6100',
-                'direction' => 'debit',
-                'amount' => $commissionAmount,
-            ];
-
-            $entries[] = [
-                'account' => '2300',
-                'direction' => 'credit',
-                'amount' => $commissionAmount,
-            ];
+            $details[] = ['code' => '4500', 'credit' => (string) $commissionAmount];
         }
 
-        return array_values(array_filter($entries, function (array $entry): bool {
-            return $entry['amount'] > 0;
-        }));
+        // Cr 2410 — Airline Tax Payable (pass-through taxes owed to authority)
+        if ($taxTotal > 0) {
+            $details[] = ['code' => '2410', 'credit' => (string) $taxTotal];
+        }
+
+        // Dr 5xxx — Provider Cost / COGS (net fare after commission + taxes)
+        if ($providerCost > 0) {
+            $details[] = ['code' => $costAccount, 'debit' => (string) $providerCost];
+        }
+
+        // Cr 1xxx — Provider Wallet (prepaid asset consumed)
+        if ($providerCost > 0) {
+            $details[] = ['code' => $providerWalletAccount, 'credit' => (string) $providerCost];
+        }
+
+        return $details;
     }
 
     protected function resolveCommissionAmount(OrderItem $item): float
@@ -103,35 +133,20 @@ class PostToLedger
     }
 
     /**
-     * @return array<int, array<string, mixed>>
+     * Normalise legacy product_type values to the canonical set used by LedgerPostingService.
      */
-    protected function normalizeTaxes(mixed $taxes): array
-    {
-        if (! is_array($taxes)) {
-            return [];
-        }
-
-        return array_values(array_filter($taxes, function (mixed $tax): bool {
-            return is_array($tax) && (float) ($tax['amount'] ?? 0) > 0;
-        }));
-    }
-
-    protected function revenueAccountForProduct(string $productType): string
+    protected function normalizeProductType(string $productType): string
     {
         return match ($productType) {
-            'flight', 'ticket' => '3100',
-            default => '3190',
+            'flight', 'ticket' => 'airline',
+            default => $productType,
         };
     }
 
-    protected function taxAccountForCode(string $taxCode): string
+    protected function resolveJournal(string $productType): string
     {
-        $normalized = strtoupper(trim($taxCode));
-
-        if ($normalized === 'ST') {
-            return '2200_ST';
-        }
-
-        return '2200';
+        return $this->ledgerPostingService->resolveJournal(
+            $this->normalizeProductType($productType),
+        );
     }
 }

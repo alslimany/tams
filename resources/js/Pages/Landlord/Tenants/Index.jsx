@@ -9,7 +9,7 @@ import { Input } from '@/Components/ui/Input';
 import { Label } from '@/Components/ui/Label';
 import { Select } from '@/Components/ui/Select';
 import { Switch } from '@/Components/ui/Switch';
-import { ArrowUpCircle, Save, Star } from 'lucide-react';
+import { ArrowUpCircle, DatabaseZap, Save, Star } from 'lucide-react';
 
 export default function Index({ tenants }) {
     const [isTopUpModalOpen, setIsTopUpModalOpen] = useState(false);
@@ -181,6 +181,11 @@ export default function Index({ tenants }) {
                                             {tenant.is_default_agency && (
                                                 <Badge variant="outline" className="border-amber-400/50 bg-amber-50 text-amber-700 text-[10px]">
                                                     Master
+                                                </Badge>
+                                            )}
+                                            {tenant.database_missing && (
+                                                <Badge variant="outline" className="border-red-400/50 bg-red-50 text-red-700 text-[10px] gap-1">
+                                                    <DatabaseZap className="h-3 w-3" /> No DB
                                                 </Badge>
                                             )}
                                         </div>

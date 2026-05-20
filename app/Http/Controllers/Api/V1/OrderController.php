@@ -83,6 +83,51 @@ class OrderController extends Controller
             ->name('ticket-'.$item->provider_reference.'.pdf');
     }
 
+    public function hotelVoucherPdf(Order $order, OrderItem $item): \Spatie\LaravelPdf\PdfBuilder
+    {
+        abort_unless($item->order_id === $order->id, 404);
+        abort_unless((string) $item->type === 'hotel' || (string) $item->product_type === 'hotel', 404);
+
+        $order->loadMissing('owner');
+
+        $filename = 'hotel-voucher-'.preg_replace('/[^A-Za-z0-9_-]/', '-', (string) ($item->provider_reference ?: $order->number)).'.pdf';
+
+        return \Spatie\LaravelPdf\Support\pdf()
+            ->view('pdf.hotel-voucher', ['order' => $order, 'item' => $item])
+            ->format(\Spatie\LaravelPdf\Enums\Format::A4)
+            ->margins(8, 8, 8, 8, \Spatie\LaravelPdf\Enums\Unit::Millimeter)
+            ->inline($filename);
+    }
+
+    public function insurancePolicyPdf(Order $order, OrderItem $item): \Spatie\LaravelPdf\PdfBuilder
+    {
+        abort_unless($item->order_id === $order->id, 404);
+        abort_unless((string) $item->type === 'insurance' || (string) $item->product_type === 'insurance', 404);
+
+        $order->loadMissing('owner');
+
+        $filename = 'insurance-policy-'.preg_replace('/[^A-Za-z0-9_-]/', '-', (string) ($item->ticket_number ?: $order->number)).'.pdf';
+
+        return \Spatie\LaravelPdf\Support\pdf()
+            ->view('pdf.insurance-policy', ['order' => $order, 'item' => $item])
+            ->format(\Spatie\LaravelPdf\Enums\Format::A4)
+            ->margins(8, 8, 8, 8, \Spatie\LaravelPdf\Enums\Unit::Millimeter)
+            ->inline($filename);
+    }
+
+    public function orderSummaryPdf(Order $order): \Spatie\LaravelPdf\PdfBuilder
+    {
+        $order->loadMissing(['owner', 'items']);
+
+        $filename = 'order-'.preg_replace('/[^A-Za-z0-9_-]/', '-', $order->number).'.pdf';
+
+        return \Spatie\LaravelPdf\Support\pdf()
+            ->view('pdf.order-summary', ['order' => $order, 'items' => $order->items])
+            ->format(\Spatie\LaravelPdf\Enums\Format::A4)
+            ->margins(8, 8, 8, 8, \Spatie\LaravelPdf\Enums\Unit::Millimeter)
+            ->inline($filename);
+    }
+
     private function formatOrder(Order $order): array
     {
         return [

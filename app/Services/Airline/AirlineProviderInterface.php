@@ -89,18 +89,40 @@ interface AirlineProviderInterface
     public function void(string $rloc, ?string $ticketNo = null);
 
     /**
+     * Get a refund quote (penalties + refundable amount) for a PNR without executing the refund.
+     *
+     * @return array{mps_penalties: array<int, array<string, mixed>>, refund_amount: float, penalty_amount: float, currency: string}
+     */
+    public function refundQuote(string $pnr, int $segmentCount): array;
+
+    /**
      * Refund a ticket.
      *
      * @return mixed
      */
-    public function refund(string $ticketNo, array $params = []);
+    public function refund(string $pnr, int $segmentCount, float $penaltyAmount);
 
     /**
-     * Change a booking.
+     * Get a change quote (outstanding amount) for swapping a segment without committing.
      *
-     * @return mixed
+     * Sends: *{RLOC}^X{segLine}^{newSegmentCode}^FG^FS1^MB^*R~X
+     *
+     * @return array{outstanding_amount: float, currency: string, change_type: string, raw_response: string}
      */
-    public function change(string $rloc, array $changes);
+    public function changeQuote(string $rloc, int $segmentLine, string $newSegmentCode): array;
+
+    /**
+     * Confirm a ticket change (revalidation or reissue).
+     *
+     * Revalidation (same origin + destination + class):
+     *   *{RLOC}^X{segLine}^{newSegCode}^FG^FS1^MB^REZT*R^*R~X
+     *
+     * Reissue (different route or class):
+     *   *{RLOC}^X{segLine}^{newSegCode}^FG^FS1^MB^EZV*R^EZT*R^*R~X
+     *
+     * @return array{success: bool, change_type: string, raw_response: string}
+     */
+    public function confirmChange(string $rloc, int $segmentLine, string $newSegmentCode, string $changeType, float $outstandingAmount = 0.0): array;
 
     /**
      * Test the connection to the provider.

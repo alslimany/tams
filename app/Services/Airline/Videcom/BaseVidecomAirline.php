@@ -830,18 +830,213 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
     }
 
     /**
-     * Refund a ticket.
+     * Build the FCR/FCC/X segment cancellation portion of a refund command.
+     * Segments are processed in reverse order (highest → lowest) so that removing
+     * a segment does not shift the index of remaining segments.
+     *
+     * For YI (Oya) the FCR/FCC fare-quote commands are skipped — only X{n} is sent.
+     *
+     * @return string e.g. "^FCR2^FCC2^X2^FCR1^FCC1^X1" or "^X2^X1" for YI
      */
-    public function refund(string $ticketNo, array $params = [])
+    protected function buildRefundSegmentCommands(int $segmentCount): string
     {
-        $command = "TR{$ticketNo}";
+        $parts = [];
+
+        for ($seg = $segmentCount; $seg >= 1; $seg--) {
+            if ($this->getIataCode() !== 'YI') {
+                $parts[] = "FCR{$seg}";
+                $parts[] = "FCC{$seg}";
+            }
+
+            $parts[] = "X{$seg}";
+        }
+
+        return '^'.implode('^', $parts);
+    }
+
+    /**
+     * Get a refund quote (penalties + refundable amount) without executing the refund.
+     *
+     * Command: *{PNR}^FCR1^FCC1^X1^FSM^*R~X
+     *
+     * @return array{mps_penalties: array<int, array<string, mixed>>, refund_amount: float, penalty_amount: float, currency: string}
+     */
+    public function refundQuote(string $pnr, int $segmentCount): array
+    {
+        $segmentCommands = $this->buildRefundSegmentCommands($segmentCount);
+        $command = "*{$pnr}{$segmentCommands}^FSM^*R~X";
+
         $response = $this->client->runCommand($command);
 
-        return $response;
+        $xml = $this->parseXml($response);
+
+        if (! $xml instanceof SimpleXMLElement) {
+            return [
+                'mps_penalties' => [],
+                'refund_amount' => 0.0,
+                'penalty_amount' => 0.0,
+                'currency' => $this->getCurrency(),
+            ];
+        }
+
+        return VidecomPnrParser::parseRefundQuote($xml);
+    }
+
+    /**
+     * Execute a refund for a PNR.
+     *
+     * Command: *{PNR}^FCR1^FCC1^X1^FSM^REF*^RI{penaltyAmount}*R~X
+     * If penalty is 0 the RI part is omitted: *{PNR}^...^FSM^REF*^*R~X
+     *
+     * Returns a structured array with the plain-text response parsed.
+     *
+     * @return array{success: bool, raw_response: string, tickets_issued: array<int, string>}
+     */
+    public function refund(string $pnr, int $segmentCount, float $penaltyAmount): array
+    {
+        $segmentCommands = $this->buildRefundSegmentCommands($segmentCount);
+
+        $penaltyAmount = round(abs($penaltyAmount), 2);
+
+        if ($penaltyAmount > 0) {
+            $command = "*{$pnr}{$segmentCommands}^FSM^REF*^RI{$penaltyAmount}*R~X";
+        } else {
+            $command = "*{$pnr}{$segmentCommands}^FSM^REF*^*R~X";
+        }
+
+        $response = $this->client->runCommand($command);
+
+        $rawText = is_string($response) ? $response : (string) ($response->response ?? '');
+
+        $this->dispatchDelayedAirlineBalanceUpdate();
+
+        return VidecomPnrParser::parseRefundExecuteResponse($rawText);
+    }
+
+    /**
+     * Get a change quote (outstanding amount) for swapping a segment without committing.
+     *
+     * Command: *{RLOC}^X{segLine}^{newSegmentCode}^FG^FS1^MB^*R~X
+     *
+     * @return array{outstanding_amount: float, currency: string, change_type: string, raw_response: string}
+     */
+    public function changeQuote(string $rloc, int $segmentLine, string $newSegmentCode): array
+    {
+        $command = "*{$rloc}^X{$segmentLine}^{$newSegmentCode}^FG^FS1^MB^*R~X";
+
+        $response = $this->client->runCommand($command);
+
+        $rawText = is_string($response) ? $response : (string) ($response->response ?? '');
+
+        $xml = $this->parseXml($response);
+
+        if ($xml instanceof SimpleXMLElement) {
+            $quote = VidecomPnrParser::parseChangeQuote($xml);
+
+            return array_merge($quote, ['change_type' => 'unknown']);
+        }
+
+        // Videcom sometimes returns plain text instead of XML, e.g.:
+        //   "Amount outstanding LYD390"
+        //   "Amount outstanding 390 LYD"
+        // Try to extract the amount and currency from the plain-text response.
+        $parsed = $this->parsePlainTextChangeQuote($rawText);
+
+        return [
+            'outstanding_amount' => $parsed['amount'],
+            'currency' => $parsed['currency'] ?: $this->getCurrency(),
+            'change_type' => 'unknown',
+            'raw_response' => $rawText,
+        ];
+    }
+
+    /**
+     * Extract outstanding amount and currency from a plain-text Videcom response.
+     *
+     * Handles patterns like:
+     *   "Amount outstanding LYD390"
+     *   "Amount outstanding 390 LYD"
+     *   "Amount outstanding LYD 390.00"
+     *
+     * @return array{amount: float, currency: string}
+     */
+    protected function parsePlainTextChangeQuote(string $text): array
+    {
+        // Explicit "no charge" responses — return zero immediately.
+        $normalized = strtolower(trim($text));
+        if (
+            str_contains($normalized, 'no amount outstanding')
+            || str_contains($normalized, 'no outstanding')
+            || $normalized === '0'
+        ) {
+            return ['amount' => 0.0, 'currency' => ''];
+        }
+
+        // Pattern 1: currency before amount — "LYD390" or "LYD 390.00"
+        if (preg_match('/([A-Z]{3})\s*([\d]+(?:\.\d+)?)/i', $text, $m)) {
+            return [
+                'amount' => (float) $m[2],
+                'currency' => strtoupper($m[1]),
+            ];
+        }
+
+        // Pattern 2: amount before currency — "390 LYD" or "390.00 LYD"
+        if (preg_match('/([\d]+(?:\.\d+)?)\s*([A-Z]{3})/i', $text, $m)) {
+            return [
+                'amount' => (float) $m[1],
+                'currency' => strtoupper($m[2]),
+            ];
+        }
+
+        // Pattern 3: bare number — "Amount outstanding 390"
+        if (preg_match('/([\d]+(?:\.\d+)?)/', $text, $m)) {
+            return [
+                'amount' => (float) $m[1],
+                'currency' => '',
+            ];
+        }
+
+        return ['amount' => 0.0, 'currency' => ''];
+    }
+
+    /**
+     * Confirm a ticket change (revalidation or reissue).
+     *
+     * The caller must pass the correct change_type:
+     *   - 'revalidation': same origin + destination + booking class → REZT*R
+     *   - 'reissue':      different route or class              → EZV*R^EZT*R
+     *
+     * @return array{success: bool, change_type: string, raw_response: string}
+     */
+    public function confirmChange(string $rloc, int $segmentLine, string $newSegmentCode, string $changeType, float $outstandingAmount = 0.0): array
+    {
+        // Only include ^MB (fare recalculation) when there is an outstanding charge.
+        // When the change is free ("No Amount Outstanding"), omit ^MB entirely.
+        $mb = $outstandingAmount > 0 ? '^MB' : '';
+
+        $base = "*{$rloc}^X{$segmentLine}^{$newSegmentCode}^FG^FS1{$mb}";
+
+        $command = match ($changeType) {
+            'revalidation' => "{$base}^REZT*R^*R~X",
+            'reissue' => "{$base}^EZV*R^EZT*R^*R~X",
+            default => "{$base}^REZT*R^*R~X",
+        };
+
+        $response = $this->client->runCommand($command);
+
+        $rawText = is_string($response) ? $response : (string) ($response->response ?? '');
+
+        $this->dispatchDelayedAirlineBalanceUpdate();
+
+        $result = VidecomPnrParser::parseChangeConfirmResponse($rawText);
+
+        return array_merge($result, ['change_type' => $changeType]);
     }
 
     /**
      * Change a booking.
+     *
+     * @deprecated Use changeQuote() + confirmChange() instead.
      */
     public function change(string $rloc, array $changes)
     {

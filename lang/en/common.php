@@ -369,7 +369,7 @@ return [
     'booking_details' => 'Booking Details',
     'payment_details' => 'Payment Details',
     'booking_confirmation' => 'Booking Confirmation',
-
+    'modify_search' => 'Modify Search',
     // Currencies
     'currency' => 'Currency',
     'lyd' => 'L.D',

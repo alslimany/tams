@@ -2,6 +2,9 @@
 
 namespace App\Models;
 
+use Bavix\Wallet\Interfaces\Wallet as WalletInterface;
+use Bavix\Wallet\Traits\HasWalletFloat;
+use Bavix\Wallet\Traits\HasWallets;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -10,15 +13,22 @@ use Stancl\Tenancy\Database\Concerns\HasDatabase;
 use Stancl\Tenancy\Database\Concerns\HasDomains;
 use Stancl\Tenancy\Database\Models\Tenant as BaseTenant;
 
-class Tenant extends BaseTenant implements TenantWithDatabase
+class Tenant extends BaseTenant implements TenantWithDatabase, WalletInterface
 {
     use HasDatabase, HasDomains;
+    use HasWalletFloat, HasWallets;
+
+    /** @var array<string, mixed> */
+    protected $attributes = [
+        'type' => 'direct',
+    ];
 
     public static function getCustomColumns(): array
     {
         return [
             'id',
             'path',
+            'type',
             'agency_number',
             'company_name',
             'owner_name',
@@ -39,6 +49,7 @@ class Tenant extends BaseTenant implements TenantWithDatabase
     protected function casts(): array
     {
         return [
+            'type' => 'string',
             'settings' => 'array',
             'last_activity_at' => 'datetime',
             'is_default_agency' => 'boolean',

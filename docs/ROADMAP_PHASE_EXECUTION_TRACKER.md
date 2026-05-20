@@ -18,10 +18,10 @@ This document tracks the next execution phases after the core tourism services r
 |---|---|---:|---|
 | 1 | Merchant Join Workflow | Completed | Allow merchants to join agency networks through invitations and choose enabled provider APIs. |
 | 2 | Merchant Product Tests | Completed | Validate flight, hotel, and insurance flows from merchant side with dual-wallet rules. |
-| 3 | Order Page Redesign | Pending | Make order/item information clearer and easier to operate for all product types. |
-| 4 | Notifications & WhatsApp | Pending | Add email and WhatsApp notifications for booking, issuance, cancellation, and files. |
-| 5 | PDF / Printable Documents | Pending | Add printable ticket, hotel voucher, insurance policy, item PDF, and full order PDF. |
-| 6 | Tenant External APIs | Pending | Expose secure tenant APIs for agency integrations and mobile apps. |
+| 3 | Order Page Redesign + Accounting UI | Completed | Make order/item information clearer and easier to operate for all product types. Build the full accounting section UI (19 pages). |
+| 4 | Notifications & WhatsApp | Completed | Add email and WhatsApp notifications for booking, issuance, cancellation, and files. |
+| 5 | PDF / Printable Documents | Completed | Add printable ticket, hotel voucher, insurance policy, item PDF, and full order PDF. |
+| 6 | Tenant External APIs | Completed | Expose secure tenant APIs for agency integrations and mobile apps. |
 
 ---
 
@@ -120,19 +120,87 @@ Validate that merchants can search, price, issue/book, and cancel/request cancel
 
 ---
 
-## Phase 3 — Order Page Redesign
+## Phase 3 — Order Page Redesign + Accounting UI
 
 ### Goal
 
-Make order pages easier to use and make item information clear by product type.
+Make order pages easier to use and make item information clear by product type. Build the full accounting section UI covering 19 pages across wallets, ledger, reports, settlement, and settings.
 
-### Checklist
+### Part A — Order Page Redesign
 
-- [ ] Redesign order summary hierarchy.
-- [ ] Separate item cards for flight, hotel, insurance.
-- [ ] Improve action menus by status and role.
-- [ ] Show correct provider/source context for agency and merchant orders.
-- [ ] Prepare data layout for PDFs.
+- [x] Redesign order summary hierarchy fully
+- [x] Improve action menus by status and role
+- [x] Show correct provider/source context for agency and merchant orders
+- [x] Prepare data layout for PDFs
+
+### Part B — Accounting Section UI
+
+**Build order (each step depends on the previous):**
+
+#### Step 1 — Foundation
+- [x] `AccountingLayout` with persistent left sidebar (ScrollArea nav, active state, mobile Sheet collapse)
+- [x] `AccountingBreadcrumb` component
+- [x] `PageHeader` component (title + subtitle + action slot)
+- [x] Global reusable components: `AccountingKpiCard`, `JournalEntrySheet`, `AmountDisplay`, `PeriodSelector`, `ExportButton`
+- [x] Backend route group `routes/accounting.php` with all 19 routes
+- [x] Permission middleware: `accounting.view` / `accounting.manage`
+
+#### Step 2 — Dashboard (Page 1)
+- [x] `AccountingDashboardController@index` — wallet summary, revenue, margin, VAT, receivables, recent journal entries, reconciliation status, alerts
+- [x] `Pages/Accounting/Dashboard.tsx` — 4 KPI cards, provider wallet scroll cards, revenue bar chart, receivables/payables card, recent entries table, alert bar, period selector
+
+#### Step 3 — Wallets (Pages 2–4)
+- [x] `WalletController@index` — all tenant wallets list
+- [x] `Pages/Accounting/Wallets/Index.tsx` — table with type badges, ledger account, balance, last activity
+- [x] `WalletController@show` — single wallet with paginated transactions + 30-day balance history
+- [x] `Pages/Accounting/Wallets/Show.tsx` — balance chart, transactions table, ledger Sheet link, order link, meta HoverCard
+- [x] `WalletController@deposit` — fund wallet (POST)
+- [x] Deposit `Dialog` inside `Show.tsx` — amount, currency, reference, notes, funding source
+
+#### Step 4 — Provider Wallets (Page 5)
+- [x] `ProviderWalletController@index` + `@show`
+- [x] `Pages/Accounting/Providers/Index.tsx` — grid cards with progress bar, low-balance badge, fund button
+- [x] `Pages/Accounting/Providers/Show.tsx` — provider wallet detail (reuses wallet show layout)
+
+#### Step 5 — Journal Entries (Page 6) + JournalEntrySheet
+- [x] `LedgerController@journalEntries` — paginated entries with lines, filters
+- [x] `Pages/Accounting/Ledger/JournalEntries.tsx` — expandable rows, journal badges, balanced indicator, CSV export
+- [x] `JournalEntrySheet` global component — right side panel showing full entry given a reference
+
+#### Step 6 — Trial Balance (Page 7)
+- [x] `LedgerController@trialBalance` — period-based trial balance from `TrialBalanceReport`
+- [x] `Pages/Accounting/Ledger/TrialBalance.tsx` — grouped by account type, totals row, balanced badge, print + PDF export
+
+#### Step 7 — Chart of Accounts + Account Detail (Pages 8–9)
+- [x] `LedgerController@chartOfAccounts` + `@accountDetail`
+- [x] `Pages/Accounting/Ledger/ChartOfAccounts.tsx` — tree hierarchy, current balance, link to detail
+- [x] `Pages/Accounting/Ledger/AccountDetail.tsx` — opening balance, running balance per line, closing balance, period filter
+
+#### Step 8 — Issuance History (Page 10)
+- [x] `IssuanceHistoryController@index` — paginated issuances with financial summary
+- [x] `Pages/Accounting/Issuance/History.tsx` — 4 KPI cards, filterable table, margin colour-coding, journal + order links
+
+#### Step 9 — Settlement (Pages 11–12)
+- [x] `SettlementController@index` + `@aging` + `@batch` + `@run`
+- [x] `Pages/Accounting/Settlement/Index.tsx` — network: receivables + recent batches + run settlement; merchant: payables view
+- [x] `Pages/Accounting/Settlement/MerchantAging.tsx` — aging buckets table, colour-coded 61–90 / 90+ columns, CSV export
+- [x] `Pages/Accounting/Settlement/BatchDetail.tsx` — single settlement batch detail
+
+#### Step 10 — Cancellations & Voids (Page 13)
+- [x] `CancellationController@index` — paginated cancellation audit log
+- [x] `Pages/Accounting/Cancellations/Index.tsx` — table with fee, net refunded, provider restored badge, reversal journal link
+
+#### Step 11 — Reports (Pages 14–18)
+- [x] `ReportController@index` + `@revenue` + `@grossMargin` + `@vat` + `@reconciliation`
+- [x] `Pages/Accounting/Reports/Index.tsx` — hub with 6 report cards
+- [x] `Pages/Accounting/Reports/Revenue.tsx` — KPI cards, stacked bar chart, per-product table, export
+- [x] `Pages/Accounting/Reports/GrossMargin.tsx` — margin % line chart, colour-coded table, totals
+- [x] `Pages/Accounting/Reports/VATSummary.tsx` — per-transaction VAT table, filing export
+- [x] `Pages/Accounting/Reports/Reconciliation.tsx` — wallet vs ledger comparison, mismatch highlighting, re-run button
+
+#### Step 12 — Accounting Settings (Page 19)
+- [x] `AccountingSettingsController@index` + `@update`
+- [x] `Pages/Accounting/Settings/Index.tsx` — tabbed: General, Wallet Thresholds, Revenue Recognition (read-only), Monthly Close, Reconciliation
 
 ---
 
@@ -144,16 +212,16 @@ Add transactional notifications through email and WhatsApp.
 
 ### Checklist
 
-- [ ] Notification events for order created, ticket issued, hotel booked, policy issued.
+- [x] Notification events for order created, ticket issued, hotel booked, policy issued.
 - [ ] Cancellation requested/approved/finalized notifications.
-- [ ] WhatsApp text message integration.
+- [x] WhatsApp text message integration.
 - [ ] WhatsApp file sending integration for generated PDFs.
-- [ ] Queue notifications after DB commit.
-- [ ] Notification preferences and logs.
+- [x] Queue notifications after DB commit.
+- [x] Notification preferences and logs.
 
 ---
 
-## Phase 5 — PDF / Printable Documents
+## Phase 5 — PDF / Printable Documents ✅ Completed
 
 ### Goal
 
@@ -161,11 +229,11 @@ Generate printable documents for order items and full orders.
 
 ### Checklist
 
-- [ ] Flight ticket PDF.
-- [ ] Hotel voucher / booking confirmation PDF.
-- [ ] Insurance policy PDF integration or generated fallback.
-- [ ] Full order PDF.
-- [ ] Download, print, and WhatsApp-send actions.
+- [x] Flight ticket PDF.
+- [x] Hotel voucher / booking confirmation PDF.
+- [x] Insurance policy PDF integration or generated fallback.
+- [x] Full order PDF.
+- [x] Download, print, and WhatsApp-send actions.
 
 ---
 

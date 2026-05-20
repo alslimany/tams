@@ -1,0 +1,17 @@
+{
+    "_hash": "7ec970788fb833ae4666f3d8334f182e2a48cd3ebede911869305aeb440d7512",
+    "patches": {
+        "abivia/ledger": [
+            {
+                "package": "abivia/ledger",
+                "description": "Fix CarbonImmutable TypeError in Revision::create()",
+                "url": "patches/abivia/ledger/fix-carbon-immutable.patch",
+                "sha256": "35c283a8aa2f19e99cd42b4b7737a551f32363b73247bee5d9711b218216c24b",
+                "depth": 1,
+                "extra": {
+                    "provenance": "root"
+                }
+            }
+        ]
+    }
+}

@@ -43,4 +43,9 @@ return [
         'agent_id' => env('ALBARAKA_AGENT_ID'),
     ],
 
+    'advly' => [
+        'token' => env('ADVLY_TOKEN'),
+        'base_url' => env('ADVLY_BASE_URL', 'https://adv.ly/api/v1'),
+    ],
+
 ];

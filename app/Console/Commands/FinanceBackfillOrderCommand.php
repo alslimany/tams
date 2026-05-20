@@ -10,6 +10,7 @@ use App\Actions\Finance\ProcessWalletTransactions;
 use App\Models\Tenant;
 use App\Models\Tenant\Order;
 use App\Models\User;
+use App\Services\Accounting\LedgerPostingService;
 use Illuminate\Console\Command;
 use RuntimeException;
 
@@ -89,8 +90,10 @@ class FinanceBackfillOrderCommand extends Command
         }
 
         if (! (bool) $this->option('skip-ledger')) {
+            $order = $order->fresh('items');
             app(InitializeTenantLedger::class)->execute((string) $order->currency);
-            app(PostToLedger::class)->execute($order, includeOwnCredentials: true);
+            $this->reverseOrphanedLedgerEntries($order);
+            app(PostToLedger::class)->execute($order->fresh('items'), includeOwnCredentials: true);
         }
 
         $order = $order->fresh('items');
@@ -104,6 +107,45 @@ class FinanceBackfillOrderCommand extends Command
         $this->line('Ledger-linked items: '.(string) $order->items->filter(fn ($item): bool => $item->ledger_entry_id !== null)->count());
 
         return self::SUCCESS;
+    }
+
+    /**
+     * Find abivia journal entries that reference items in this order by the
+     * "order:{id}|item:{item_id}" pattern stored in the entry's extra field,
+     * but where the item's ledger_entry_id is still null (orphaned entries).
+     *
+     * For each orphaned entry, post a reversal so the ledger stays balanced,
+     * then PostToLedger will re-post the corrected entry.
+     */
+    protected function reverseOrphanedLedgerEntries(Order $order): void
+    {
+        $ledgerService = app(LedgerPostingService::class);
+        $reversed = 0;
+
+        foreach ($order->items as $item) {
+            if ($item->ledger_entry_id !== null) {
+                continue;
+            }
+
+            $reference = "order:{$order->id}|item:{$item->id}";
+
+            // Search abivia for entries whose extra JSON contains this reference.
+            $orphan = $ledgerService->findOrphanedEntry($reference);
+
+            if (! $orphan) {
+                continue;
+            }
+
+            $ledgerService->postMirrorReversal($orphan, (string) $order->id);
+
+            $reversed++;
+
+            $this->line("  Reversed orphaned ledger entry #{$orphan->journalEntryId} for item {$item->id}");
+        }
+
+        if ($reversed > 0) {
+            $this->line("Reversed {$reversed} orphaned ledger entr".($reversed === 1 ? 'y' : 'ies').'.');
+        }
     }
 
     protected function resolveOrder(): Order

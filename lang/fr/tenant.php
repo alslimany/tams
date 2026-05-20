@@ -19,5 +19,11 @@ return [
         'taxes' => 'Taxes',
         'wallet_transactions' => 'Transactions portefeuille',
         'reconciliation' => 'Rapprochement',
+        'accounting' => 'Comptabilité',
+        'accounting_dashboard' => 'Tableau de bord comptable',
+        'accounting_wallets' => 'Portefeuilles & soldes',
+        'accounting_providers' => 'Comptes fournisseurs',
+        'accounting_journal' => 'Écritures comptables',
+        'accounting_reports' => 'Rapports',
     ],
 ];

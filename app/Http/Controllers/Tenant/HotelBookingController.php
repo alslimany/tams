@@ -13,6 +13,8 @@ use App\Models\Tenant\Order;
 use App\Models\Tenant\OrderItem;
 use App\Models\Tenant\TenantHotelProvider;
 use App\Models\User;
+use App\Notifications\Orders\HotelBooked;
+use App\Notifications\Orders\OrderContact;
 use App\Services\AgencyNetwork\MerchantAgencyWalletManager;
 use App\Services\Hotels\HotelApiException;
 use App\Services\Hotels\HotelProviderManager;
@@ -299,6 +301,12 @@ class HotelBookingController extends Controller
             report($exception);
 
             return back()->with('error', $exception instanceof HotelApiException ? $exception->getMessage() : 'Unable to complete hotel booking right now.');
+        }
+
+        $contact = OrderContact::fromOrder($order);
+        if (filled($contact->email) || filled($contact->phone)) {
+            $order->loadMissing('items');
+            $contact->notify(new HotelBooked($order, $order->items->first()));
         }
 
         return redirect()->route('orders.show', $order)->with('success', 'Hotel booking submitted successfully.');

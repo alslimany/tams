@@ -3,7 +3,17 @@
 declare(strict_types=1);
 
 use App\Http\Controllers\LanguageController;
+use App\Http\Controllers\Tenant\Accounting\AccountingDashboardController;
+use App\Http\Controllers\Tenant\Accounting\AccountingReportController;
+use App\Http\Controllers\Tenant\Accounting\AccountingSettingsController;
+use App\Http\Controllers\Tenant\Accounting\CancellationAuditController;
+use App\Http\Controllers\Tenant\Accounting\IssuanceHistoryController;
+use App\Http\Controllers\Tenant\Accounting\LedgerController;
+use App\Http\Controllers\Tenant\Accounting\ProviderWalletController;
+use App\Http\Controllers\Tenant\Accounting\SettlementLedgerController;
+use App\Http\Controllers\Tenant\Accounting\WalletLedgerController;
 use App\Http\Controllers\Tenant\AirlineConfigController;
+use App\Http\Controllers\Tenant\ApiTokenController;
 use App\Http\Controllers\Tenant\BookingController;
 use App\Http\Controllers\Tenant\CompulsoryInsuranceController;
 use App\Http\Controllers\Tenant\DashboardController;
@@ -57,8 +67,12 @@ Route::prefix(config('tenancy.tenant_path_prefix', 'agency').'/{tenant}')->group
             Route::post('flights', [BookingController::class, 'store'])->middleware('wallet.balance')->name('flights.store');
             Route::get('flights/{booking}', [BookingController::class, 'show'])->name('flights.show');
             Route::get('flights/{booking}/completed', [TicketController::class, 'completed'])->name('tickets.completed');
+            Route::get('flights/{booking}/tickets/{ticket}/change-offers', [BookingController::class, 'changeOffers'])->name('flights.change-offers');
             Route::get('orders', [OrderController::class, 'index'])->name('orders.index');
             Route::get('orders/{order}/flight-items/{item}/ticket-pdf', [OrderController::class, 'flightTicketPdf'])->name('orders.flight-items.ticket-pdf');
+            Route::get('orders/{order}/hotel-items/{item}/voucher-pdf', [OrderController::class, 'hotelVoucherPdf'])->name('orders.hotel-items.voucher-pdf');
+            Route::get('orders/{order}/insurance-items/{item}/policy-pdf', [OrderController::class, 'insurancePolicyPdf'])->name('orders.insurance-items.policy-pdf');
+            Route::get('orders/{order}/summary-pdf', [OrderController::class, 'orderSummaryPdf'])->name('orders.summary-pdf');
             Route::get('orders/{order}', [OrderController::class, 'show'])->name('orders.show');
 
             // Hotels
@@ -123,7 +137,12 @@ Route::prefix(config('tenancy.tenant_path_prefix', 'agency').'/{tenant}')->group
             Route::middleware('role:manager')->group(function (): void {
                 Route::post('flights/{booking}/tickets/issue', [TicketController::class, 'issue'])->name('tickets.issue');
                 Route::post('flights/{booking}/tickets/{ticket}/void', [TicketController::class, 'void'])->name('tickets.void');
+                Route::get('flights/{booking}/tickets/{ticket}/refund-quote', [TicketController::class, 'refundQuote'])->name('tickets.refundQuote');
                 Route::post('flights/{booking}/tickets/{ticket}/refund', [TicketController::class, 'refund'])->name('tickets.refund');
+                Route::get('flights/{booking}/tickets/{ticket}/change-quote', [TicketController::class, 'changeQuote'])->name('tickets.changeQuote');
+                Route::post('flights/{booking}/tickets/{ticket}/change-review', [TicketController::class, 'changeReview'])->name('tickets.changeReview');
+                Route::get('flights/{booking}/tickets/{ticket}/change-confirmation', [TicketController::class, 'changeConfirmation'])->name('tickets.changeConfirmation');
+                Route::post('flights/{booking}/tickets/{ticket}/change-confirm', [TicketController::class, 'confirmChange'])->name('tickets.confirmChange');
             });
 
             // User Management (Admin Only)
@@ -160,7 +179,55 @@ Route::prefix(config('tenancy.tenant_path_prefix', 'agency').'/{tenant}')->group
                 Route::post('settings/hotels', [HotelConfigController::class, 'store'])->name('settings.hotels.store');
                 Route::post('settings/hotels/deposit', [HotelConfigController::class, 'deposit'])->name('settings.hotels.deposit');
                 Route::post('settings/hotels/credit-check', [HotelConfigController::class, 'syncCredit'])->name('settings.hotels.credit-check');
+
+                // API Token Management
+                Route::get('settings/api-tokens', [ApiTokenController::class, 'index'])->name('settings.api-tokens.index');
+                Route::post('settings/api-tokens', [ApiTokenController::class, 'store'])->name('settings.api-tokens.store');
+                Route::delete('settings/api-tokens/{tokenId}', [ApiTokenController::class, 'destroy'])->name('settings.api-tokens.destroy');
             });
+        });
+
+        // Accounting
+        Route::prefix('accounting')->name('accounting.')->middleware('role:admin')->group(function (): void {
+            Route::get('/', [AccountingDashboardController::class, 'index'])->name('dashboard');
+
+            // Wallets
+            Route::get('/wallets', [WalletLedgerController::class, 'index'])->name('wallets.index');
+            Route::get('/wallets/{wallet}', [WalletLedgerController::class, 'show'])->name('wallets.show');
+            Route::post('/wallets/{wallet}/deposit', [WalletLedgerController::class, 'deposit'])->name('wallets.deposit');
+
+            // Provider wallets
+            Route::get('/providers', [ProviderWalletController::class, 'index'])->name('providers.index');
+            Route::get('/providers/{provider}', [ProviderWalletController::class, 'show'])->name('providers.show');
+
+            // Ledger
+            Route::get('/ledger/journal', [LedgerController::class, 'journalEntries'])->name('ledger.journal');
+            Route::get('/ledger/trial-balance', [LedgerController::class, 'trialBalance'])->name('ledger.trial-balance');
+            Route::get('/ledger/chart-of-accounts', [LedgerController::class, 'chartOfAccounts'])->name('ledger.coa');
+            Route::get('/ledger/accounts/{code}', [LedgerController::class, 'accountDetail'])->name('ledger.account');
+
+            // Issuance history
+            Route::get('/issuances', [IssuanceHistoryController::class, 'index'])->name('issuances.index');
+
+            // Settlement
+            Route::get('/settlement', [SettlementLedgerController::class, 'index'])->name('settlement.index');
+            Route::get('/settlement/aging', [SettlementLedgerController::class, 'aging'])->name('settlement.aging');
+            Route::get('/settlement/{batch}', [SettlementLedgerController::class, 'batch'])->name('settlement.batch');
+            Route::post('/settlement/run', [SettlementLedgerController::class, 'run'])->name('settlement.run');
+
+            // Cancellations
+            Route::get('/cancellations', [CancellationAuditController::class, 'index'])->name('cancellations.index');
+
+            // Reports
+            Route::get('/reports', [AccountingReportController::class, 'index'])->name('reports.index');
+            Route::get('/reports/revenue', [AccountingReportController::class, 'revenue'])->name('reports.revenue');
+            Route::get('/reports/gross-margin', [AccountingReportController::class, 'grossMargin'])->name('reports.gross-margin');
+            Route::get('/reports/vat', [AccountingReportController::class, 'vat'])->name('reports.vat');
+            Route::get('/reports/reconciliation', [AccountingReportController::class, 'reconciliation'])->name('reports.reconciliation');
+
+            // Settings
+            Route::get('/settings', [AccountingSettingsController::class, 'index'])->name('settings.index');
+            Route::put('/settings', [AccountingSettingsController::class, 'update'])->name('settings.update');
         });
 
         require __DIR__.'/settings.php';

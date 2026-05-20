@@ -11,7 +11,18 @@ use Illuminate\Validation\ValidationException;
 class AuthController extends Controller
 {
     /**
+     * Valid token abilities that can be requested.
+     *
+     * @var array<string>
+     */
+    public const ABILITIES = ['read', 'write', 'issue', 'report'];
+
+    /**
      * Issue an API token from email + password.
+     *
+     * Pass an optional `abilities` array to scope the token.
+     * Valid values: read, write, issue, report.
+     * Omitting abilities (or passing ['*']) grants full access.
      */
     public function login(Request $request): JsonResponse
     {
@@ -19,6 +30,8 @@ class AuthController extends Controller
             'email' => ['required', 'string', 'email'],
             'password' => ['required', 'string'],
             'device_name' => ['required', 'string', 'max:255'],
+            'abilities' => ['sometimes', 'array'],
+            'abilities.*' => ['string', 'in:'.implode(',', self::ABILITIES)],
         ]);
 
         $user = config('auth.providers.users.model')::where('email', $validated['email'])->first();
@@ -33,10 +46,12 @@ class AuthController extends Controller
             return $this->error('Your account has been deactivated.', 403);
         }
 
-        $token = $user->createToken($validated['device_name']);
+        $abilities = $validated['abilities'] ?? ['*'];
+        $token = $user->createToken($validated['device_name'], $abilities);
 
         return $this->success([
             'token' => $token->plainTextToken,
+            'abilities' => $abilities,
             'user' => $this->formatUser($user),
         ], 'Token created successfully.');
     }
@@ -80,15 +95,14 @@ class AuthController extends Controller
      */
     public function tokens(Request $request): JsonResponse
     {
-        $tokens = $request->user()->tokens->map(function ($token) {
-            return [
-                'id' => $token->id,
-                'name' => $token->name,
-                'abilities' => $token->abilities,
-                'last_used_at' => $token->last_used_at?->toISOString(),
-                'created_at' => $token->created_at->toISOString(),
-            ];
-        });
+        $tokens = $request->user()->tokens->map(fn ($token) => [
+            'id' => $token->id,
+            'name' => $token->name,
+            'abilities' => $token->abilities,
+            'last_used_at' => $token->last_used_at?->toISOString(),
+            'expires_at' => $token->expires_at?->toISOString(),
+            'created_at' => $token->created_at->toISOString(),
+        ]);
 
         return $this->success($tokens);
     }

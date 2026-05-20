@@ -1,8 +1,10 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link, usePage } from '@inertiajs/react';
 import {
     BarChart3Icon,
     BookOpenCheckIcon,
+    BookTextIcon,
+    CalculatorIcon,
     LayoutDashboardIcon,
     LogOutIcon,
     PlaneTakeoffIcon,
@@ -18,6 +20,7 @@ import {
     UsersIcon,
     WalletIcon,
     Share2Icon,
+    KeyRoundIcon,
 } from 'lucide-react';
 import { Toaster, toast } from 'sonner';
 
@@ -47,6 +50,13 @@ export default function TenantLayout({ children }) {
 
     const isAdmin = auth.user?.role === 'admin';
     const canManageProviders = agencySettings?.can_manage_providers ?? true;
+
+    const isAccountingPage = currentPath.includes('/accounting');
+    const [sidebarOpen, setSidebarOpen] = useState(!isAccountingPage);
+
+    useEffect(() => {
+        setSidebarOpen(!isAccountingPage);
+    }, [isAccountingPage]);
 
     useEffect(() => {
         if (flash?.success) {
@@ -97,6 +107,7 @@ export default function TenantLayout({ children }) {
         { name: t('tenant.nav.hotel_config'), route: 'settings.hotels.index', icon: HotelIcon },
         { name: t('tenant.nav.insurance_config'), route: 'settings.insurance.index', icon: ShieldIcon },
         { name: t('tenant.nav.general_settings'), route: 'settings.general.index', icon: SettingsIcon },
+        { name: 'API Tokens', route: 'settings.api-tokens.index', icon: KeyRoundIcon },
     ].filter((item) => isAdmin && hasRoute(item.route) && (item.showWhen !== false));
 
     const financeLinks = [
@@ -107,6 +118,14 @@ export default function TenantLayout({ children }) {
         { name: t('tenant.nav.wallet_transactions'), route: 'wallet.transactions', icon: WalletIcon },
         { name: t('tenant.nav.reconciliation'), route: 'reports.reconciliation', icon: ScaleIcon, showWhen: isAdmin },
     ].filter((item) => hasRoute(item.route) && (item.showWhen !== false));
+
+    const accountingLinks = [
+        { name: t('tenant.nav.accounting_dashboard'), route: 'accounting.dashboard', icon: CalculatorIcon },
+        { name: t('tenant.nav.accounting_wallets'), route: 'accounting.wallets.index', icon: WalletIcon },
+        { name: t('tenant.nav.accounting_providers'), route: 'accounting.providers.index', icon: Share2Icon },
+        { name: t('tenant.nav.accounting_journal'), route: 'accounting.ledger.journal', icon: BookTextIcon },
+        { name: t('tenant.nav.accounting_reports'), route: 'accounting.reports.index', icon: BarChart3Icon },
+    ].filter((item) => isAdmin && hasRoute(item.route));
 
     const accountLinks = [
         { name: t('common.profile'), route: 'profile.edit', icon: UserIcon },
@@ -159,7 +178,7 @@ export default function TenantLayout({ children }) {
                     <span>{t('tenant.default_agency_notice')}</span>
                 </div>
             )}
-            <SidebarProvider>
+            <SidebarProvider open={sidebarOpen} onOpenChange={setSidebarOpen}>
                 <Sidebar collapsible="icon" variant="inset" side={isRtl ? 'right' : 'left'} dir={isRtl ? 'rtl' : 'ltr'}>
                     <SidebarHeader>
                         <SidebarMenu>
@@ -179,6 +198,7 @@ export default function TenantLayout({ children }) {
                     <SidebarContent>
                         {renderNavSection(t('tenant.nav.workspace'), mainLinks)}
                         {renderNavSection(t('tenant.nav.finance'), financeLinks)}
+                        {renderNavSection(t('tenant.nav.accounting'), accountingLinks)}
                         {renderNavSection(t('tenant.nav.administration'), adminLinks)}
                         {renderNavSection(t('tenant.nav.account'), accountLinks)}
                     </SidebarContent>

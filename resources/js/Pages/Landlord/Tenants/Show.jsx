@@ -10,7 +10,7 @@ import { Input } from '@/Components/ui/Input';
 import { Label } from '@/Components/ui/Label';
 import { Select } from '@/Components/ui/Select';
 import { Switch } from '@/Components/ui/Switch';
-import { Plus, Pencil, Trash2, ShieldCheck, User as UserIcon, Mail, Key, Wallet, Star, ArrowUpCircle } from 'lucide-react';
+import { Plus, Pencil, Trash2, ShieldCheck, User as UserIcon, Mail, Key, Wallet, Star, ArrowUpCircle, DatabaseZap } from 'lucide-react';
 
 export default function Show({ tenantRecord }) {
     const [isUserModalOpen, setIsUserModalOpen] = useState(false);
@@ -111,6 +111,7 @@ export default function Show({ tenantRecord }) {
 
     const walletBalances = tenantRecord.wallet_balances || {};
     const recentWalletTransactions = tenantRecord.recent_wallet_transactions || [];
+    const databaseMissing = tenantRecord.snapshot?.database_missing === true;
 
     const formatAmount = (amount, currency) => {
         return `${Number(amount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency}`;
@@ -141,6 +142,16 @@ export default function Show({ tenantRecord }) {
             <Head title={tenantRecord.company_name || tenantRecord.id} />
 
             <div className="mx-auto max-w-7xl p-6 space-y-8">
+                {databaseMissing && (
+                    <div className="flex items-start gap-3 rounded-lg border border-red-300 bg-red-50 p-4 text-red-800">
+                        <DatabaseZap className="mt-0.5 h-5 w-5 shrink-0 text-red-600" />
+                        <div>
+                            <p className="font-semibold">Tenant database is missing</p>
+                            <p className="text-sm text-red-700">The SQLite database file for this tenant does not exist. Stats, users, providers, and bookings cannot be loaded. Re-run tenant migrations or restore the database to resolve this.</p>
+                        </div>
+                    </div>
+                )}
+
                 <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
                     <div>
                         <div className="flex items-center gap-3">
@@ -149,10 +160,15 @@ export default function Show({ tenantRecord }) {
                                 {tenantRecord.status}
                             </Badge>
                             {tenantRecord.is_default_agency && (
-                                <Badge variant="outline" className="border-amber-400/50 bg-amber-50 text-amber-700 font-bold">
-                                    <Star className="mr-1 h-3 w-3 fill-amber-400 text-amber-400" /> Master Agency
-                                </Badge>
-                            )}
+                                                <Badge variant="outline" className="border-amber-400/50 bg-amber-50 text-amber-700 font-bold">
+                                                    <Star className="mr-1 h-3 w-3 fill-amber-400 text-amber-400" /> Master Agency
+                                                </Badge>
+                                            )}
+                                            {databaseMissing && (
+                                                <Badge variant="outline" className="border-red-400/50 bg-red-50 text-red-700 font-bold gap-1">
+                                                    <DatabaseZap className="h-3.5 w-3.5" /> No Database
+                                                </Badge>
+                                            )}
                         </div>
                         <p className="text-muted-foreground">{tenantRecord.domains.join(', ')}</p>
                     </div>
@@ -178,17 +194,25 @@ export default function Show({ tenantRecord }) {
                     <Card>
                         <CardHeader><CardTitle className="text-sm font-black uppercase tracking-widest text-muted-foreground">Tenant Health</CardTitle></CardHeader>
                         <CardContent className="space-y-3 text-sm">
-                            <p><span className="font-semibold">Users:</span> {tenantRecord.snapshot.stats.users}</p>
-                            <p><span className="font-semibold">Active Users:</span> {tenantRecord.snapshot.stats.active_users}</p>
-                            <p><span className="font-semibold">Providers:</span> {tenantRecord.snapshot.stats.active_providers}/{tenantRecord.snapshot.stats.providers}</p>
-                            <p><span className="font-semibold">Bookings:</span> {tenantRecord.snapshot.stats.bookings}</p>
+                            {databaseMissing ? (
+                                <p className="text-muted-foreground italic">Unavailable — database missing.</p>
+                            ) : (
+                                <>
+                                    <p><span className="font-semibold">Users:</span> {tenantRecord.snapshot.stats.users}</p>
+                                    <p><span className="font-semibold">Active Users:</span> {tenantRecord.snapshot.stats.active_users}</p>
+                                    <p><span className="font-semibold">Providers:</span> {tenantRecord.snapshot.stats.active_providers}/{tenantRecord.snapshot.stats.providers}</p>
+                                    <p><span className="font-semibold">Bookings:</span> {tenantRecord.snapshot.stats.bookings}</p>
+                                </>
+                            )}
                         </CardContent>
                     </Card>
 
                     <Card>
                         <CardHeader><CardTitle className="text-sm font-black uppercase tracking-widest text-muted-foreground">Tenant Admin</CardTitle></CardHeader>
                         <CardContent className="space-y-3 text-sm">
-                            {tenantRecord.snapshot.admin_user ? (
+                            {databaseMissing ? (
+                                <p className="text-muted-foreground italic">Unavailable — database missing.</p>
+                            ) : tenantRecord.snapshot.admin_user ? (
                                 <>
                                     <p><span className="font-semibold">Name:</span> {tenantRecord.snapshot.admin_user.name}</p>
                                     <p><span className="font-semibold">Email:</span> {tenantRecord.snapshot.admin_user.email}</p>
@@ -342,7 +366,13 @@ export default function Show({ tenantRecord }) {
                                     </TableRow>
                                 </TableHeader>
                                 <TableBody>
-                                    {tenantRecord.snapshot.users.map((user) => (
+                                    {databaseMissing ? (
+                                        <TableRow>
+                                            <TableCell colSpan={5} className="py-10 text-center text-muted-foreground italic">
+                                                Unavailable — tenant database is missing.
+                                            </TableCell>
+                                        </TableRow>
+                                    ) : tenantRecord.snapshot.users.map((user) => (
                                         <TableRow key={user.id} className="hover:bg-muted/30">
                                             <TableCell>
                                                 <div className="flex flex-col">
@@ -375,7 +405,7 @@ export default function Show({ tenantRecord }) {
                                             </TableCell>
                                         </TableRow>
                                     ))}
-                                    {tenantRecord.snapshot.users.length === 0 && (
+                                    {!databaseMissing && tenantRecord.snapshot.users.length === 0 && (
                                         <TableRow>
                                             <TableCell colSpan={5} className="py-10 text-center text-muted-foreground">
                                                 No users found for this tenant.
@@ -400,7 +430,14 @@ export default function Show({ tenantRecord }) {
                                     </TableRow>
                                 </TableHeader>
                                 <TableBody>
-                                    {tenantRecord.snapshot.providers.map((provider) => (
+                                    {databaseMissing ? (
+                                        <TableRow>
+                                            <TableCell colSpan={4} className="py-6 text-center text-muted-foreground italic">
+                                                Unavailable — tenant database is missing.
+                                            </TableCell>
+                                        </TableRow>
+                                    ) : null}
+                                     {!databaseMissing && tenantRecord.snapshot.providers.map((provider) => (
                                         <TableRow key={provider.id} className="hover:bg-muted/30">
                                             <TableCell className="font-bold">{provider.airline_name}</TableCell>
                                             <TableCell>{provider.account_name}</TableCell>
@@ -430,7 +467,14 @@ export default function Show({ tenantRecord }) {
                                     </TableRow>
                                 </TableHeader>
                                 <TableBody>
-                                    {tenantRecord.snapshot.recent_bookings.map((booking) => (
+                                    {databaseMissing ? (
+                                        <TableRow>
+                                            <TableCell colSpan={4} className="py-6 text-center text-muted-foreground italic">
+                                                Unavailable — tenant database is missing.
+                                            </TableCell>
+                                        </TableRow>
+                                    ) : null}
+                                    {!databaseMissing && tenantRecord.snapshot.recent_bookings.map((booking) => (
                                         <TableRow key={booking.id} className="hover:bg-muted/30">
                                             <TableCell className="font-mono font-bold">{booking.pnr}</TableCell>
                                             <TableCell>

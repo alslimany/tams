@@ -136,6 +136,9 @@ XML);
     $ledgerPoster->shouldReceive('execute')->once();
     app()->instance(PostToLedger::class, $ledgerPoster);
 
+    // Fund the provider wallet so assertWalletBalanceBeforeIssue passes for own_credentials.
+    $state['provider']->getOrCreateCurrencyWallet('LYD')->depositFloat(1000, ['type' => 'seed_provider_balance']);
+
     $this->actingAs($state['user']);
 
     $baseUrl = 'http://'.$state['tenant']->domains->first()->domain;
@@ -208,6 +211,9 @@ XML);
     $ledgerPoster = \Mockery::mock(PostToLedger::class);
     $ledgerPoster->shouldReceive('execute')->once();
     app()->instance(PostToLedger::class, $ledgerPoster);
+
+    // Fund the provider wallet so assertWalletBalanceBeforeIssue passes for own_credentials.
+    $state['provider']->getOrCreateCurrencyWallet('LYD')->depositFloat(1000, ['type' => 'seed_provider_balance']);
 
     $this->actingAs($state['user']);
 

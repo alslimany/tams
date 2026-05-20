@@ -10,12 +10,9 @@ uses(Tests\TestCase::class, RefreshDatabase::class);
 test('it calculates domestic commission correctly', function () {
     $connection = config('tenancy.database.central_connection', config('database.default', 'sqlite'));
 
-    DB::connection($connection)->table('airport_countries')->insert([
-        'country_code' => 'LY',
-        'country_name' => 'Libya',
-        'is_active' => true,
-        'created_at' => now(),
-        'updated_at' => now(),
+    DB::connection($connection)->table('airports')->insert([
+        ['iata_code' => 'MJI', 'name' => json_encode(['en' => 'MJI']), 'city' => json_encode(['en' => 'MJI']), 'country' => json_encode(['en' => 'LY']), 'created_at' => now(), 'updated_at' => now()],
+        ['iata_code' => 'TIP', 'name' => json_encode(['en' => 'TIP']), 'city' => json_encode(['en' => 'TIP']), 'country' => json_encode(['en' => 'LY']), 'created_at' => now(), 'updated_at' => now()],
     ]);
 
     $calculator = app(CommissionCalculator::class);
@@ -25,8 +22,8 @@ test('it calculates domestic commission correctly', function () {
             'commission_domestic' => 5,
             'commission_international' => 10,
         ],
-        origin: 'LY',
-        destination: 'LY',
+        origin: 'MJI',
+        destination: 'TIP',
         netFare: 200,
     );
 
@@ -40,9 +37,9 @@ test('it calculates domestic commission correctly', function () {
 test('it calculates international commission correctly', function () {
     $connection = config('tenancy.database.central_connection', config('database.default', 'sqlite'));
 
-    DB::connection($connection)->table('airport_countries')->insert([
-        ['country_code' => 'LY', 'country_name' => 'Libya', 'is_active' => true, 'created_at' => now(), 'updated_at' => now()],
-        ['country_code' => 'TR', 'country_name' => 'Turkey', 'is_active' => true, 'created_at' => now(), 'updated_at' => now()],
+    DB::connection($connection)->table('airports')->insert([
+        ['iata_code' => 'MJI', 'name' => json_encode(['en' => 'MJI']), 'city' => json_encode(['en' => 'MJI']), 'country' => json_encode(['en' => 'LY']), 'created_at' => now(), 'updated_at' => now()],
+        ['iata_code' => 'IST', 'name' => json_encode(['en' => 'IST']), 'city' => json_encode(['en' => 'IST']), 'country' => json_encode(['en' => 'TR']), 'created_at' => now(), 'updated_at' => now()],
     ]);
 
     $calculator = app(CommissionCalculator::class);
@@ -52,8 +49,8 @@ test('it calculates international commission correctly', function () {
             'commission_domestic' => 5,
             'commission_international' => 10,
         ],
-        origin: 'LY',
-        destination: 'TR',
+        origin: 'MJI',
+        destination: 'IST',
         netFare: 199.99,
     );
 
@@ -65,9 +62,10 @@ test('it calculates international commission correctly', function () {
 test('it supports legacy domestic and international commission rate fields', function () {
     $connection = config('tenancy.database.central_connection', config('database.default', 'sqlite'));
 
-    DB::connection($connection)->table('airport_countries')->insert([
-        ['country_code' => 'LY', 'country_name' => 'Libya', 'is_active' => true, 'created_at' => now(), 'updated_at' => now()],
-        ['country_code' => 'EG', 'country_name' => 'Egypt', 'is_active' => true, 'created_at' => now(), 'updated_at' => now()],
+    DB::connection($connection)->table('airports')->insert([
+        ['iata_code' => 'MJI', 'name' => json_encode(['en' => 'MJI']), 'city' => json_encode(['en' => 'MJI']), 'country' => json_encode(['en' => 'LY']), 'created_at' => now(), 'updated_at' => now()],
+        ['iata_code' => 'CAI', 'name' => json_encode(['en' => 'CAI']), 'city' => json_encode(['en' => 'CAI']), 'country' => json_encode(['en' => 'EG']), 'created_at' => now(), 'updated_at' => now()],
+        ['iata_code' => 'TIP', 'name' => json_encode(['en' => 'TIP']), 'city' => json_encode(['en' => 'TIP']), 'country' => json_encode(['en' => 'LY']), 'created_at' => now(), 'updated_at' => now()],
     ]);
 
     $routeService = app(RouteInternationalService::class);
@@ -78,8 +76,8 @@ test('it supports legacy domestic and international commission rate fields', fun
             'domestic_commission_rate' => 4,
             'international_commission_rate' => 8,
         ],
-        origin: 'LY',
-        destination: 'LY',
+        origin: 'MJI',
+        destination: 'TIP',
         netFare: 100,
     );
 
@@ -88,8 +86,8 @@ test('it supports legacy domestic and international commission rate fields', fun
             'domestic_commission_rate' => 4,
             'international_commission_rate' => 8,
         ],
-        origin: 'LY',
-        destination: 'EG',
+        origin: 'MJI',
+        destination: 'CAI',
         netFare: 100,
     );
 

@@ -13,13 +13,10 @@ import {
 } from '@/Components/ui/dropdown-menu';
 import { formatMoney } from '@/lib/currency';
 import {
-    CalendarDays,
     HotelIcon,
-    MapPin,
     MoreHorizontal,
     Plane,
     ShieldCheck,
-    UserRound,
 } from 'lucide-react';
 
 const compactStatusVariant = (status) => {
@@ -28,7 +25,7 @@ const compactStatusVariant = (status) => {
     }
 
     if (['voided', 'refunded', 'cancelled'].includes(status)) {
-        return 'destructive';
+        return 'secondary';
     }
 
     return 'outline';
@@ -79,40 +76,64 @@ const stripHtml = (value) => String(value ?? '')
     .replace(/\s+/g, ' ')
     .trim();
 
-const CardShell = ({ icon: Icon, eyebrow, title, reference, status, total, currency, children, actions }) => (
-    <Card className="overflow-hidden border-slate-200 shadow-sm">
-        <CardHeader className="border-b bg-slate-50/70 px-4 py-3">
-            <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                <div className="min-w-0 space-y-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                        <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-white text-slate-700 ring-1 ring-slate-200">
-                            <Icon className="size-4" />
-                        </div>
-                        <p className="text-xs font-bold uppercase text-slate-500">{eyebrow}</p>
-                        <Badge variant={compactStatusVariant(status)} className="px-2 py-0.5 text-[10px] font-bold uppercase">
-                            {status ?? 'pending'}
-                        </Badge>
-                    </div>
-                    <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-                        <CardTitle className="text-base font-black text-slate-950">{title}</CardTitle>
-                        <span className="text-xs font-semibold text-slate-500">{reference}</span>
-                    </div>
-                </div>
+const providerLabel = (provider) => {
+    const map = {
+        videcom: 'Videcom',
+        albaraka: 'Al Baraka',
+        '3t': '3T Hotels',
+        hotelbeds: 'Hotelbeds',
+        amadeus: 'Amadeus',
+    };
 
-                <div className="flex items-start gap-2 md:items-center">
-                    <div className="text-left md:text-right">
-                        <p className="text-[10px] font-bold uppercase text-slate-500">Total</p>
-                        <p className="text-lg font-black tabular-nums text-slate-950">{formatMoney(total ?? 0, currency)}</p>
+    const key = String(provider ?? '').toLowerCase();
+
+    return map[key] ?? (provider ? String(provider) : null);
+};
+
+const CardShell = ({ icon: Icon, eyebrow, title, reference, status, total, currency, provider, children, actions }) => {
+    const { t } = useTranslation();
+    const providerName = providerLabel(provider);
+
+    return (
+        <Card className="overflow-hidden border-slate-200 shadow-sm">
+            <CardHeader className="border-b bg-slate-50/70 px-4 py-3">
+                <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                    <div className="min-w-0 space-y-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                            <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-white text-slate-700 ring-1 ring-slate-200">
+                                <Icon className="size-4" />
+                            </div>
+                            <p className="text-xs font-bold uppercase text-slate-500">{eyebrow}</p>
+                            <Badge variant={compactStatusVariant(status)} className="px-2 py-0.5 text-[10px] font-bold uppercase">
+                                {t(`orders.status_${status ?? 'pending'}`) || (status ?? 'pending')}
+                            </Badge>
+                            {providerName ? (
+                                <span className="rounded-md bg-slate-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-500 ring-1 ring-slate-200">
+                                    {providerName}
+                                </span>
+                            ) : null}
+                        </div>
+                        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                            <CardTitle className="text-base font-black text-slate-950">{title}</CardTitle>
+                            <span className="text-xs font-semibold text-slate-500">{reference}</span>
+                        </div>
                     </div>
-                    {actions}
+
+                    <div className="flex items-start gap-2 md:items-center">
+                        <div className="text-left md:text-right">
+                            <p className="text-[10px] font-bold uppercase text-slate-500">{t('orders.total')}</p>
+                            <p className="text-lg font-black tabular-nums text-slate-950">{formatMoney(total ?? 0, currency)}</p>
+                        </div>
+                        {actions}
+                    </div>
                 </div>
-            </div>
-        </CardHeader>
-        <CardContent className="p-4">
-            {children}
-        </CardContent>
-    </Card>
-);
+            </CardHeader>
+            <CardContent className="p-4">
+                {children}
+            </CardContent>
+        </Card>
+    );
+};
 
 const Field = ({ label, value, className = '' }) => (
     <div className={className}>
@@ -233,7 +254,7 @@ const AirlineLogo = ({ code }) => {
     );
 };
 
-export function FlightOrderItemCard({ item, canManage, onVoid, onPrint }) {
+export function FlightOrderItemCard({ item, canManage, onVoid, onPrint, onRefund, onChangeTicket }) {
     const { t } = useTranslation();
     const pnr = item.item_details ?? {};
     const itineraries = normalizeFlightItineraries(item);
@@ -241,54 +262,76 @@ export function FlightOrderItemCard({ item, canManage, onVoid, onPrint }) {
     const pnrCode = valueOrFallback(item.provider_reference, pnr.rloc, pnr.pnr);
     const total = Number(pnr.total_price ?? item.total_amount ?? item.total ?? 0);
     const currency = pnr.currency ?? item.currency;
+    const canVoid = item.status === 'issued' && (item.item_details?.is_voidable ?? true);
+    const canRefund = item.status === 'issued' && !(item.item_details?.is_voidable ?? true);
+    const canChange = item.status === 'issued';
+    const canPrint = ['issued', 'paid', 'confirmed'].includes(item.status);
 
     return (
-        <Card className="overflow-hidden border-slate-200 shadow-sm">
-            <CardHeader className="border-b bg-slate-50 px-4 py-3">
-                <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                    <div className="space-y-1">
-                        <div className="flex flex-wrap items-center gap-2">
-                            <CardTitle className="text-xl font-black text-slate-950">PNR: {pnrCode}</CardTitle>
-                            <Badge variant={compactStatusVariant(item.status)} className="px-3 py-1 font-black uppercase text-white tracking-wider">
-                                {item.status ?? 'pending'}
-                            </Badge>
-                        </div>
-                    </div>
-
-                    <div className="flex flex-wrap items-center gap-2">
-                        <p className="text-sm font-black tabular-nums text-slate-950">{formatMoney(total, currency)}</p>
-                        {canManage ? (
-                            <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                    <Button variant="outline" size="sm" className="h-8 px-2 text-xs">
-                                        {t('orders.manage')} <MoreHorizontal className="ms-1 size-4" />
-                                    </Button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end" className="w-44">
-                                    <DropdownMenuLabel>{t('orders.manage_ticket')}</DropdownMenuLabel>
-                                    <DropdownMenuSeparator />
-                                    <DropdownMenuItem disabled={item.status === 'voided'} onSelect={(event) => {
-                                        event.preventDefault();
-                                        onVoid(item, total, currency);
-                                    }}>
-                                        {t('orders.void_tickets')}
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem onSelect={(event) => {
-                                        event.preventDefault();
-                                        onPrint(item);
-                                    }}>
-                                        {t('orders.print_tickets')}
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem disabled>{t('orders.share_tickets')}</DropdownMenuItem>
-                                    <DropdownMenuItem disabled>{t('orders.refund_tickets')}</DropdownMenuItem>
-                                    <DropdownMenuItem disabled>{t('orders.change')}</DropdownMenuItem>
-                                </DropdownMenuContent>
-                            </DropdownMenu>
-                        ) : null}
-                    </div>
-                </div>
-            </CardHeader>
-            <CardContent className="space-y-3 p-4">
+        <CardShell
+            icon={Plane}
+            eyebrow={t('orders.product_flight')}
+            title={`${t('orders.pnr')}: ${pnrCode}`}
+            reference=""
+            status={item.status}
+            total={total}
+            currency={currency}
+            provider={item.provider}
+            actions={canManage ? (
+                <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                        <Button variant="outline" size="sm" className="h-8 px-2 text-xs">
+                            {t('orders.manage')} <MoreHorizontal className="ms-1 size-4" />
+                        </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-44">
+                        <DropdownMenuLabel>{t('orders.manage_ticket')}</DropdownMenuLabel>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem
+                            disabled={!canVoid}
+                            className={canVoid ? 'text-rose-600 focus:text-rose-700' : ''}
+                            onSelect={(event) => {
+                                event.preventDefault();
+                                onVoid(item, total, currency);
+                            }}
+                        >
+                            {t('orders.void_tickets')}
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                            disabled={!canPrint}
+                            onSelect={(event) => {
+                                event.preventDefault();
+                                onPrint(item);
+                            }}
+                        >
+                            {t('orders.print_tickets')}
+                        </DropdownMenuItem>
+                        <DropdownMenuItem disabled>{t('orders.share_tickets')}</DropdownMenuItem>
+                        <DropdownMenuItem
+                            disabled={!canRefund}
+                            className={canRefund ? 'text-amber-600 focus:text-amber-700' : ''}
+                            onSelect={(event) => {
+                                event.preventDefault();
+                                onRefund(item, total, currency);
+                            }}
+                        >
+                            {t('orders.refund_tickets')}
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                            disabled={!canChange}
+                            className={canChange ? 'text-sky-600 focus:text-sky-700' : ''}
+                            onSelect={(event) => {
+                                event.preventDefault();
+                                onChangeTicket(item);
+                            }}
+                        >
+                            {t('orders.change_ticket')}
+                        </DropdownMenuItem>
+                    </DropdownMenuContent>
+                </DropdownMenu>
+            ) : null}
+        >
+            <div className="space-y-3">
                 {itineraries.map((itinerary) => {
                     const coupons = itinerary.tickets;
                     const bookedBy = valueOrFallback(pnr.booked_by, item.item_details?.customer?.name, item.item_details?.customer?.full_name, item.item_details?.customer?.email);
@@ -361,8 +404,8 @@ export function FlightOrderItemCard({ item, canManage, onVoid, onPrint }) {
                         </div>
                     );
                 })}
-            </CardContent>
-        </Card>
+            </div>
+        </CardShell>
     );
 }
 
@@ -408,6 +451,8 @@ export function InsuranceOrderItemCard({ item, canManage, onCancel, onPrint, isA
         [policyDetails.car, policyDetails.metal_plate_number, policyDetails.chassis_number].filter(Boolean).join(' · '),
         [policyDetails.vehicle_owner_name, policyDetails.metalPlateNo].filter(Boolean).join(' · '),
     );
+    const canCancel = item.status === 'issued';
+    const canPrint = ['issued', 'paid', 'confirmed', 'cancellation'].includes(item.status);
 
     return (
         <CardShell
@@ -418,6 +463,7 @@ export function InsuranceOrderItemCard({ item, canManage, onCancel, onPrint, isA
             status={item.status}
             total={item.total_amount ?? item.total}
             currency={item.currency}
+            provider={item.provider}
             actions={canManage ? (
                 <DropdownMenu>
                     <DropdownMenuTrigger asChild>
@@ -428,16 +474,23 @@ export function InsuranceOrderItemCard({ item, canManage, onCancel, onPrint, isA
                     <DropdownMenuContent align="end" className="w-52">
                         <DropdownMenuLabel>{t('orders.manage_policy')}</DropdownMenuLabel>
                         <DropdownMenuSeparator />
-                        <DropdownMenuItem disabled={item.status !== 'issued'} className="text-rose-600 focus:text-rose-700" onSelect={(event) => {
-                            event.preventDefault();
-                            onCancel(item);
-                        }}>
+                        <DropdownMenuItem
+                            disabled={!canCancel}
+                            className={canCancel ? 'text-rose-600 focus:text-rose-700' : ''}
+                            onSelect={(event) => {
+                                event.preventDefault();
+                                onCancel(item);
+                            }}
+                        >
                             {t('orders.request_cancellation')}
                         </DropdownMenuItem>
-                        <DropdownMenuItem onSelect={(event) => {
-                            event.preventDefault();
-                            onPrint(item);
-                        }}>
+                        <DropdownMenuItem
+                            disabled={!canPrint}
+                            onSelect={(event) => {
+                                event.preventDefault();
+                                onPrint(item);
+                            }}
+                        >
                             {t('orders.print_policy')}
                         </DropdownMenuItem>
                     </DropdownMenuContent>
@@ -486,6 +539,7 @@ export function HotelOrderItemCard({ item, canManage, onCancel }) {
     const from = valueOrFallback(stay.from, details.search?.check_in);
     const to = valueOrFallback(stay.to, details.search?.check_out);
     const nights = daysBetween(from, to);
+    const canCancel = !['cancelled', 'cancellation', 'refunded'].includes(item.status);
 
     return (
         <CardShell
@@ -496,6 +550,7 @@ export function HotelOrderItemCard({ item, canManage, onCancel }) {
             status={item.status}
             total={item.total_amount ?? item.total}
             currency={item.currency}
+            provider={item.provider}
             actions={canManage ? (
                 <DropdownMenu>
                     <DropdownMenuTrigger asChild>
@@ -506,10 +561,14 @@ export function HotelOrderItemCard({ item, canManage, onCancel }) {
                     <DropdownMenuContent align="end" className="w-52">
                         <DropdownMenuLabel>{t('orders.manage_booking')}</DropdownMenuLabel>
                         <DropdownMenuSeparator />
-                        <DropdownMenuItem disabled={item.status === 'cancelled'} className="text-rose-600 focus:text-rose-700" onSelect={(event) => {
-                            event.preventDefault();
-                            onCancel(item);
-                        }}>
+                        <DropdownMenuItem
+                            disabled={!canCancel}
+                            className={canCancel ? 'text-rose-600 focus:text-rose-700' : ''}
+                            onSelect={(event) => {
+                                event.preventDefault();
+                                onCancel(item);
+                            }}
+                        >
                             {item.status === 'cancellation' ? t('orders.cancellation_requested') : t('orders.cancel_booking')}
                         </DropdownMenuItem>
                     </DropdownMenuContent>
@@ -557,7 +616,7 @@ export function HotelOrderItemCard({ item, canManage, onCancel }) {
     );
 }
 
-export function OrderItemsSection({ order, canManageItems, canManageInsurance, canManageHotels, onVoid, onPrintTickets, onInsuranceCancel, onPrintPolicy, onHotelCancel, isInsuranceCancellationApproved }) {
+export function OrderItemsSection({ order, canManageItems, canManageInsurance, canManageHotels, onVoid, onRefund, onChangeTicket, onPrintTickets, onInsuranceCancel, onPrintPolicy, onHotelCancel, isInsuranceCancellationApproved }) {
     return (
         <div className="space-y-3">
             {(order.items ?? []).map((item) => {
@@ -591,6 +650,8 @@ export function OrderItemsSection({ order, canManageItems, canManageInsurance, c
                         item={item}
                         canManage={canManageItems}
                         onVoid={onVoid}
+                        onRefund={onRefund}
+                        onChangeTicket={onChangeTicket}
                         onPrint={onPrintTickets}
                     />
                 );

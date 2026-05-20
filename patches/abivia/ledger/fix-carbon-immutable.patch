@@ -1,0 +1,11 @@
+--- a/src/Helpers/Revision.php
++++ b/src/Helpers/Revision.php
+@@ -56,7 +56,7 @@ class Revision
+      * @return string
+      * @throws Exception
+      */
+-    public static function create(?Carbon $revision, Carbon $fallback): string
++    public static function create(?\DateTimeInterface $revision, \DateTimeInterface $fallback): string
+     {
+         if (!LedgerAccount::hasRoot() || !isset(LedgerAccount::root()->flex->salt)) {
+             return '';

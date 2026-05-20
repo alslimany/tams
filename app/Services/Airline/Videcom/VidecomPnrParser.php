@@ -439,6 +439,159 @@ class VidecomPnrParser
         }
     }
 
+    /**
+     * Parse the XML response from a refund quote command (*{PNR}^FCR1^FCC1^X1^FSM^*R~X).
+     *
+     * Returns:
+     *  - mps_penalties: array of MPS penalty lines from the airline
+     *  - refund_amount:  net amount that will be credited back to our wallet (absolute value)
+     *  - penalty_amount: total penalty charged by the airline (sum of MPS amounts)
+     *  - currency: currency code
+     *
+     * @return array{mps_penalties: array<int, array<string, mixed>>, refund_amount: float, penalty_amount: float, currency: string}
+     */
+    public static function parseRefundQuote(SimpleXMLElement $pnr): array
+    {
+        $mps = self::parseMps($pnr);
+
+        $currency = '';
+        if (! empty($mps)) {
+            $currency = (string) ($mps[0]['currency'] ?? '');
+        }
+
+        // Outstanding is the net refund amount — always comes as negative, we flip it.
+        $outstandingNode = $pnr->Basket?->Outstanding;
+        $rawOutstanding = $outstandingNode instanceof SimpleXMLElement
+            ? (float) ($outstandingNode['amount'] ?? 0)
+            : 0.0;
+
+        $refundAmount = $rawOutstanding < 0 ? abs($rawOutstanding) : $rawOutstanding;
+
+        if ($currency === '' && $outstandingNode instanceof SimpleXMLElement) {
+            $currency = (string) ($outstandingNode['cur'] ?? '');
+        }
+
+        $penaltyAmount = round(array_sum(array_column($mps, 'amount')), 2);
+
+        return [
+            'mps_penalties' => $mps,
+            'refund_amount' => round($refundAmount, 2),
+            'penalty_amount' => $penaltyAmount,
+            'currency' => $currency,
+        ];
+    }
+
+    /**
+     * Parse the plain-text response returned after executing a refund command.
+     *
+     * The response is a single long string like:
+     *   "1.1MAHMOUH/FATHIMR NO ITINERARY 01 MP 1 - 1RFRC LYD 100.00 ... TICKET ISSUED 532 2000191678/01 ..."
+     *
+     * We extract any "TICKET ISSUED {number}" occurrences and determine success by
+     * the absence of error keywords.
+     *
+     * @return array{success: bool, raw_response: string, tickets_issued: array<int, string>}
+     */
+    public static function parseRefundExecuteResponse(string $rawResponse): array
+    {
+        $text = trim($rawResponse);
+
+        $errorKeywords = ['ERROR', 'NOT AUTHORISED', 'UNABLE', 'INVALID', 'FAILED'];
+        $hasError = false;
+        foreach ($errorKeywords as $keyword) {
+            if (str_contains(strtoupper($text), $keyword)) {
+                $hasError = true;
+                break;
+            }
+        }
+
+        // Extract all "TICKET ISSUED {number}" occurrences.
+        $ticketsIssued = [];
+        if (preg_match_all('/TICKET ISSUED\s+([\d\s\/]+)/i', $text, $matches)) {
+            foreach ($matches[1] as $match) {
+                $ticketsIssued[] = trim($match);
+            }
+        }
+
+        // A refund is successful when there are no error keywords and either
+        // the response contains "TICKET ISSUED" (penalty EMDs) or the PNR rloc appears.
+        $success = ! $hasError && ($text !== '');
+
+        return [
+            'success' => $success,
+            'raw_response' => $text,
+            'tickets_issued' => $ticketsIssued,
+        ];
+    }
+
+    /**
+     * Parse the XML response from a change quote command.
+     *
+     * Command: *{RLOC}^X{segLine}^{newSegmentCode}^FG^FS1^MB^*R~X
+     *
+     * Reads Basket.Outstanding to determine the amount the customer owes for the change.
+     * A positive outstanding means the customer must pay the difference.
+     * Zero means the change is free (same fare bucket).
+     *
+     * @return array{outstanding_amount: float, currency: string, raw_response: string}
+     */
+    public static function parseChangeQuote(SimpleXMLElement $pnr): array
+    {
+        $outstandingNode = $pnr->Basket?->Outstanding;
+
+        $rawOutstanding = $outstandingNode instanceof SimpleXMLElement
+            ? (float) ($outstandingNode['amount'] ?? 0)
+            : 0.0;
+
+        // Outstanding is positive when the customer owes money (fare difference).
+        // It can be negative when the new fare is cheaper (credit back).
+        $outstandingAmount = round($rawOutstanding, 2);
+
+        $currency = '';
+        if ($outstandingNode instanceof SimpleXMLElement) {
+            $currency = (string) ($outstandingNode['cur'] ?? '');
+        }
+
+        // Fall back to fare store currency if basket currency is missing.
+        if ($currency === '') {
+            $fareStores = self::parseFareStores($pnr);
+            $currency = (string) ($fareStores[0]['currency'] ?? '');
+        }
+
+        return [
+            'outstanding_amount' => $outstandingAmount,
+            'currency' => $currency,
+            'raw_response' => $pnr->asXML() ?: '',
+        ];
+    }
+
+    /**
+     * Parse the response from a confirmChange command (revalidation or reissue).
+     *
+     * The response is XML for revalidation and may be plain text or XML for reissue.
+     * We detect errors by checking for known error keywords in the raw string.
+     *
+     * @return array{success: bool, raw_response: string}
+     */
+    public static function parseChangeConfirmResponse(string $rawResponse): array
+    {
+        $text = trim($rawResponse);
+
+        $errorKeywords = ['ERROR', 'NOT AUTHORISED', 'UNABLE', 'INVALID', 'FAILED', 'REJECTED'];
+        $hasError = false;
+        foreach ($errorKeywords as $keyword) {
+            if (str_contains(strtoupper($text), $keyword)) {
+                $hasError = true;
+                break;
+            }
+        }
+
+        return [
+            'success' => ! $hasError && $text !== '',
+            'raw_response' => $text,
+        ];
+    }
+
     protected static function formatDecimal(float $value): string
     {
         $formatted = number_format($value, 2, '.', '');

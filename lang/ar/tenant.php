@@ -19,5 +19,11 @@ return [
         'taxes' => 'الضرائب',
         'wallet_transactions' => 'حركات المحفظة',
         'reconciliation' => 'المطابقة',
+        'accounting' => 'المحاسبة',
+        'accounting_dashboard' => 'لوحة المحاسبة',
+        'accounting_wallets' => 'المحافظ والأرصدة',
+        'accounting_providers' => 'حسابات المزودين',
+        'accounting_journal' => 'قيود اليومية',
+        'accounting_reports' => 'التقارير',
     ],
 ];

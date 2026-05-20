@@ -82,6 +82,7 @@ class InitializeTenantLedger
             ['code' => '1300', 'debit' => true, 'name' => 'Wallet Assets - Tenant Wallets'],
             ['code' => '2200', 'credit' => true, 'name' => 'Tax Payable'],
             ['code' => '2200_ST', 'credit' => true, 'name' => 'Tax Payable - ST'],
+            ['code' => '2410', 'credit' => true, 'name' => 'Airline Tax Payable'],
             ['code' => '2300', 'credit' => true, 'name' => 'Commission Payable'],
             ['code' => '3100', 'credit' => true, 'name' => 'Revenue - Flights'],
             ['code' => '3190', 'credit' => true, 'name' => 'Revenue - Other'],

@@ -20,6 +20,11 @@ use App\Models\Tenant\Order;
 use App\Models\Tenant\OrderItem;
 use App\Models\TenantProvider;
 use App\Models\User;
+use App\Notifications\Orders\OrderContact;
+use App\Notifications\Orders\TicketCancelled;
+use App\Notifications\Orders\TicketIssued;
+use App\Notifications\Orders\TicketVoided;
+use App\Services\Accounting\LedgerPostingService;
 use App\Services\Airline\AgencyProviderResolver;
 use App\Services\Airline\ProviderFactory;
 use App\Services\Airline\Videcom\VidecomPnrParser;
@@ -41,6 +46,7 @@ class TicketController extends Controller
     public function __construct(
         protected TenantProviderCommissionCalculator $tenantProviderCommissionCalculator,
         protected AgencyProviderResolver $providerResolver,
+        protected LedgerPostingService $ledgerPostingService,
     ) {}
 
     public function issue(Request $request, Order $booking): RedirectResponse
@@ -109,6 +115,10 @@ class TicketController extends Controller
                     'parent_id' => $booking->id,
                 ]);
 
+                // Enrich each issued order item with fare breakdown from the parsed PNR so that
+                // ApplyFinancialSourceAndCommission can resolve base fare and tax correctly.
+                $this->enrichItemsWithFareData($order, $formattedPnr);
+
                 // Step 3: Determine financial source and set commission on each order item.
                 // Step 4: Save order items (they now have commission and financial source flag).
                 $this->applyFinancialSourceAndCommission($order);
@@ -158,6 +168,11 @@ class TicketController extends Controller
             });
 
             $this->dispatchDelayedAirlineBalanceUpdate($providerConfig);
+
+            $contact = OrderContact::fromOrder($issuedOrder);
+            if (filled($contact->email) || filled($contact->phone)) {
+                $contact->notify(new TicketIssued($issuedOrder, $issuedOrder->items->first()));
+            }
 
             return redirect()
                 ->route('tickets.completed', ['booking' => $issuedOrder->id, 'order' => $issuedOrder->id])
@@ -308,6 +323,9 @@ class TicketController extends Controller
                     $itemDetails['provider_wallet_void_transaction_id'] = $providerWalletReversalId;
                 }
 
+                // Post ledger reversal for this voided item.
+                $this->postVoidLedgerReversal($booking, $orderItem);
+
                 $orderItem->update([
                     // Keep original PNR reference stable for traceability after void.
                     'provider_reference' => (string) ($orderItem->provider_reference ?: $pnr),
@@ -335,7 +353,54 @@ class TicketController extends Controller
 
         $this->dispatchDelayedAirlineBalanceUpdate($providerConfig);
 
+        $contact = OrderContact::fromOrder($booking);
+        if (filled($contact->email) || filled($contact->phone)) {
+            $contact->notify(new TicketVoided($booking, $item));
+        }
+
         return back()->with('success', 'Ticket voided successfully.');
+    }
+
+    /**
+     * Return a refund quote (penalties + net refund amount) for a ticket item.
+     * This is a read-only JSON endpoint — no state is changed.
+     */
+    public function refundQuote(Request $request, Order $booking, string $ticket): \Illuminate\Http\JsonResponse
+    {
+        $item = $booking->items()->whereKey($ticket)->first();
+        if (! $item) {
+            return response()->json(['error' => 'Ticket item not found.'], 404);
+        }
+
+        $pnr = (string) ($item->provider_reference ?: $booking->payment_reference);
+        if ($pnr === '') {
+            return response()->json(['error' => 'PNR reference not found for this order item.'], 422);
+        }
+
+        $providerConfig = $this->resolveProviderForTicketAction($item);
+        if (! $providerConfig) {
+            return response()->json(['error' => 'No active provider found for this booking.'], 422);
+        }
+
+        $provider = ProviderFactory::make($providerConfig);
+
+        // Segment count from stored itineraries.
+        $itineraries = data_get($item->item_details, 'itineraries', []);
+        $segmentCount = max(count($itineraries), 1);
+
+        try {
+            $quote = $provider->refundQuote($pnr, $segmentCount);
+        } catch (ConnectionException $exception) {
+            report($exception);
+
+            return response()->json(['error' => 'Airline refund quote request timed out. Please try again.'], 503);
+        } catch (\Throwable $exception) {
+            report($exception);
+
+            return response()->json(['error' => 'Failed to fetch refund quote from airline provider.'], 500);
+        }
+
+        return response()->json($quote);
     }
 
     public function refund(Request $request, Order $booking, string $ticket): RedirectResponse
@@ -350,16 +415,28 @@ class TicketController extends Controller
             return back()->with('error', 'Ticket number is required for refund operation.');
         }
 
-        $providerConfig = $this->resolveProviderForTicketAction($item);
+        $pnr = (string) ($item->provider_reference ?: $booking->payment_reference);
+        if ($pnr === '') {
+            return back()->with('error', 'PNR reference not found for this order item.');
+        }
 
+        $providerConfig = $this->resolveProviderForTicketAction($item);
         if (! $providerConfig) {
             return back()->with('error', 'No active provider found for this booking.');
         }
 
         $provider = ProviderFactory::make($providerConfig);
 
+        $itineraries = data_get($item->item_details, 'itineraries', []);
+        $segmentCount = max(count($itineraries), 1);
+
+        // penalty_amount comes from the quote shown to the user in the modal.
+        $penaltyAmount = round((float) $request->input('penalty_amount', 0), 2);
+        // refund_amount is the net amount the airline will credit back to our wallet.
+        $refundAmount = round((float) $request->input('refund_amount', 0), 2);
+
         try {
-            $provider->refund($ticketNumber);
+            $refundResult = $provider->refund($pnr, $segmentCount, $penaltyAmount);
         } catch (ConnectionException $exception) {
             report($exception);
 
@@ -370,19 +447,24 @@ class TicketController extends Controller
             return back()->with('error', 'Failed to refund ticket with the airline provider.');
         }
 
-        $penaltyAmount = round((float) $request->input('penalty_amount', 0), 2);
+        if (! ($refundResult['success'] ?? false)) {
+            return back()->with('error', 'Airline rejected the refund request. Response: '.($refundResult['raw_response'] ?? 'unknown'));
+        }
 
-        DB::transaction(function () use ($booking, $item, $ticketNumber, $penaltyAmount): void {
-            $refundResult = $this->depositRefundAmountToWallet($booking, $item, $ticketNumber, $penaltyAmount, request()->user());
+        DB::transaction(function () use ($booking, $item, $ticketNumber, $penaltyAmount, $refundAmount, $refundResult): void {
+            $walletResult = $this->depositRefundAmountToWallet($booking, $item, $ticketNumber, $penaltyAmount, request()->user());
             $providerRefundTransactionId = $this->depositRefundAmountToProviderWallet($item, $ticketNumber);
 
             $itemDetails = (array) $item->item_details;
-            data_set($itemDetails, 'refund.customer_wallet_transaction_id', $refundResult['refund_transaction_id']);
-            data_set($itemDetails, 'refund.penalty_wallet_transaction_id', $refundResult['penalty_transaction_id']);
-            data_set($itemDetails, 'refund.gross_refund_amount', $refundResult['gross_refund_amount']);
-            data_set($itemDetails, 'refund.penalty_amount', $refundResult['penalty_amount']);
-            data_set($itemDetails, 'refund.net_refund_amount', $refundResult['net_refund_amount']);
+            data_set($itemDetails, 'refund.customer_wallet_transaction_id', $walletResult['refund_transaction_id']);
+            data_set($itemDetails, 'refund.penalty_wallet_transaction_id', $walletResult['penalty_transaction_id']);
+            data_set($itemDetails, 'refund.gross_refund_amount', $walletResult['gross_refund_amount']);
+            data_set($itemDetails, 'refund.penalty_amount', $walletResult['penalty_amount']);
+            data_set($itemDetails, 'refund.net_refund_amount', $walletResult['net_refund_amount']);
+            data_set($itemDetails, 'refund.airline_refund_amount', $refundAmount);
             data_set($itemDetails, 'refund.provider_wallet_transaction_id', $providerRefundTransactionId);
+            data_set($itemDetails, 'refund.raw_response', $refundResult['raw_response'] ?? '');
+            data_set($itemDetails, 'refund.tickets_issued', $refundResult['tickets_issued'] ?? []);
             data_set($itemDetails, 'refund.refunded_at', now()->toIso8601String());
 
             $item->update([
@@ -392,13 +474,59 @@ class TicketController extends Controller
 
             $booking->update([
                 'status' => 'refunded',
-                'amount_refunded' => round((float) $booking->amount_refunded + $refundResult['net_refund_amount'], 2),
+                'amount_refunded' => round((float) $booking->amount_refunded + $walletResult['net_refund_amount'], 2),
             ]);
         });
 
         $this->dispatchDelayedAirlineBalanceUpdate($providerConfig);
 
-        return back()->with('success', 'Refund recorded successfully.');
+        $netRefund = (float) data_get($item->fresh()?->item_details, 'refund.net_refund_amount', 0);
+        $contact = OrderContact::fromOrder($booking);
+        if (filled($contact->email) || filled($contact->phone)) {
+            $contact->notify(new TicketCancelled($booking, $item, $netRefund));
+        }
+
+        return back()->with('success', 'Refund processed successfully.');
+    }
+
+    /**
+     * Enrich issued order items with fare breakdown data from the formatted PNR so that
+     * ApplyFinancialSourceAndCommission can resolve base fare and tax totals correctly.
+     * The fare_store data is distributed across items by index (one FareStore per passenger).
+     *
+     * @param  array<string, mixed>  $formattedPnr
+     */
+    protected function enrichItemsWithFareData(Order $order, array $formattedPnr): void
+    {
+        $order->loadMissing('items');
+
+        $fareStores = (array) data_get($formattedPnr, 'fare_store', []);
+        $totalFare = data_get($formattedPnr, 'total_fare');
+        $totalTax = data_get($formattedPnr, 'total_tax');
+
+        foreach ($order->items->values() as $index => $item) {
+            $details = (array) $item->item_details;
+
+            // Assign the per-passenger FareStore entry if available, otherwise fall back to totals.
+            if (isset($fareStores[$index])) {
+                $details['fare_store'] = [$fareStores[$index]];
+            } elseif ($fareStores !== []) {
+                $details['fare_store'] = [$fareStores[0]];
+            }
+
+            if ($totalFare !== null) {
+                $details['total_fare'] = $totalFare;
+            }
+
+            if ($totalTax !== null) {
+                $details['total_tax'] = $totalTax;
+            }
+
+            $item->update(['item_details' => $details]);
+        }
+
+        $order->unsetRelation('items');
+        $order->loadMissing('items');
     }
 
     protected function toXml(mixed $response): ?SimpleXMLElement
@@ -498,6 +626,11 @@ class TicketController extends Controller
         } catch (\Throwable) {
             return null;
         }
+    }
+
+    public function resolveProviderForTicketActionPublic(OrderItem $item): ?TenantProvider
+    {
+        return $this->resolveProviderForTicketAction($item);
     }
 
     protected function resolveProviderForTicketAction(OrderItem $item): ?TenantProvider
@@ -809,6 +942,34 @@ class TicketController extends Controller
         return null;
     }
 
+    protected function postVoidLedgerReversal(Order $booking, OrderItem $orderItem): void
+    {
+        $sellingPrice = round((float) $orderItem->total_amount ?: (float) $orderItem->total, 3);
+        $taxTotal = round((float) $orderItem->total_tax, 3);
+        $commissionAmount = round((float) $orderItem->commission_amount, 3);
+        // True provider cost mirrors the issue entry: base fare net of commission + taxes
+        $baseFare = round((float) $orderItem->net_fare, 3);
+        $providerCost = round($baseFare - $commissionAmount + $taxTotal, 3);
+        $productType = match ((string) $orderItem->product_type) {
+            'flight', 'ticket' => 'airline',
+            default => (string) $orderItem->product_type,
+        };
+
+        try {
+            $this->ledgerPostingService->postReversalEntry(
+                originalOrderId: (string) $booking->id,
+                sellingPrice: $sellingPrice,
+                productType: $productType,
+                taxTotal: $taxTotal,
+                commissionAmount: $commissionAmount,
+                providerCost: $providerCost,
+                cancellationFee: null,
+            );
+        } catch (\Throwable $exception) {
+            report($exception);
+        }
+    }
+
     protected function resolveAgencyWalletHolder(User $fallback): User
     {
         return User::query()
@@ -920,6 +1081,7 @@ class TicketController extends Controller
                 'status' => 'issued',
                 'remaining' => 0,
                 'paid' => (float) $item->total,
+                'commission_amount' => $commissionAllocations[$index] ?? 0.0,
                 'agent_commission' => $commissionAllocations[$index] ?? 0.0,
                 'net_commission' => $commissionAllocations[$index] ?? 0.0,
             ]);
@@ -963,5 +1125,274 @@ class TicketController extends Controller
         }
 
         return $allocations;
+    }
+
+    /**
+     * Get a change quote for a ticket item — returns outstanding amount without committing.
+     *
+     * Expects query params:
+     *   - segment_line:      int    — the itinerary line number to replace (1-based)
+     *   - new_segment_code:  string — the new Videcom segment code (e.g. 0YL0800Y24MarMJITUNNN1)
+     */
+    public function changeQuote(Request $request, Order $booking, string $ticket): \Illuminate\Http\JsonResponse
+    {
+        $item = $booking->items()->whereKey($ticket)->first();
+        if (! $item) {
+            return response()->json(['error' => 'Ticket item not found.'], 404);
+        }
+
+        $segmentLine = (int) $request->input('segment_line', 1);
+        $newSegmentCode = trim((string) $request->input('new_segment_code', ''));
+
+        if ($segmentLine < 1) {
+            return response()->json(['error' => 'segment_line must be a positive integer.'], 422);
+        }
+
+        if ($newSegmentCode === '') {
+            return response()->json(['error' => 'new_segment_code is required.'], 422);
+        }
+
+        $pnr = (string) ($item->provider_reference ?: $booking->payment_reference);
+        if ($pnr === '') {
+            return response()->json(['error' => 'PNR reference not found for this order item.'], 422);
+        }
+
+        $providerConfig = $this->resolveProviderForTicketAction($item);
+        if (! $providerConfig) {
+            return response()->json(['error' => 'No active provider found for this booking.'], 422);
+        }
+
+        $provider = ProviderFactory::make($providerConfig);
+
+        try {
+            $quote = $provider->changeQuote($pnr, $segmentLine, $newSegmentCode);
+        } catch (ConnectionException $exception) {
+            report($exception);
+
+            return response()->json(['error' => 'Airline change quote request timed out. Please try again.'], 503);
+        } catch (\Throwable $exception) {
+            report($exception);
+
+            return response()->json(['error' => 'Failed to fetch change quote from airline provider.'], 500);
+        }
+
+        // Determine change type by comparing new segment against the original stored segment.
+        $originalSegments = (array) data_get($item->item_details, 'segments', []);
+        $originalSegment = collect($originalSegments)->firstWhere('line', $segmentLine)
+            ?? ($originalSegments[$segmentLine - 1] ?? null);
+
+        $changeType = $this->determineChangeType($newSegmentCode, $originalSegment);
+
+        return response()->json(array_merge($quote, ['change_type' => $changeType]));
+    }
+
+    /**
+     * Render the change review page (receives offer data POSTed from ChangeOffers).
+     */
+    public function changeReview(Request $request, Order $booking, string $ticket): InertiaResponse|RedirectResponse
+    {
+        $item = $booking->items()->whereKey($ticket)->first();
+        if (! $item) {
+            return back()->with('error', 'Ticket item not found.');
+        }
+
+        $segmentLine = (int) $request->input('segment_line', 1);
+        $newSegmentCode = trim((string) $request->input('new_segment_code', ''));
+        $reservationType = trim((string) $request->input('reservation_type', 'NN'));
+        $flight = $request->input('flight', []);
+
+        if ($segmentLine < 1 || $newSegmentCode === '') {
+            return back()->with('error', 'segment_line and new_segment_code are required.');
+        }
+
+        // Fetch a change quote to show the penalty amount.
+        $providerConfig = $this->resolveProviderForTicketAction($item);
+        $penaltyAmount = null;
+        $currency = $booking->currency;
+
+        if ($providerConfig) {
+            try {
+                $pnr = (string) ($item->provider_reference ?: $booking->payment_reference);
+                $provider = ProviderFactory::make($providerConfig);
+                $quote = $provider->changeQuote($pnr, $segmentLine, $newSegmentCode);
+                $penaltyAmount = $quote['outstanding_amount'] ?? null;
+                $currency = $quote['currency'] ?? $currency;
+            } catch (\Throwable) {
+                // Non-fatal — show review page without penalty amount.
+            }
+        }
+
+        $originalSegments = (array) data_get($item->item_details, 'itineraries', data_get($item->item_details, 'segments', []));
+        $originalSegment = collect($originalSegments)->firstWhere('line', $segmentLine)
+            ?? ($originalSegments[$segmentLine - 1] ?? null);
+
+        $passengers = (array) data_get($item->item_details, 'passengers', []);
+
+        return Inertia::render('Tenant/Bookings/ChangeReview', [
+            'order' => $booking,
+            'item' => $item,
+            'segment_line' => $segmentLine,
+            'new_segment_code' => $newSegmentCode,
+            'reservation_type' => $reservationType,
+            'flight' => $flight,
+            'original_segment' => $originalSegment,
+            'passengers' => $passengers,
+            'penalty_amount' => $penaltyAmount,
+            'currency' => $currency,
+        ]);
+    }
+
+    /**
+     * Render the change confirmation page after a successful ticket change.
+     */
+    public function changeConfirmation(Request $request, Order $booking, string $ticket): InertiaResponse|RedirectResponse
+    {
+        $item = $booking->items()->whereKey($ticket)->first();
+        if (! $item) {
+            return redirect()->route('orders.index')->with('error', 'Ticket item not found.');
+        }
+
+        $changeDetails = (array) data_get($item->item_details, 'change', []);
+
+        return Inertia::render('Tenant/Bookings/ChangeConfirmation', [
+            'order' => $booking,
+            'item' => $item,
+            'change' => $changeDetails,
+        ]);
+    }
+
+    /**
+     * Confirm a ticket change (revalidation or reissue).
+     *
+     * Expects JSON body:
+     *   - segment_line:      int    — the itinerary line number to replace (1-based)
+     *   - new_segment_code:  string — the new Videcom segment code
+     *   - change_type:       string — 'revalidation' or 'reissue' (validated server-side too)
+     */
+    public function confirmChange(Request $request, Order $booking, string $ticket): RedirectResponse
+    {
+        $item = $booking->items()->whereKey($ticket)->first();
+        if (! $item) {
+            return back()->with('error', 'Ticket item not found.');
+        }
+
+        $segmentLine = (int) $request->input('segment_line', 1);
+        $newSegmentCode = trim((string) $request->input('new_segment_code', ''));
+        $outstandingAmount = (float) $request->input('outstanding_amount', 0.0);
+
+        if ($segmentLine < 1 || $newSegmentCode === '') {
+            return back()->with('error', 'segment_line and new_segment_code are required.');
+        }
+
+        $pnr = (string) ($item->provider_reference ?: $booking->payment_reference);
+        if ($pnr === '') {
+            return back()->with('error', 'PNR reference not found for this order item.');
+        }
+
+        $providerConfig = $this->resolveProviderForTicketAction($item);
+        if (! $providerConfig) {
+            return back()->with('error', 'No active provider found for this booking.');
+        }
+
+        $provider = ProviderFactory::make($providerConfig);
+
+        // Re-derive change type server-side — never trust the client value alone.
+        // item_details stores segments under 'itineraries'; fall back to 'segments' for legacy records.
+        $originalSegments = (array) data_get($item->item_details, 'itineraries',
+            data_get($item->item_details, 'segments', [])
+        );
+        $originalSegment = collect($originalSegments)->firstWhere('line', $segmentLine)
+            ?? collect($originalSegments)->firstWhere('itinerary_id', $segmentLine)
+            ?? ($originalSegments[$segmentLine - 1] ?? null);
+
+        $changeType = $this->determineChangeType($newSegmentCode, $originalSegment);
+
+        try {
+            $result = $provider->confirmChange($pnr, $segmentLine, $newSegmentCode, $changeType, $outstandingAmount);
+        } catch (ConnectionException $exception) {
+            report($exception);
+
+            return back()->with('error', 'Airline change request timed out. Please try again.');
+        } catch (\Throwable $exception) {
+            report($exception);
+
+            return back()->with('error', 'Failed to confirm ticket change with the airline provider.');
+        }
+
+        if (! ($result['success'] ?? false)) {
+            return back()->with('error', 'Airline rejected the change request. Response: '.($result['raw_response'] ?? 'unknown'));
+        }
+
+        DB::transaction(function () use ($item, $booking, $segmentLine, $newSegmentCode, $changeType, $result): void {
+            $itemDetails = (array) $item->item_details;
+            data_set($itemDetails, 'change.segment_line', $segmentLine);
+            data_set($itemDetails, 'change.new_segment_code', $newSegmentCode);
+            data_set($itemDetails, 'change.change_type', $changeType);
+            data_set($itemDetails, 'change.raw_response', $result['raw_response'] ?? '');
+            data_set($itemDetails, 'change.changed_at', now()->toIso8601String());
+
+            $item->update([
+                'status' => 'changed',
+                'item_details' => $itemDetails,
+            ]);
+
+            $booking->update(['status' => 'changed']);
+        });
+
+        $this->dispatchDelayedAirlineBalanceUpdate($providerConfig);
+
+        return redirect()->route('tickets.changeConfirmation', ['booking' => $booking->id, 'ticket' => $item->id])
+            ->with('success', 'Ticket changed successfully.');
+    }
+
+    /**
+     * Determine whether a segment change is a revalidation or reissue.
+     *
+     * Revalidation: same origin + same destination + same booking class.
+     * Reissue:      different origin OR different destination OR different booking class.
+     *
+     * The new segment code format is: {seats}{airline}{flt}{class}{date}{origin}{dest}NN{qty}
+     * Example: 0YL0800Y24MarMJITUNNN1
+     *   - seats:   0
+     *   - airline: YL
+     *   - flt:     0800
+     *   - class:   Y
+     *   - date:    24Mar
+     *   - origin:  MJI
+     *   - dest:    TUN
+     *   - NN:      NN
+     *   - qty:     1
+     *
+     * @param  array<string, mixed>|null  $originalSegment
+     */
+    protected function determineChangeType(string $newSegmentCode, ?array $originalSegment): string
+    {
+        if (! $originalSegment) {
+            // No original segment to compare — default to reissue (safer).
+            return 'reissue';
+        }
+
+        // Parse the new segment code.
+        // Format: {seats}{airline(2)}{flt(4)}{class(1)}{date(5)}{origin(3)}{dest(3)}NN{qty}
+        // We need class (1 char after 7-char prefix), origin (3 chars), dest (3 chars).
+        // Regex: ^\d+([A-Z]{2})(\d{4})([A-Z])(\d{2}[A-Z]{3})([A-Z]{3})([A-Z]{3})
+        if (preg_match('/^\d+([A-Z]{2})(\d{4})([A-Z])(\d{2}[A-Z]{3})([A-Z]{3})([A-Z]{3})/i', $newSegmentCode, $matches) !== 1) {
+            // Cannot parse — default to reissue.
+            return 'reissue';
+        }
+
+        $newClass = strtoupper($matches[3]);
+        $newOrigin = strtoupper($matches[5]);
+        $newDest = strtoupper($matches[6]);
+
+        $origClass = strtoupper((string) ($originalSegment['class'] ?? ''));
+        $origOrigin = strtoupper((string) ($originalSegment['departure_airport'] ?? $originalSegment['from'] ?? ''));
+        $origDest = strtoupper((string) ($originalSegment['arrival_airport'] ?? $originalSegment['to'] ?? ''));
+
+        if ($newOrigin === $origOrigin && $newDest === $origDest && $newClass === $origClass) {
+            return 'revalidation';
+        }
+
+        return 'reissue';
     }
 }

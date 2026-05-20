@@ -208,6 +208,75 @@ class BookingController extends Controller
         ]);
     }
 
+    public function changeOffers(Request $request, string $booking, string $ticket): Response
+    {
+        $validated = $request->validate([
+            'segment_line' => 'required|integer|min:1',
+            'origin' => 'required|string|size:3',
+            'destination' => 'required|string|size:3',
+            'date' => 'required|date_format:Y-m-d',
+        ]);
+
+        $order = Order::findOrFail($booking);
+        $item = $order->items()->findOrFail($ticket);
+
+        $searchParams = [
+            'origin' => strtoupper($validated['origin']),
+            'destination' => strtoupper($validated['destination']),
+            'date' => $validated['date'],
+            'adults' => 1,
+            'children' => 0,
+            'infants' => 0,
+            'is_return' => false,
+            'segment_line' => (int) $validated['segment_line'],
+            'change_booking_id' => $order->id,
+            'change_ticket_id' => $item->id,
+        ];
+
+        $searchUuid = (string) Str::uuid();
+        Cache::put("flight_search_{$searchUuid}", $searchParams, now()->addMinutes(30));
+
+        // Resolve the single provider that issued this ticket so we only
+        // search through that provider (not all active providers).
+        $ticketProvider = app(\App\Http\Controllers\Tenant\TicketController::class)
+            ->resolveProviderForTicketActionPublic($item);
+
+        if ($ticketProvider) {
+            $providers = collect([$ticketProvider]);
+        } else {
+            $providers = $this->providerResolver->getAllActiveProviders();
+        }
+
+        $filteredProviders = $this->filterProvidersByRouteAvailability(
+            $providers,
+            $searchParams['origin'],
+            $searchParams['destination'],
+        );
+
+        return Inertia::render('Tenant/Bookings/ChangeOffers', [
+            'uuid' => $searchUuid,
+            'query' => $searchParams,
+            'providers' => $filteredProviders,
+            'providerSources' => $this->providerSourcesFor($filteredProviders),
+            'searchDisplayMode' => tenant()->getInternal('search_display_mode') ?? 'per_offer',
+            'order' => [
+                'id' => $order->id,
+                'number' => $order->number,
+            ],
+            'item' => [
+                'id' => $item->id,
+                'provider_reference' => $item->provider_reference,
+                'ticket_number' => $item->ticket_number,
+            ],
+            'segment' => [
+                'line' => (int) $validated['segment_line'],
+                'origin' => $searchParams['origin'],
+                'destination' => $searchParams['destination'],
+                'date' => $searchParams['date'],
+            ],
+        ]);
+    }
+
     public function fetchFlights(Request $request)
     {
         $validated = $request->validate([

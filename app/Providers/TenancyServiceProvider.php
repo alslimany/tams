@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 namespace App\Providers;
 
+use App\Jobs\BootstrapTenantLedgerJob;
+use Bavix\Wallet\Internal\Service\ConnectionServiceInterface;
+use Bavix\Wallet\Internal\Service\StorageServiceInterface;
+use Bavix\Wallet\Services\BookkeeperServiceInterface;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
@@ -27,6 +31,7 @@ class TenancyServiceProvider extends ServiceProvider
                 JobPipeline::make([
                     Jobs\CreateDatabase::class,
                     Jobs\MigrateDatabase::class,
+                    BootstrapTenantLedgerJob::class,
                     // Jobs\SeedDatabase::class,
 
                     // Your own jobs to prepare the tenant.
@@ -70,11 +75,21 @@ class TenancyServiceProvider extends ServiceProvider
             Events\InitializingTenancy::class => [],
             Events\TenancyInitialized::class => [
                 Listeners\BootstrapTenancy::class,
+                function (): void {
+                    app()->forgetInstance(ConnectionServiceInterface::class);
+                    app()->forgetInstance(StorageServiceInterface::class);
+                    app()->forgetInstance(BookkeeperServiceInterface::class);
+                },
             ],
 
             Events\EndingTenancy::class => [],
             Events\TenancyEnded::class => [
                 Listeners\RevertToCentralContext::class,
+                function (): void {
+                    app()->forgetInstance(ConnectionServiceInterface::class);
+                    app()->forgetInstance(StorageServiceInterface::class);
+                    app()->forgetInstance(BookkeeperServiceInterface::class);
+                },
             ],
 
             Events\BootstrappingTenancy::class => [],

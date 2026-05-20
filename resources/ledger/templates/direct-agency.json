@@ -1,0 +1,69 @@
+{
+  "name": "Booknow Agency Ledger",
+  "currencies": [
+    { "code": "LYD", "decimals": 3 }
+  ],
+  "accounts": [
+    { "code": "1000", "name": "Assets",                       "debit": true },
+    { "code": "1100", "name": "Cash & Bank",                  "debit": true, "parent": "1000" },
+    { "code": "1110", "name": "Agency Operating Wallet",      "debit": true, "parent": "1100" },
+    { "code": "1120", "name": "Merchant Wallet",              "debit": true, "parent": "1100" },
+    { "code": "1200", "name": "Provider Prepaid Balances",    "debit": true, "parent": "1000" },
+    { "code": "1210", "name": "Airline Provider Wallet",      "debit": true, "parent": "1200" },
+    { "code": "1220", "name": "Hotel Provider Wallet",        "debit": true, "parent": "1200" },
+    { "code": "1230", "name": "Insurance Provider Wallet",    "debit": true, "parent": "1200" },
+    { "code": "1240", "name": "eSIM Provider Wallet",         "debit": true, "parent": "1200" },
+    { "code": "1300", "name": "Receivables",                  "debit": true, "parent": "1000" },
+    { "code": "1310", "name": "Customer Receivable",          "debit": true, "parent": "1300" },
+    { "code": "1320", "name": "Merchant Receivable",          "debit": true, "parent": "1300" },
+
+    { "code": "2000", "name": "Liabilities",                  "credit": true },
+    { "code": "2100", "name": "Provider Payables",            "credit": true, "parent": "2000" },
+    { "code": "2110", "name": "Airline Provider Payable",     "credit": true, "parent": "2100" },
+    { "code": "2120", "name": "Hotel Provider Payable",       "credit": true, "parent": "2100" },
+    { "code": "2130", "name": "Insurance Provider Payable",   "credit": true, "parent": "2100" },
+    { "code": "2140", "name": "eSIM Provider Payable",        "credit": true, "parent": "2100" },
+    { "code": "2200", "name": "Network Agency Payable",       "credit": true, "parent": "2000" },
+    { "code": "2300", "name": "Customer Deposits",            "credit": true, "parent": "2000" },
+    { "code": "2400", "name": "VAT Payable",                  "credit": true, "parent": "2000" },
+
+    { "code": "3000", "name": "Equity",                       "credit": true },
+    { "code": "3100", "name": "Agency Capital",               "credit": true, "parent": "3000" },
+    { "code": "3200", "name": "Retained Earnings",            "credit": true, "parent": "3000" },
+    { "code": "3300", "name": "Current Year Profit/Loss",     "credit": true, "parent": "3000" },
+
+    { "code": "4000", "name": "Revenue",                      "credit": true },
+    { "code": "4100", "name": "Airline Ticket Sales",         "credit": true, "parent": "4000" },
+    { "code": "4200", "name": "Hotel Booking Sales",          "credit": true, "parent": "4000" },
+    { "code": "4300", "name": "Insurance Premium Sales",      "credit": true, "parent": "4000" },
+    { "code": "4400", "name": "eSIM Sales",                   "credit": true, "parent": "4000" },
+    { "code": "4500", "name": "Service Fees & Markup",        "credit": true, "parent": "4000" },
+    { "code": "4600", "name": "Network Commission Income",    "credit": true, "parent": "4000" },
+    { "code": "4700", "name": "Cancellation Fee Income",      "credit": true, "parent": "4000" },
+
+    { "code": "5000", "name": "Cost of Sales",                "debit": true },
+    { "code": "5100", "name": "Airline Provider Cost",        "debit": true, "parent": "5000" },
+    { "code": "5200", "name": "Hotel Provider Cost",          "debit": true, "parent": "5000" },
+    { "code": "5300", "name": "Insurance Provider Cost",      "debit": true, "parent": "5000" },
+    { "code": "5400", "name": "eSIM Provider Cost",           "debit": true, "parent": "5000" },
+    { "code": "5500", "name": "Merchant Wholesale Cost",      "debit": true, "parent": "5000" },
+
+    { "code": "6000", "name": "Operating Expenses",           "debit": true },
+    { "code": "6100", "name": "Refunds & Voids",              "debit": true, "parent": "6000" },
+    { "code": "6200", "name": "Settlement Adjustments",       "debit": true, "parent": "6000" },
+    { "code": "6300", "name": "Exchange Gain/Loss",           "debit": true, "parent": "6000" },
+
+    { "code": "7000", "name": "Settlement Clearing",          "debit": true },
+    { "code": "7100", "name": "Network Agency Settlement",    "debit": true, "parent": "7000" },
+    { "code": "7200", "name": "Merchant Settlement Clearing", "debit": true, "parent": "7000" },
+    { "code": "7400", "name": "Provider Reconciliation",      "debit": true, "parent": "7000" }
+  ],
+  "journals": [
+    { "name": "General",    "code": "GEN" },
+    { "name": "Airline",    "code": "AIR" },
+    { "name": "Hotel",      "code": "HTL" },
+    { "name": "Insurance",  "code": "INS" },
+    { "name": "eSIM",       "code": "ESM" },
+    { "name": "Settlement", "code": "STL" }
+  ]
+}

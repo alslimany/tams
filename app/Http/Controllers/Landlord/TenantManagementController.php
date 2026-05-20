@@ -12,8 +12,10 @@ use App\Models\Tenant\Order;
 use App\Models\TenantProvider;
 use App\Models\User;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Support\Facades\Log;
 use Inertia\Inertia;
 use Inertia\Response;
+use Stancl\Tenancy\Exceptions\TenantDatabaseDoesNotExistException;
 
 class TenantManagementController extends Controller
 {
@@ -42,6 +44,7 @@ class TenantManagementController extends Controller
                     'master_commission_percent' => $agencySettings['master_commission_percent'],
                     'created_at' => $tenant->created_at,
                     'stats' => $snapshot['stats'],
+                    'database_missing' => $snapshot['database_missing'],
                 ];
             });
 
@@ -80,6 +83,7 @@ class TenantManagementController extends Controller
                 'agency_settings' => $agencySettings,
                 'default_agency_settings' => $defaultAgencySettings,
                 'snapshot' => $snapshot,
+                'database_missing' => $snapshot['database_missing'],
             ],
         ]);
     }
@@ -95,104 +99,118 @@ class TenantManagementController extends Controller
 
     protected function tenantSnapshot(Tenant $tenant): array
     {
-        $data = $tenant->run(function (): array {
-            $providerModels = TenantProvider::query()->get([
-                'id',
-                'airline_code',
-                'airline_name',
-                'account_name',
-                'is_active',
-                'last_tested_at',
-                'last_test_status',
-            ]);
+        try {
+            $data = $tenant->run(function (): array {
+                $providerModels = TenantProvider::query()->get([
+                    'id',
+                    'airline_code',
+                    'airline_name',
+                    'account_name',
+                    'is_active',
+                    'last_tested_at',
+                    'last_test_status',
+                ]);
 
-            $providers = $providerModels
-                ->map(fn (TenantProvider $provider): array => [
-                    'id' => $provider->id,
-                    'airline_code' => $provider->airline_code,
-                    'airline_name' => $provider->airline_name,
-                    'account_name' => $provider->account_name,
-                    'is_active' => (bool) $provider->is_active,
-                    'last_tested_at' => $provider->last_tested_at,
-                    'last_test_status' => $provider->last_test_status,
-                ])
-                ->values();
+                $providers = $providerModels
+                    ->map(fn (TenantProvider $provider): array => [
+                        'id' => $provider->id,
+                        'airline_code' => $provider->airline_code,
+                        'airline_name' => $provider->airline_name,
+                        'account_name' => $provider->account_name,
+                        'is_active' => (bool) $provider->is_active,
+                        'last_tested_at' => $provider->last_tested_at,
+                        'last_test_status' => $provider->last_test_status,
+                    ])
+                    ->values();
 
-            $adminModel = User::query()
-                ->where('role', 'admin')
-                ->orderBy('id')
-                ->first(['id', 'name', 'email', 'last_login_at', 'last_activity_at']);
+                $adminModel = User::query()
+                    ->where('role', 'admin')
+                    ->orderBy('id')
+                    ->first(['id', 'name', 'email', 'last_login_at', 'last_activity_at']);
 
-            $admin = $adminModel
-                ? [
-                    'id' => $adminModel->id,
-                    'name' => $adminModel->name,
-                    'email' => $adminModel->email,
-                    'last_login_at' => $adminModel->last_login_at,
-                    'last_activity_at' => $adminModel->last_activity_at,
-                ]
-                : null;
+                $admin = $adminModel
+                    ? [
+                        'id' => $adminModel->id,
+                        'name' => $adminModel->name,
+                        'email' => $adminModel->email,
+                        'last_login_at' => $adminModel->last_login_at,
+                        'last_activity_at' => $adminModel->last_activity_at,
+                    ]
+                    : null;
 
-            $providersByAirlineCode = $providers->keyBy('airline_code');
+                $providersByAirlineCode = $providers->keyBy('airline_code');
 
-            $recentBookings = Order::query()
-                ->with('items:id,order_id,provider_reference,item_details')
-                ->latest()
-                ->limit(5)
-                ->get(['id', 'status', 'grand_total', 'currency', 'payment_reference', 'created_at'])
-                ->map(function (Order $order) use ($providersByAirlineCode): array {
-                    $firstItem = $order->items->first();
-                    $airlineCode = (string) data_get($firstItem?->item_details, 'airline_code', '');
+                $recentBookings = Order::query()
+                    ->with('items:id,order_id,provider_reference,item_details')
+                    ->latest()
+                    ->limit(5)
+                    ->get(['id', 'status', 'grand_total', 'currency', 'payment_reference', 'created_at'])
+                    ->map(function (Order $order) use ($providersByAirlineCode): array {
+                        $firstItem = $order->items->first();
+                        $airlineCode = (string) data_get($firstItem?->item_details, 'airline_code', '');
 
-                    return [
-                        'id' => $order->id,
-                        'pnr' => (string) ($firstItem?->provider_reference ?: $order->payment_reference),
-                        'status' => $order->status,
-                        'provider' => $airlineCode !== ''
-                            ? ['airline_name' => data_get($providersByAirlineCode->get($airlineCode), 'airline_name')]
-                            : null,
-                        'total_price' => (float) $order->grand_total,
-                        'currency' => $order->currency,
-                        'created_at' => $order->created_at,
-                    ];
-                })
-                ->values();
+                        return [
+                            'id' => $order->id,
+                            'pnr' => (string) ($firstItem?->provider_reference ?: $order->payment_reference),
+                            'status' => $order->status,
+                            'provider' => $airlineCode !== ''
+                                ? ['airline_name' => data_get($providersByAirlineCode->get($airlineCode), 'airline_name')]
+                                : null,
+                            'total_price' => (float) $order->grand_total,
+                            'currency' => $order->currency,
+                            'created_at' => $order->created_at,
+                        ];
+                    })
+                    ->values();
 
-            $users = User::query()
-                ->latest()
-                ->get(['id', 'name', 'email', 'role', 'is_active', 'last_login_at'])
-                ->map(fn (User $user): array => [
-                    'id' => $user->id,
-                    'name' => $user->name,
-                    'email' => $user->email,
-                    'role' => $user->role,
-                    'is_active' => (bool) $user->is_active,
-                    'last_login_at' => $user->last_login_at,
-                ])
-                ->values();
+                $users = User::query()
+                    ->latest()
+                    ->get(['id', 'name', 'email', 'role', 'is_active', 'last_login_at'])
+                    ->map(fn (User $user): array => [
+                        'id' => $user->id,
+                        'name' => $user->name,
+                        'email' => $user->email,
+                        'role' => $user->role,
+                        'is_active' => (bool) $user->is_active,
+                        'last_login_at' => $user->last_login_at,
+                    ])
+                    ->values();
+
+                return [
+                    'stats' => [
+                        'users' => User::count(),
+                        'active_users' => User::where('is_active', true)->count(),
+                        'providers' => $providers->count(),
+                        'active_providers' => $providers->where('is_active', true)->count(),
+                        'bookings' => Order::count(),
+                    ],
+                    'admin_user' => $admin,
+                    'providers' => $providers,
+                    'recent_bookings' => $recentBookings,
+                    'users' => $users,
+                ];
+            });
 
             return [
-                'stats' => [
-                    'users' => User::count(),
-                    'active_users' => User::where('is_active', true)->count(),
-                    'providers' => $providers->count(),
-                    'active_providers' => $providers->where('is_active', true)->count(),
-                    'bookings' => Order::count(),
-                ],
-                'admin_user' => $admin,
-                'providers' => $providers,
-                'recent_bookings' => $recentBookings,
-                'users' => $users,
+                'database_missing' => false,
+                'stats' => $data['stats'],
+                'admin_user' => $data['admin_user'],
+                'providers' => $data['providers'],
+                'recent_bookings' => $data['recent_bookings'],
+                'users' => $data['users'],
             ];
-        });
+        } catch (TenantDatabaseDoesNotExistException $e) {
+            Log::warning("Tenant [{$tenant->id}] database does not exist: {$e->getMessage()}");
 
-        return [
-            'stats' => $data['stats'],
-            'admin_user' => $data['admin_user'],
-            'providers' => $data['providers'],
-            'recent_bookings' => $data['recent_bookings'],
-            'users' => $data['users'],
-        ];
+            return [
+                'database_missing' => true,
+                'stats' => ['users' => 0, 'active_users' => 0, 'providers' => 0, 'active_providers' => 0, 'bookings' => 0],
+                'admin_user' => null,
+                'providers' => [],
+                'recent_bookings' => [],
+                'users' => [],
+            ];
+        }
     }
 
     protected function resolveWalletBalances(Tenant $tenant): array
