@@ -52,7 +52,7 @@ afterEach(function () {
     }
 });
 
-function makeOrder(User $user, string $currency = 'USD'): Order
+function makeWalletOrder(User $user, string $currency = 'USD'): Order
 {
     return Order::create([
         'owner_type' => User::class,
@@ -70,7 +70,7 @@ function makeOrder(User $user, string $currency = 'USD'): Order
     ]);
 }
 
-function makeOrderItem(Order $order, float $totalAmount, float $commissionAmount = 0.0, string $currency = 'USD'): OrderItem
+function makeWalletOrderItem(Order $order, float $totalAmount, float $commissionAmount = 0.0, string $currency = 'USD'): OrderItem
 {
     return OrderItem::create([
         'order_id' => $order->id,
@@ -112,8 +112,8 @@ test('it withdraws from wallet and stores wallet_transaction_id on each item', f
     $wallet = $user->getOrCreateCurrencyWallet('USD');
     $wallet->deposit(50000); // 500.00 USD in cents
 
-    $order = makeOrder($user, 'USD');
-    $item = makeOrderItem($order, 100.0, 0.0, 'USD');
+    $order = makeWalletOrder($user, 'USD');
+    $item = makeWalletOrderItem($order, 100.0, 0.0, 'USD');
 
     app(ProcessWalletTransactions::class)->execute($order, $user);
 
@@ -137,8 +137,8 @@ test('it records commission as payable without depositing back to wallet', funct
     $wallet = $user->getOrCreateCurrencyWallet('USD');
     $wallet->deposit(50000); // 500.00 USD
 
-    $order = makeOrder($user, 'USD');
-    $item = makeOrderItem($order, 100.0, 10.0, 'USD');
+    $order = makeWalletOrder($user, 'USD');
+    $item = makeWalletOrderItem($order, 100.0, 10.0, 'USD');
 
     app(ProcessWalletTransactions::class)->execute($order, $user);
 
@@ -168,8 +168,8 @@ test('it throws InsufficientWalletBalanceException when balance is too low', fun
     $wallet = $user->getOrCreateCurrencyWallet('USD');
     // no deposit — balance is 0
 
-    $order = makeOrder($user, 'USD');
-    $item = makeOrderItem($order, 100.0, 0.0, 'USD');
+    $order = makeWalletOrder($user, 'USD');
+    $item = makeWalletOrderItem($order, 100.0, 0.0, 'USD');
 
     expect(fn () => app(ProcessWalletTransactions::class)->execute($order, $user))
         ->toThrow(InsufficientWalletBalanceException::class);
@@ -187,9 +187,9 @@ test('it rolls back all wallet withdrawals when a later item fails the balance c
     $wallet = $user->getOrCreateCurrencyWallet('USD');
     $wallet->deposit(10000); // 100.00 USD — enough for item 1, not item 2
 
-    $order = makeOrder($user, 'USD');
-    $item1 = makeOrderItem($order, 60.0, 0.0, 'USD');
-    $item2 = makeOrderItem($order, 80.0, 0.0, 'USD');
+    $order = makeWalletOrder($user, 'USD');
+    $item1 = makeWalletOrderItem($order, 60.0, 0.0, 'USD');
+    $item2 = makeWalletOrderItem($order, 80.0, 0.0, 'USD');
 
     expect(fn () => app(ProcessWalletTransactions::class)->execute($order, $user))
         ->toThrow(InsufficientWalletBalanceException::class);
@@ -213,8 +213,8 @@ test('it skips items that already have a wallet_transaction_id', function () {
     $wallet = $user->getOrCreateCurrencyWallet('USD');
     $wallet->deposit(10000);
 
-    $order = makeOrder($user, 'USD');
-    $item = makeOrderItem($order, 50.0, 0.0, 'USD');
+    $order = makeWalletOrder($user, 'USD');
+    $item = makeWalletOrderItem($order, 50.0, 0.0, 'USD');
     $item->update([
         'item_details' => [
             'passenger_name' => 'Test Passenger',
@@ -244,8 +244,8 @@ test('it processes items with only a legacy airline_transaction_id', function ()
     $wallet = $user->getOrCreateCurrencyWallet('USD');
     $wallet->deposit(10000);
 
-    $order = makeOrder($user, 'USD');
-    $item = makeOrderItem($order, 50.0, 0.0, 'USD');
+    $order = makeWalletOrder($user, 'USD');
+    $item = makeWalletOrderItem($order, 50.0, 0.0, 'USD');
 
     $provider = TenantProvider::create([
         'airline_code' => 'YI',

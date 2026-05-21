@@ -12,6 +12,7 @@ return [
         'air_config' => 'مزودو الطيران',
         'hotel_config' => 'مزودو الفنادق',
         'insurance_config' => 'مزودو التأمين',
+        'esim_config' => 'مزودو الشريحة الإلكترونية',
         'general_settings' => 'الإعدادات العامة',
         'orders' => 'الطلبات',
         'sales' => 'المبيعات',

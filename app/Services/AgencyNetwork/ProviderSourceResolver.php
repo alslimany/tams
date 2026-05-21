@@ -5,6 +5,7 @@ namespace App\Services\AgencyNetwork;
 use App\Models\NetworkMembership;
 use App\Models\ProviderAllocation;
 use App\Models\Tenant;
+use App\Models\Tenant\TenantEsimProvider;
 use App\Models\Tenant\TenantHotelProvider;
 use App\Models\Tenant\TenantInsuranceProvider;
 use App\Models\TenantProvider;
@@ -116,12 +117,13 @@ class ProviderSourceResolver
             TenantProvider::class => $this->resolveTenantProvider($allocation->agency_tenant_id, (int) $allocation->source_provider_id),
             TenantInsuranceProvider::class => $this->resolveTenantInsuranceProvider($allocation->agency_tenant_id, (int) $allocation->source_provider_id),
             TenantHotelProvider::class => $this->resolveTenantHotelProvider($allocation->agency_tenant_id, (int) $allocation->source_provider_id),
+            TenantEsimProvider::class => $this->resolveTenantEsimProvider($allocation->agency_tenant_id, (int) $allocation->source_provider_id),
             default => null,
         };
 
         return array_merge($metadata, [
             'provider' => $provider,
-            'resolved_tenant_id' => $provider instanceof TenantProvider || $provider instanceof TenantInsuranceProvider || $provider instanceof TenantHotelProvider ? $allocation->agency_tenant_id : null,
+            'resolved_tenant_id' => $provider instanceof TenantProvider || $provider instanceof TenantInsuranceProvider || $provider instanceof TenantHotelProvider || $provider instanceof TenantEsimProvider ? $allocation->agency_tenant_id : null,
         ]);
     }
 
@@ -195,6 +197,35 @@ class ProviderSourceResolver
         try {
             return $tenant->run(function () use ($providerId): ?TenantHotelProvider {
                 return TenantHotelProvider::query()
+                    ->whereKey($providerId)
+                    ->where('is_active', true)
+                    ->first();
+            });
+        } finally {
+            if ($currentTenantId !== null) {
+                $previousTenant = Tenant::query()->find($currentTenantId);
+
+                if ($previousTenant instanceof Tenant) {
+                    tenancy()->initialize($previousTenant);
+                }
+            } else {
+                tenancy()->end();
+            }
+        }
+    }
+
+    protected function resolveTenantEsimProvider(string $tenantId, int $providerId): ?TenantEsimProvider
+    {
+        $currentTenantId = tenant()?->id;
+        $tenant = Tenant::query()->find($tenantId);
+
+        if (! $tenant instanceof Tenant) {
+            return null;
+        }
+
+        try {
+            return $tenant->run(function () use ($providerId): ?TenantEsimProvider {
+                return TenantEsimProvider::query()
                     ->whereKey($providerId)
                     ->where('is_active', true)
                     ->first();

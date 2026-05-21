@@ -1,8 +1,8 @@
 import AmountDisplay from './AmountDisplay';
-import { Badge } from '@/Components/ui/badge';
+import { Badge } from '@/Components/ui/Badge';
 import { Skeleton } from '@/Components/ui/skeleton';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/Components/ui/sheet';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/Components/ui/table';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/Components/ui/Table';
 
 const JOURNAL_COLORS = {
     AIR: 'bg-blue-100 text-blue-800',

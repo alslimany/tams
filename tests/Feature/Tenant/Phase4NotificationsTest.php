@@ -56,7 +56,7 @@ afterEach(function () {
 // Helpers
 // ---------------------------------------------------------------------------
 
-function makeOrder(array $contact = []): Order
+function makeNotifOrder(array $contact = []): Order
 {
     global $state;
 
@@ -81,7 +81,7 @@ function makeOrder(array $contact = []): Order
     ]);
 }
 
-function makeOrderItem(Order $order, string $type = 'flight', array $extra = []): OrderItem
+function makeNotifOrderItem(Order $order, string $type = 'flight', array $extra = []): OrderItem
 {
     return OrderItem::create(array_merge([
         'order_id' => $order->id,
@@ -113,7 +113,7 @@ function makeOrderItem(Order $order, string $type = 'flight', array $extra = [])
 test('OrderContact::fromOrder builds from order contact JSON', function () {
     global $state;
 
-    $order = makeOrder();
+    $order = makeNotifOrder();
     $contact = OrderContact::fromOrder($order);
 
     expect($contact->email)->toBe('ali@example.com')
@@ -126,7 +126,7 @@ test('OrderContact::fromOrder builds from order contact JSON', function () {
 test('OrderContact::fromOrder handles missing fields gracefully', function () {
     global $state;
 
-    $order = makeOrder(['email' => '', 'phone' => '', 'first_name' => '', 'last_name' => '']);
+    $order = makeNotifOrder(['email' => '', 'phone' => '', 'first_name' => '', 'last_name' => '']);
     $contact = OrderContact::fromOrder($order);
 
     expect($contact->email)->toBe('')
@@ -141,8 +141,8 @@ test('OrderContact::fromOrder handles missing fields gracefully', function () {
 test('TicketIssued sends via mail and whatsapp channels', function () {
     global $state;
 
-    $order = makeOrder();
-    $item = makeOrderItem($order);
+    $order = makeNotifOrder();
+    $item = makeNotifOrderItem($order);
     $notification = new TicketIssued($order, $item);
 
     expect($notification->via(new stdClass))->toContain('mail', 'whatsapp');
@@ -151,8 +151,8 @@ test('TicketIssued sends via mail and whatsapp channels', function () {
 test('TicketIssued toMail contains order number and ticket number', function () {
     global $state;
 
-    $order = makeOrder();
-    $item = makeOrderItem($order);
+    $order = makeNotifOrder();
+    $item = makeNotifOrderItem($order);
     $notification = new TicketIssued($order, $item);
     $mail = $notification->toMail(new stdClass);
 
@@ -166,8 +166,8 @@ test('TicketIssued toMail contains order number and ticket number', function () 
 test('TicketIssued toWhatsApp contains order number', function () {
     global $state;
 
-    $order = makeOrder();
-    $item = makeOrderItem($order);
+    $order = makeNotifOrder();
+    $item = makeNotifOrderItem($order);
     $notification = new TicketIssued($order, $item);
     $contact = OrderContact::fromOrder($order);
     $message = $notification->toWhatsApp($contact);
@@ -183,8 +183,8 @@ test('TicketIssued toWhatsApp contains order number', function () {
 test('TicketVoided sends via mail and whatsapp channels', function () {
     global $state;
 
-    $order = makeOrder();
-    $item = makeOrderItem($order);
+    $order = makeNotifOrder();
+    $item = makeNotifOrderItem($order);
     $notification = new TicketVoided($order, $item);
 
     expect($notification->via(new stdClass))->toContain('mail', 'whatsapp');
@@ -193,8 +193,8 @@ test('TicketVoided sends via mail and whatsapp channels', function () {
 test('TicketVoided toMail contains order number', function () {
     global $state;
 
-    $order = makeOrder();
-    $item = makeOrderItem($order);
+    $order = makeNotifOrder();
+    $item = makeNotifOrderItem($order);
     $notification = new TicketVoided($order, $item);
     $mail = $notification->toMail(new stdClass);
 
@@ -209,8 +209,8 @@ test('TicketVoided toMail contains order number', function () {
 test('TicketCancelled sends via mail and whatsapp channels', function () {
     global $state;
 
-    $order = makeOrder();
-    $item = makeOrderItem($order);
+    $order = makeNotifOrder();
+    $item = makeNotifOrderItem($order);
     $notification = new TicketCancelled($order, $item);
 
     expect($notification->via(new stdClass))->toContain('mail', 'whatsapp');
@@ -219,8 +219,8 @@ test('TicketCancelled sends via mail and whatsapp channels', function () {
 test('TicketCancelled toMail contains order number', function () {
     global $state;
 
-    $order = makeOrder();
-    $item = makeOrderItem($order);
+    $order = makeNotifOrder();
+    $item = makeNotifOrderItem($order);
     $notification = new TicketCancelled($order, $item);
     $mail = $notification->toMail(new stdClass);
 
@@ -235,8 +235,8 @@ test('TicketCancelled toMail contains order number', function () {
 test('HotelBooked sends via mail and whatsapp channels', function () {
     global $state;
 
-    $order = makeOrder();
-    $item = makeOrderItem($order, 'hotel');
+    $order = makeNotifOrder();
+    $item = makeNotifOrderItem($order, 'hotel');
     $notification = new HotelBooked($order, $item);
 
     expect($notification->via(new stdClass))->toContain('mail', 'whatsapp');
@@ -245,8 +245,8 @@ test('HotelBooked sends via mail and whatsapp channels', function () {
 test('HotelBooked toMail contains order number', function () {
     global $state;
 
-    $order = makeOrder();
-    $item = makeOrderItem($order, 'hotel');
+    $order = makeNotifOrder();
+    $item = makeNotifOrderItem($order, 'hotel');
     $notification = new HotelBooked($order, $item);
     $mail = $notification->toMail(new stdClass);
 
@@ -261,8 +261,8 @@ test('HotelBooked toMail contains order number', function () {
 test('PolicyIssued sends via mail and whatsapp channels', function () {
     global $state;
 
-    $order = makeOrder();
-    $item = makeOrderItem($order, 'insurance');
+    $order = makeNotifOrder();
+    $item = makeNotifOrderItem($order, 'insurance');
     $notification = new PolicyIssued($order, $item);
 
     expect($notification->via(new stdClass))->toContain('mail', 'whatsapp');
@@ -271,8 +271,8 @@ test('PolicyIssued sends via mail and whatsapp channels', function () {
 test('PolicyIssued toMail contains order number and policy number', function () {
     global $state;
 
-    $order = makeOrder();
-    $item = makeOrderItem($order, 'insurance');
+    $order = makeNotifOrder();
+    $item = makeNotifOrderItem($order, 'insurance');
     $notification = new PolicyIssued($order, $item);
     $mail = $notification->toMail(new stdClass);
 
@@ -284,8 +284,8 @@ test('PolicyIssued toMail contains order number and policy number', function () 
 test('PolicyIssued toWhatsApp contains order number', function () {
     global $state;
 
-    $order = makeOrder();
-    $item = makeOrderItem($order, 'insurance');
+    $order = makeNotifOrder();
+    $item = makeNotifOrderItem($order, 'insurance');
     $notification = new PolicyIssued($order, $item);
     $contact = OrderContact::fromOrder($order);
     $message = $notification->toWhatsApp($contact);
@@ -369,8 +369,8 @@ test('WhatsAppChannel sends message and logs sent status', function () {
     $client = new AdvLyClient('test-token');
     $channel = new WhatsAppChannel($client);
 
-    $order = makeOrder();
-    $item = makeOrderItem($order);
+    $order = makeNotifOrder();
+    $item = makeNotifOrderItem($order);
     $notification = new TicketIssued($order, $item);
     $contact = OrderContact::fromOrder($order);
 
@@ -390,8 +390,8 @@ test('WhatsAppChannel logs skipped when ERROR_NO_FEATURE', function () {
     $client = new AdvLyClient('test-token');
     $channel = new WhatsAppChannel($client);
 
-    $order = makeOrder();
-    $item = makeOrderItem($order);
+    $order = makeNotifOrder();
+    $item = makeNotifOrderItem($order);
     $notification = new TicketIssued($order, $item);
     $contact = OrderContact::fromOrder($order);
 
@@ -413,8 +413,8 @@ test('WhatsAppChannel logs failed on AdvLy API error', function () {
     $client = new AdvLyClient('test-token');
     $channel = new WhatsAppChannel($client);
 
-    $order = makeOrder();
-    $item = makeOrderItem($order);
+    $order = makeNotifOrder();
+    $item = makeNotifOrderItem($order);
     $notification = new TicketIssued($order, $item);
     $contact = OrderContact::fromOrder($order);
 
@@ -429,8 +429,8 @@ test('WhatsAppChannel skips when no recipient resolved', function () {
     $client = new AdvLyClient('test-token');
     $channel = new WhatsAppChannel($client);
 
-    $order = makeOrder(['phone' => '']);
-    $item = makeOrderItem($order);
+    $order = makeNotifOrder(['phone' => '']);
+    $item = makeNotifOrderItem($order);
     $notification = new TicketIssued($order, $item);
     $contact = OrderContact::fromOrder($order);
 

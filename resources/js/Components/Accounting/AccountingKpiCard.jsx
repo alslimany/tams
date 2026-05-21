@@ -1,7 +1,7 @@
 import { Link } from '@inertiajs/react';
 import { TrendingDownIcon, TrendingUpIcon, MinusIcon } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/Components/ui/card';
-import { Badge } from '@/Components/ui/badge';
+import { Card, CardContent, CardHeader, CardTitle } from '@/Components/ui/Card';
+import { Badge } from '@/Components/ui/Badge';
 import { cn } from '@/lib/utils';
 import AmountDisplay from './AmountDisplay';
 

@@ -7,6 +7,7 @@ use App\Models\Tenant;
 use App\Models\Tenant\AgencySetting;
 use App\Models\Tenant\Order;
 use App\Models\Tenant\OrderItem;
+use App\Models\Tenant\TenantEsimProvider;
 use App\Models\Tenant\TenantInsuranceProvider;
 use App\Models\TenantProvider;
 use App\Models\User;
@@ -1003,6 +1004,78 @@ test('financial source application stores network resolver metadata without chan
         ->and(data_get($item->item_details, 'network_membership_id'))->toBe($membership->id)
         ->and(data_get($item->item_details, 'provider_allocation_id'))->toBe($allocation->id)
         ->and(data_get($item->item_details, 'is_default_agency_deprecated'))->toBeFalse();
+});
+
+test('esim provider appears in available providers with correct shape', function () {
+    $agency = createCentralTenant('esim-avail-agency', 'eSIM Available Agency');
+
+    tenancy()->initialize($agency);
+
+    $provider = TenantEsimProvider::query()->create([
+        'provider_type' => 'l2',
+        'name' => 'L2 eSIM',
+        'credentials' => ['api_key' => 'test-key', 'client_secret' => 'test-secret'],
+        'is_active' => true,
+        'commission_esim' => 15.5,
+        'currency' => 'USD',
+    ]);
+
+    $user = User::factory()->create(['role' => 'admin', 'is_active' => true]);
+    $response = $this->actingAs($user)->get(route('network.index'));
+
+    tenancy()->end();
+
+    $response->assertOk();
+
+    $providers = collect($response->original->getData()['page']['props']['availableProviders']);
+    $esimEntry = $providers->firstWhere('key', "esim:{$provider->id}");
+
+    expect($esimEntry)->not->toBeNull()
+        ->and($esimEntry['provider_type'])->toBe('esim')
+        ->and($esimEntry['financial_mode'])->toBe('commission')
+        ->and($esimEntry['source_provider_model'])->toBe(TenantEsimProvider::class)
+        ->and($esimEntry['source_provider_id'])->toBe($provider->id)
+        ->and($esimEntry['agency_rates']['esim_commission_rate'])->toBe(15.5);
+});
+
+test('esim financial terms calculates merchant commission and agency profit correctly', function () {
+    $agency = createCentralTenant('esim-terms-agency', 'eSIM Terms Agency');
+
+    tenancy()->initialize($agency);
+
+    $provider = TenantEsimProvider::query()->create([
+        'provider_type' => 'l2',
+        'name' => 'L2 eSIM Terms',
+        'credentials' => ['api_key' => 'key', 'client_secret' => 'secret'],
+        'is_active' => true,
+        'commission_esim' => 20.0,
+        'currency' => 'USD',
+    ]);
+
+    $user = User::factory()->create(['role' => 'admin', 'is_active' => true]);
+
+    $response = $this->actingAs($user)->post(route('network.invite'), [
+        'merchant_email' => 'merchant@example.com',
+        'provider_keys' => ["esim:{$provider->id}"],
+        'provider_terms' => [
+            "esim:{$provider->id}" => ['esim_commission_rate' => 12.0],
+        ],
+    ]);
+
+    tenancy()->end();
+
+    $response->assertRedirect();
+
+    $allocation = \App\Models\ProviderAllocation::query()
+        ->where('provider_type', 'esim')
+        ->where('source_provider_id', $provider->id)
+        ->first();
+
+    expect($allocation)->not->toBeNull()
+        ->and((float) $allocation->commission_rate)->toBe(12.0)
+        ->and($allocation->markup_rate)->toBeNull()
+        ->and((float) data_get($allocation->metadata, 'financial_terms.merchant_rates.esim_commission_rate'))->toBe(12.0)
+        ->and((float) data_get($allocation->metadata, 'financial_terms.agency_profit_rates.esim_commission_rate'))->toBe(8.0);
 });
 
 test('financial source application marks deprecated default agency fallback metadata', function () {

@@ -12,6 +12,7 @@ return [
         'air_config' => 'Air Providers',
         'hotel_config' => 'Hotel Providers',
         'insurance_config' => 'Insurance Providers',
+        'esim_config' => 'eSIM Providers',
         'general_settings' => 'General Settings',
         'orders' => 'Orders',
         'sales' => 'Sales',

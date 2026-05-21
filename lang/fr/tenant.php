@@ -12,6 +12,7 @@ return [
         'air_config' => 'Fournisseurs aériens',
         'hotel_config' => 'Fournisseurs hôtels',
         'insurance_config' => 'Fournisseurs assurance',
+        'esim_config' => 'Fournisseurs eSIM',
         'general_settings' => 'Paramètres généraux',
         'orders' => 'Commandes',
         'sales' => 'Ventes',

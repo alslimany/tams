@@ -28,6 +28,7 @@ const rateLabels = {
     travel_discount_rate: 'Travel discount %',
     orange_discount_rate: 'Orange discount %',
     hotel_markup_rate: 'Hotel markup profit %',
+    esim_commission_rate: 'eSIM commission %',
 };
 
 const rateSummary = (terms) => {

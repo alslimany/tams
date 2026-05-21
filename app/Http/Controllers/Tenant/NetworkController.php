@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\NetworkMembership;
 use App\Models\ProviderAllocation;
 use App\Models\Tenant;
+use App\Models\Tenant\TenantEsimProvider;
 use App\Models\Tenant\TenantHotelProvider;
 use App\Models\Tenant\TenantInsuranceProvider;
 use App\Models\TenantProvider;
@@ -272,7 +273,25 @@ class NetworkController extends Controller
                 ],
             ]);
 
-        return $airlines->concat($insurance)->concat($hotels)->values();
+        $esim = TenantEsimProvider::query()
+            ->where('is_active', true)
+            ->get()
+            ->map(fn (TenantEsimProvider $provider): array => [
+                'key' => 'esim:'.$provider->id,
+                'provider_type' => 'esim',
+                'provider_driver' => $provider->provider_type,
+                'provider_identity' => strtoupper((string) $provider->provider_type),
+                'source_provider_model' => TenantEsimProvider::class,
+                'source_provider_id' => $provider->id,
+                'display_name' => $provider->name,
+                'description' => 'eSIM API',
+                'financial_mode' => 'commission',
+                'agency_rates' => [
+                    'esim_commission_rate' => (float) ($provider->commission_esim ?? 0),
+                ],
+            ]);
+
+        return $airlines->concat($insurance)->concat($hotels)->concat($esim)->values();
     }
 
     /**
@@ -288,6 +307,7 @@ class NetworkController extends Controller
             'airline' => $this->airlineFinancialTerms($agencyRates, $input),
             'hotel' => $this->hotelFinancialTerms($agencyRates, $input),
             'insurance' => $this->insuranceFinancialTerms($agencyRates, $input),
+            'esim' => $this->esimFinancialTerms($agencyRates, $input),
             default => [
                 'commission_rate' => null,
                 'markup_rate' => null,
@@ -386,9 +406,30 @@ class NetworkController extends Controller
     }
 
     /**
-     * @param  array<string, mixed>  $input
      * @param  array<string, mixed>  $agencyRates
+     * @param  array<string, mixed>  $input
+     * @return array{commission_rate: float|null, markup_rate: float|null, metadata: array<string, mixed>}
      */
+    protected function esimFinancialTerms(array $agencyRates, array $input): array
+    {
+        $commission = $this->validatedSharedRate($input, 'esim_commission_rate', $agencyRates);
+
+        return [
+            'commission_rate' => $commission,
+            'markup_rate' => null,
+            'metadata' => [
+                'mode' => 'commission',
+                'agency_rates' => $agencyRates,
+                'merchant_rates' => [
+                    'esim_commission_rate' => $commission,
+                ],
+                'agency_profit_rates' => [
+                    'esim_commission_rate' => round(((float) ($agencyRates['esim_commission_rate'] ?? 0)) - $commission, 2),
+                ],
+            ],
+        ];
+    }
+
     protected function validatedSharedRate(array $input, string $key, array $agencyRates): float
     {
         $rate = round((float) ($input[$key] ?? 0), 2);

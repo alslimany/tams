@@ -16,6 +16,7 @@ import {
     ShieldCheckIcon,
     ShoppingCartIcon,
     ShieldIcon,
+    SmartphoneNfcIcon,
     UserIcon,
     UsersIcon,
     WalletIcon,
@@ -106,6 +107,7 @@ export default function TenantLayout({ children }) {
         { name: t('tenant.nav.air_config'), route: 'settings.airlines.index', icon: PlaneTakeoffIcon, showWhen: canManageProviders },
         { name: t('tenant.nav.hotel_config'), route: 'settings.hotels.index', icon: HotelIcon },
         { name: t('tenant.nav.insurance_config'), route: 'settings.insurance.index', icon: ShieldIcon },
+        { name: t('tenant.nav.esim_config'), route: 'settings.esim.index', icon: SmartphoneNfcIcon },
         { name: t('tenant.nav.general_settings'), route: 'settings.general.index', icon: SettingsIcon },
         { name: 'API Tokens', route: 'settings.api-tokens.index', icon: KeyRoundIcon },
     ].filter((item) => isAdmin && hasRoute(item.route) && (item.showWhen !== false));

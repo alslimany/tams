@@ -17,6 +17,8 @@ use App\Http\Controllers\Tenant\ApiTokenController;
 use App\Http\Controllers\Tenant\BookingController;
 use App\Http\Controllers\Tenant\CompulsoryInsuranceController;
 use App\Http\Controllers\Tenant\DashboardController;
+use App\Http\Controllers\Tenant\ESimBookingController;
+use App\Http\Controllers\Tenant\ESimConfigController;
 use App\Http\Controllers\Tenant\HotelBookingController;
 use App\Http\Controllers\Tenant\HotelConfigController;
 use App\Http\Controllers\Tenant\InsuranceBookController;
@@ -87,6 +89,17 @@ Route::prefix(config('tenancy.tenant_path_prefix', 'agency').'/{tenant}')->group
                 Route::get('hotels/details/{uuid}', [HotelBookingController::class, 'details'])->name('hotels.details');
                 Route::post('hotels/book', [HotelBookingController::class, 'book'])->name('hotels.book');
                 Route::post('orders/{order}/hotel-items/{item}/cancel', [HotelBookingController::class, 'cancel'])->name('hotels.order-items.cancel');
+            });
+
+            // eSIM
+            Route::middleware('role:admin,manager,agent')->group(function (): void {
+                Route::get('esim', [ESimBookingController::class, 'index'])->name('esim.index');
+                Route::post('esim/search', [ESimBookingController::class, 'search'])->name('esim.search');
+                Route::get('esim/results/{uuid}', [ESimBookingController::class, 'results'])->name('esim.results');
+                Route::get('esim/results/{uuid}/packages', [ESimBookingController::class, 'packages'])->name('esim.packages');
+                Route::post('esim/select/{uuid}', [ESimBookingController::class, 'select'])->name('esim.select');
+                Route::get('esim/checkout/{uuid}', [ESimBookingController::class, 'checkout'])->name('esim.checkout');
+                Route::post('esim/book', [ESimBookingController::class, 'book'])->name('esim.book');
             });
 
             // Insurance
@@ -179,6 +192,11 @@ Route::prefix(config('tenancy.tenant_path_prefix', 'agency').'/{tenant}')->group
                 Route::post('settings/hotels', [HotelConfigController::class, 'store'])->name('settings.hotels.store');
                 Route::post('settings/hotels/deposit', [HotelConfigController::class, 'deposit'])->name('settings.hotels.deposit');
                 Route::post('settings/hotels/credit-check', [HotelConfigController::class, 'syncCredit'])->name('settings.hotels.credit-check');
+
+                // eSIM Provider Configuration
+                Route::get('settings/esim', [ESimConfigController::class, 'index'])->name('settings.esim.index');
+                Route::post('settings/esim', [ESimConfigController::class, 'store'])->name('settings.esim.store');
+                Route::post('settings/esim/deposit', [ESimConfigController::class, 'deposit'])->name('settings.esim.deposit');
 
                 // API Token Management
                 Route::get('settings/api-tokens', [ApiTokenController::class, 'index'])->name('settings.api-tokens.index');
