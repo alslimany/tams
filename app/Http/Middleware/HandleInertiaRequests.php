@@ -57,7 +57,7 @@ class HandleInertiaRequests extends Middleware
                 ];
             }
         }
-    
+
         return [
             ...parent::share($request),
             'app' => [
@@ -73,6 +73,7 @@ class HandleInertiaRequests extends Middleware
                 'error' => fn () => $request->session()->get('error'),
                 'insurance_quote' => fn () => $request->session()->get('insurance_quote'),
                 'issue_command_preview' => fn () => $request->session()->get('issue_command_preview'),
+                'newToken' => fn () => $request->session()->get('newToken'),
             ],
             'tenant' => [
                 'id' => function_exists('tenant') && tenant() ? tenant()->id : null,
