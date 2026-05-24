@@ -1,9 +1,12 @@
-import React from 'react';
-import { Head, Link } from '@inertiajs/react';
+import React, { useState } from 'react';
+import { Head, Link, router } from '@inertiajs/react';
 import TenantSidebarLayout from '@/Layouts/TenantSidebarLayout';
 import { Badge } from '@/Components/ui/Badge';
 import { Button } from '@/Components/ui/Button';
 import { Card, CardContent } from '@/Components/ui/Card';
+import { Input } from '@/Components/ui/Input';
+import { Label } from '@/Components/ui/Label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/Components/ui/Select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/Components/ui/Table';
 import { formatMoney } from '@/lib/currency';
 import { useTranslation } from '@/hooks/useTranslation';
@@ -11,10 +14,12 @@ import {
     CalendarDays,
     ChevronRight,
     CircleDollarSign,
+    Filter,
     Hotel,
     Plane,
     ShieldCheck,
     Smartphone,
+    X,
 } from 'lucide-react';
 
 const statusStyles = (status) => {
@@ -45,10 +50,40 @@ const stripHtml = (value) => String(value ?? '')
 
 const isLongToken = (value) => String(value ?? '').length > 28;
 
-export default function Index({ orders }) {
+export default function Index({ orders, users = [], filters = {} }) {
     const { t, locale } = useTranslation();
     const rows = orders?.data ?? [];
     const totalOrders = orders?.total ?? rows.length;
+
+    const [form, setForm] = useState({
+        number: filters.number ?? '',
+        type: filters.type ?? '',
+        customer: filters.customer ?? '',
+        date_from: filters.date_from ?? '',
+        date_to: filters.date_to ?? '',
+        reference: filters.reference ?? '',
+        user_id: filters.user_id ?? '',
+    });
+
+    const activeFilterCount = Object.values(form).filter((v) => String(v).trim() !== '').length;
+
+    function handleChange(field, value) {
+        setForm((prev) => ({ ...prev, [field]: value }));
+    }
+
+    function applyFilters(e) {
+        e.preventDefault();
+        const params = Object.fromEntries(
+            Object.entries(form).filter(([, v]) => String(v).trim() !== '')
+        );
+        router.get(route('orders.index'), params, { preserveState: true, replace: true });
+    }
+
+    function clearFilters() {
+        const cleared = { number: '', type: '', customer: '', date_from: '', date_to: '', reference: '', user_id: '' };
+        setForm(cleared);
+        router.get(route('orders.index'), {}, { preserveState: false, replace: true });
+    }
 
     function formatDate(value, options = {}) {
         if (!value) {
@@ -343,11 +378,118 @@ export default function Index({ orders }) {
                     </Card>
                 </div>
 
+                {/* Filter Bar */}
+                <Card>
+                    <CardContent className="p-4">
+                        <form onSubmit={applyFilters}>
+                            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+                                <div className="space-y-1">
+                                    <Label className="text-xs text-muted-foreground">{t('orders.filter_order_number')}</Label>
+                                    <Input
+                                        placeholder={t('orders.filter_order_number_placeholder')}
+                                        value={form.number}
+                                        onChange={(e) => handleChange('number', e.target.value)}
+                                        className="h-8 text-sm"
+                                    />
+                                </div>
+
+                                <div className="space-y-1">
+                                    <Label className="text-xs text-muted-foreground">{t('orders.filter_type')}</Label>
+                                    <Select value={form.type} onValueChange={(v) => handleChange('type', v === '_all' ? '' : v)}>
+                                        <SelectTrigger className="h-8 w-full text-sm">
+                                            <SelectValue placeholder={t('orders.filter_type_placeholder')} />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="_all">{t('orders.filter_type_all')}</SelectItem>
+                                            <SelectItem value="flight">{t('orders.product_flight')}</SelectItem>
+                                            <SelectItem value="hotel">{t('orders.product_hotel')}</SelectItem>
+                                            <SelectItem value="insurance">{t('orders.filter_type_insurance')}</SelectItem>
+                                            <SelectItem value="esim">{t('orders.product_esim')}</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+
+                                <div className="space-y-1">
+                                    <Label className="text-xs text-muted-foreground">{t('orders.filter_customer')}</Label>
+                                    <Input
+                                        placeholder={t('orders.filter_customer_placeholder')}
+                                        value={form.customer}
+                                        onChange={(e) => handleChange('customer', e.target.value)}
+                                        className="h-8 text-sm"
+                                    />
+                                </div>
+
+                                <div className="space-y-1">
+                                    <Label className="text-xs text-muted-foreground">{t('orders.filter_reference')}</Label>
+                                    <Input
+                                        placeholder={t('orders.filter_reference_placeholder')}
+                                        value={form.reference}
+                                        onChange={(e) => handleChange('reference', e.target.value)}
+                                        className="h-8 text-sm"
+                                    />
+                                </div>
+
+                                <div className="space-y-1">
+                                    <Label className="text-xs text-muted-foreground">{t('orders.filter_date')}</Label>
+                                    <div className="flex items-center gap-1">
+                                        <Input
+                                            type="date"
+                                            value={form.date_from}
+                                            onChange={(e) => handleChange('date_from', e.target.value)}
+                                            className="h-8 text-sm"
+                                        />
+                                        <span className="shrink-0 text-xs text-muted-foreground">–</span>
+                                        <Input
+                                            type="date"
+                                            value={form.date_to}
+                                            onChange={(e) => handleChange('date_to', e.target.value)}
+                                            className="h-8 text-sm"
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="space-y-1">
+                                    <Label className="text-xs text-muted-foreground">{t('orders.filter_user')}</Label>
+                                    <Select value={form.user_id} onValueChange={(v) => handleChange('user_id', v === '_all' ? '' : v)}>
+                                        <SelectTrigger className="h-8 w-full text-sm">
+                                            <SelectValue placeholder={t('orders.filter_user_placeholder')} />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="_all">{t('orders.filter_user_all')}</SelectItem>
+                                            {users.map((user) => (
+                                                <SelectItem key={user.id} value={String(user.id)}>{user.name}</SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+                            </div>
+
+                            <div className="mt-3 flex items-center gap-2">
+                                <Button type="submit" size="sm" className="h-8 gap-1.5">
+                                    <Filter className="size-3.5" />
+                                    {t('orders.filter_apply')}
+                                    {activeFilterCount > 0 && (
+                                        <Badge className="ml-0.5 h-4 min-w-4 rounded-full px-1 text-[10px]">
+                                            {activeFilterCount}
+                                        </Badge>
+                                    )}
+                                </Button>
+                                {activeFilterCount > 0 && (
+                                    <Button type="button" size="sm" variant="ghost" className="h-8 gap-1.5 text-muted-foreground" onClick={clearFilters}>
+                                        <X className="size-3.5" />
+                                        {t('orders.filter_clear')}
+                                    </Button>
+                                )}
+                            </div>
+                        </form>
+                    </CardContent>
+                </Card>
+
                 <Card>
                     <CardContent className="p-0">
                         {rows.length === 0 ? (
                             <div className="p-8 text-center text-muted-foreground">
-                                {t('orders.empty')}
+                                {activeFilterCount > 0 ? t('orders.empty_filtered') : t('orders.empty')}
                             </div>
                         ) : (
                             <>

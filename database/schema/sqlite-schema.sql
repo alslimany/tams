@@ -515,6 +515,25 @@ CREATE INDEX "network_memberships_merchant_tenant_id_status_index" on "network_m
   "status"
 );
 CREATE UNIQUE INDEX "tenants_path_unique" on "tenants"("path");
+CREATE TABLE IF NOT EXISTS "migration_records"(
+  "id" integer primary key autoincrement not null,
+  "legacy_agent_id" integer not null,
+  "legacy_agent_name" varchar not null,
+  "legacy_agent_number" varchar,
+  "tenant_id" varchar,
+  "status" varchar not null default 'pending',
+  "initiated_by" varchar not null,
+  "options" text,
+  "log" text,
+  "error" text,
+  "orders_migrated" integer not null default '0',
+  "items_migrated" integer not null default '0',
+  "customers_migrated" integer not null default '0',
+  "started_at" datetime,
+  "completed_at" datetime,
+  "created_at" datetime,
+  "updated_at" datetime
+);
 
 INSERT INTO migrations VALUES(1,'0001_01_01_000000_create_users_table',1);
 INSERT INTO migrations VALUES(2,'0001_01_01_000001_create_cache_table',1);
@@ -549,3 +568,4 @@ INSERT INTO migrations VALUES(37,'2026_05_10_131543_add_merchant_selection_field
 INSERT INTO migrations VALUES(38,'2026_05_10_131543_add_phase_one_fields_to_network_memberships_table',11);
 INSERT INTO migrations VALUES(39,'2026_05_13_105940_add_path_and_documents_to_tenants_table',12);
 INSERT INTO migrations VALUES(40,'2026_05_13_125331_add_type_to_tenants_table',13);
+INSERT INTO migrations VALUES(41,'2026_05_22_232916_create_migration_records_table',14);

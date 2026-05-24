@@ -8,7 +8,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/Components/ui/Dialog';
 import { Input } from '@/Components/ui/Input';
 import { Label } from '@/Components/ui/Label';
-import { Select } from '@/Components/ui/Select';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/Components/ui/Select';
 import { Switch } from '@/Components/ui/Switch';
 import { Plus, Pencil, Trash2, ShieldCheck, User as UserIcon, Mail, Key, Wallet, Star, ArrowUpCircle, DatabaseZap } from 'lucide-react';
 
@@ -557,14 +557,18 @@ export default function Show({ tenantRecord }) {
                                     <Label htmlFor="role" className="flex items-center gap-2">
                                         <ShieldCheck className="h-4 w-4 text-muted-foreground" /> Role
                                     </Label>
-                                    <Select 
-                                        id="role" 
-                                        value={data.role} 
-                                        onChange={e => setData('role', e.target.value)}
+                                    <Select
+                                        value={data.role}
+                                        onValueChange={value => setData('role', value)}
                                     >
-                                        <option value="admin">Admin</option>
-                                        <option value="manager">Manager</option>
-                                        <option value="agent">Agent</option>
+                                        <SelectTrigger id="role" className="w-full">
+                                            <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="admin">Admin</SelectItem>
+                                            <SelectItem value="manager">Manager</SelectItem>
+                                            <SelectItem value="agent">Agent</SelectItem>
+                                        </SelectContent>
                                     </Select>
                                     {errors.role && <p className="text-xs text-destructive">{errors.role}</p>}
                                 </div>
@@ -610,13 +614,17 @@ export default function Show({ tenantRecord }) {
                             <div className="space-y-2">
                                 <Label htmlFor="topup-currency">Currency</Label>
                                 <Select
-                                    id="topup-currency"
                                     value={topUpForm.data.currency}
-                                    onChange={e => topUpForm.setData('currency', e.target.value)}
+                                    onValueChange={value => topUpForm.setData('currency', value)}
                                 >
-                                    <option value="LYD">LYD - Libyan Dinar</option>
-                                    <option value="USD">USD - US Dollar</option>
-                                    <option value="EUR">EUR - Euro</option>
+                                    <SelectTrigger id="topup-currency" className="w-full">
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="LYD">LYD - Libyan Dinar</SelectItem>
+                                        <SelectItem value="USD">USD - US Dollar</SelectItem>
+                                        <SelectItem value="EUR">EUR - Euro</SelectItem>
+                                    </SelectContent>
                                 </Select>
                                 {topUpForm.errors.currency && <p className="text-xs text-destructive">{topUpForm.errors.currency}</p>}
                             </div>

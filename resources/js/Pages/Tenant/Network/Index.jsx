@@ -240,8 +240,8 @@ export default function NetworkIndex({ agencyNumber, availableProviders = [], ag
                                 {agencyMemberships.map((membership) => (
                                     <TableRow key={membership.id}>
                                         <TableCell>
-                                            <div className="font-medium">{membership.merchant_contact_name || membership.merchant_email}</div>
-                                            <div className="text-xs text-muted-foreground">{membership.merchant_email}</div>
+                                            <div className="font-medium">{membership.merchant_name || membership.merchant_contact_name || membership.merchant_email}</div>
+                                            <div className="text-xs text-muted-foreground">{membership.merchant_number || membership.merchant_email}</div>
                                         </TableCell>
                                         <TableCell>{membership.invitation_code}</TableCell>
                                         <TableCell>{membership.allocations.length}</TableCell>

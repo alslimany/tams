@@ -490,7 +490,7 @@ class NetworkController extends Controller
     protected function agencyMemberships(string $tenantId): \Illuminate\Support\Collection
     {
         return NetworkMembership::query()
-            ->with('providerAllocations')
+            ->with(['merchant', 'providerAllocations'])
             ->where('agency_tenant_id', $tenantId)
             ->latest()
             ->get()
@@ -520,6 +520,8 @@ class NetworkController extends Controller
             'agency_name' => $membership->agency?->company_name,
             'agency_number' => $membership->agency?->agency_number,
             'merchant_tenant_id' => $membership->merchant_tenant_id,
+            'merchant_name' => $membership->merchant?->company_name,
+            'merchant_number' => $membership->merchant?->agency_number,
             'merchant_email' => $membership->merchant_email,
             'merchant_contact_name' => $membership->merchant_contact_name,
             'invitation_code' => $membership->invitation_code,

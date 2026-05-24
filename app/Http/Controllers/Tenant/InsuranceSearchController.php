@@ -21,9 +21,9 @@ class InsuranceSearchController extends Controller
 
         return Inertia::render('Tenant/Insurance/Search', [
             'productTypes' => [
-                ['value' => 'compulsory', 'label' => 'Compulsory'],
-                ['value' => 'travel', 'label' => 'Travel'],
-                ['value' => 'orange', 'label' => 'Orange'],
+                ['value' => 'compulsory', 'label' => __('common.compulsory_insurance')],
+                ['value' => 'travel', 'label' => __('common.travel_insurance')],
+                ['value' => 'orange', 'label' => __('common.orange_insurance')],
             ],
             'lookupsByType' => [
                 'compulsory' => ['durations'],

@@ -8,7 +8,7 @@ import { Label } from '@/Components/ui/Label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/Components/ui/Card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/Components/ui/Select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/Components/ui/Tabs';
-import { ArrowLeft, Save } from 'lucide-react';
+import { ArrowLeft, Save, Eye, EyeOff } from 'lucide-react';
 
 export default function Edit({ airport }) {
     const { t } = useTranslation();
@@ -23,6 +23,7 @@ export default function Edit({ airport }) {
         longitude: airport.longitude || '',
         elevation_ft: airport.elevation_ft || '',
         type: airport.type || 'large_airport',
+        show_in_registration: airport.show_in_registration ?? false,
     });
 
     const handleSubmit = (e) => {
@@ -287,6 +288,31 @@ export default function Edit({ airport }) {
                                         </Select>
                                         {errors.type && <p className="text-sm text-destructive">{errors.type}</p>}
                                     </div>
+                                </CardContent>
+                            </Card>
+
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle>Registration Visibility</CardTitle>
+                                    <CardDescription>
+                                        Show this airport in the agency registration city picker
+                                    </CardDescription>
+                                </CardHeader>
+                                <CardContent>
+                                    <button
+                                        type="button"
+                                        onClick={() => setData('show_in_registration', !data.show_in_registration)}
+                                        className={`inline-flex w-full items-center justify-center gap-2 rounded-lg border px-4 py-3 text-sm font-semibold transition-colors ${
+                                            data.show_in_registration
+                                                ? 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                                                : 'border-slate-200 bg-slate-50 text-slate-500 hover:bg-slate-100'
+                                        }`}
+                                    >
+                                        {data.show_in_registration
+                                            ? <><Eye className="h-4 w-4" /> Visible in Registration</>
+                                            : <><EyeOff className="h-4 w-4" /> Hidden from Registration</>
+                                        }
+                                    </button>
                                 </CardContent>
                             </Card>
 

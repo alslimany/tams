@@ -30,6 +30,8 @@ class Tenant extends BaseTenant implements TenantWithDatabase, WalletInterface
             'path',
             'type',
             'agency_number',
+            'office_id',
+            'city_iata',
             'company_name',
             'owner_name',
             'owner_email',

@@ -2,14 +2,15 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Airport;
 use App\Models\Tenant;
 use App\Models\User;
 use App\Notifications\AgencyCreatedConfirmation;
+use App\Services\OfficeIdGenerator;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Notification;
-use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules;
 use Inertia\Inertia;
@@ -19,8 +20,21 @@ class AgencyRegistrationController extends Controller
 {
     public function show(): Response
     {
+        $airports = Airport::query()
+            ->where('show_in_registration', true)
+            ->whereNotNull('iata_code')
+            ->orderByRaw("json_extract(country, '$.en') ASC")
+            ->orderByRaw("json_extract(city, '$.en') ASC")
+            ->get(['id', 'iata_code', 'name', 'city', 'country'])
+            ->map(fn (Airport $airport): array => [
+                'iata_code' => $airport->iata_code,
+                'city' => data_get($airport->city, 'en', $airport->iata_code),
+                'country' => data_get($airport->country, 'en', ''),
+            ]);
+
         return Inertia::render('Agency/Register', [
             'centralDomain' => $this->centralDomain(),
+            'airports' => $airports,
         ]);
     }
 
@@ -33,24 +47,26 @@ class AgencyRegistrationController extends Controller
             'owner_name' => ['nullable', 'string', 'max:255'],
             'phone' => ['nullable', 'string', 'max:255'],
             'email' => ['required', 'string', 'email', 'max:255'],
-            'agency_path' => [
+            'city_iata' => [
                 'required',
                 'string',
-                'max:63',
-                'regex:/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/',
-                Rule::notIn(['admin', 'api', 'app', 'mail', 'www', 'agency', 'register-agency', 'login', 'logout', 'dashboard']),
-                Rule::unique('tenants', 'id'),
+                'size:3',
+                Rule::exists('airports', 'iata_code')->where('show_in_registration', true),
             ],
             'password' => ['required', 'confirmed', Rules\Password::defaults()],
             'commercial_register' => ['required', 'file', 'mimes:pdf,jpg,jpeg,png', 'max:10240'],
             'passport' => ['required', 'file', 'mimes:pdf,jpg,jpeg,png', 'max:10240'],
         ]);
 
-        $agencyPath = Str::lower($request->string('agency_path'));
+        $generator = new OfficeIdGenerator;
+        $cityIata = strtoupper($request->string('city_iata'));
+        $officeId = $generator->generate($cityIata, $request->company_name);
 
         $tenant = Tenant::create([
-            'id' => $agencyPath,
-            'path' => $agencyPath,
+            'id' => $officeId,
+            'path' => $officeId,
+            'office_id' => $officeId,
+            'city_iata' => $cityIata,
             'company_name' => $request->company_name,
             'owner_name' => $request->owner_name ?: $request->company_name,
             'owner_email' => $request->email,
@@ -65,24 +81,24 @@ class AgencyRegistrationController extends Controller
 
         // Store uploaded documents
         $commercialRegisterPath = $request->file('commercial_register')
-            ->store("registrations/{$agencyPath}", 'public');
+            ->store("registrations/{$officeId}", 'public');
 
         $passportPath = $request->file('passport')
-            ->store("registrations/{$agencyPath}", 'public');
+            ->store("registrations/{$officeId}", 'public');
 
         $tenant->update([
             'commercial_register_path' => $commercialRegisterPath,
             'passport_path' => $passportPath,
         ]);
 
-        // Create a domain record for backward compatibility
+        // Create a domain record
         $tenantBaseDomain = (string) config('tenancy.tenant_base_domain');
         $tenant->domains()->create([
-            'domain' => $agencyPath.'.'.$tenantBaseDomain,
+            'domain' => strtolower($officeId).'.'.$tenantBaseDomain,
         ]);
 
         // Create admin user in tenant database
-        $tenant->run(function () use ($request) {
+        $tenant->run(function () use ($request): void {
             User::create([
                 'name' => $request->owner_name ?: $request->company_name,
                 'email' => $request->email,
@@ -92,13 +108,13 @@ class AgencyRegistrationController extends Controller
             ]);
         });
 
-        $workspaceUrl = config('app.url').'/agency/'.$agencyPath.'/login';
+        $workspaceUrl = config('app.url').'/agency/'.strtolower($officeId).'/login';
         $ownerName = $request->owner_name ?: $request->company_name;
 
         $registration = [
             'agencyName' => $tenant->company_name,
             'agencyNumber' => $tenant->agency_number,
-            'agencyPath' => $agencyPath,
+            'officeId' => $officeId,
             'ownerName' => $ownerName,
             'ownerEmail' => $request->email,
             'workspaceUrl' => $workspaceUrl,
@@ -109,7 +125,7 @@ class AgencyRegistrationController extends Controller
             ->notify(new AgencyCreatedConfirmation(
                 agencyName: $tenant->company_name,
                 agencyNumber: $tenant->agency_number,
-                agencyPath: $agencyPath,
+                agencyPath: strtolower($officeId),
                 ownerName: $ownerName,
                 ownerEmail: $request->email,
                 workspaceUrl: $workspaceUrl,

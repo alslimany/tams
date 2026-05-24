@@ -3,7 +3,7 @@ import { Link, usePage } from '@inertiajs/react';
 import { Button } from '@/Components/ui/Button';
 import { Badge } from '@/Components/ui/Badge';
 import { Toaster, toast } from 'sonner';
-import { LayoutDashboard, Users, Settings, LogOut, Plane, BarChart3 } from 'lucide-react';
+import { LayoutDashboard, Users, Settings, LogOut, Plane, BarChart3, ArrowDownToLine } from 'lucide-react';
 import { useTranslation } from '@/hooks/useTranslation';
 
 export default function LandlordLayout({ children }) {
@@ -59,6 +59,13 @@ const { csrf_token } = usePage().props;
                         <Users className="h-5 w-5" /> {t('landlord.console.agencies')}
                     </Link>
 
+                    <Link
+                        href={route('landlord.airports.index')}
+                        className={`flex items-center gap-3 px-4 py-3 text-sm font-bold rounded-xl transition-all ${route().current('landlord.airports.*') ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-900'}`}
+                    >
+                        <Plane className="h-5 w-5" /> Airports
+                    </Link>
+
                     <div className="pt-8 text-[10px] uppercase tracking-[0.2em] font-black text-slate-400 mb-4 px-4">{t('landlord.console.system')}</div>
                     
                     <Link 
@@ -68,6 +75,13 @@ const { csrf_token } = usePage().props;
                         <BarChart3 className="h-5 w-5" /> {t('landlord.console.analytics')}
                     </Link>
                     
+                    <Link 
+                        href={route('landlord.migration.index')}
+                        className={`flex items-center gap-3 px-4 py-3 text-sm font-bold rounded-xl transition-all ${route().current('landlord.migration.*') ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-900'}`}
+                    >
+                        <ArrowDownToLine className="h-5 w-5" /> Migration
+                    </Link>
+
                     <Link 
                         href={route('landlord.settings.flight-cache.index')} 
                         className={`flex items-center gap-3 px-4 py-3 text-sm font-bold rounded-xl transition-all ${route().current('landlord.settings.flight-cache.*') ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-900'}`}

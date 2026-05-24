@@ -15,7 +15,6 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\Log;
 use Inertia\Inertia;
 use Inertia\Response;
-use Stancl\Tenancy\Exceptions\TenantDatabaseDoesNotExistException;
 
 class TenantManagementController extends Controller
 {
@@ -53,31 +52,31 @@ class TenantManagementController extends Controller
         ]);
     }
 
-    public function show(Tenant $tenant): Response
+    public function show(Tenant $tenantRecord): Response
     {
-        $snapshot = $this->tenantSnapshot($tenant);
-        $walletBalances = $this->resolveWalletBalances($tenant);
-        $recentWalletTransactions = $this->resolveRecentWalletTransactions($tenant);
-        $agencySettings = $this->resolveAgencySettings($tenant);
-        $defaultAgencySettings = $this->resolveDefaultAgencySettings($tenant);
+        $snapshot = $this->tenantSnapshot($tenantRecord);
+        $walletBalances = $this->resolveWalletBalances($tenantRecord);
+        $recentWalletTransactions = $this->resolveRecentWalletTransactions($tenantRecord);
+        $agencySettings = $this->resolveAgencySettings($tenantRecord);
+        $defaultAgencySettings = $this->resolveDefaultAgencySettings($tenantRecord);
 
         return Inertia::render('Landlord/Tenants/Show', [
             'tenantRecord' => [
-                'id' => $tenant->id,
-                'company_name' => $tenant->company_name,
-                'owner_name' => $tenant->owner_name,
-                'owner_email' => $tenant->owner_email,
-                'owner_phone' => $tenant->owner_phone,
-                'status' => $tenant->status,
-                'subscription_status' => $tenant->subscription_status,
-                'subscription_plan' => $tenant->subscription_plan,
-                'settings' => $tenant->settings,
-                'is_default_agency' => $tenant->isDefaultAgency(),
-                'master_commission_rate' => $tenant->getMasterCommissionRate(),
-                'uses_own_airline_credentials' => $tenant->usesOwnAirlineCredentials(),
-                'domains' => $tenant->domains->pluck('domain')->values(),
-                'created_at' => $tenant->created_at,
-                'last_activity_at' => $tenant->last_activity_at,
+                'id' => $tenantRecord->id,
+                'company_name' => $tenantRecord->company_name,
+                'owner_name' => $tenantRecord->owner_name,
+                'owner_email' => $tenantRecord->owner_email,
+                'owner_phone' => $tenantRecord->owner_phone,
+                'status' => $tenantRecord->status,
+                'subscription_status' => $tenantRecord->subscription_status,
+                'subscription_plan' => $tenantRecord->subscription_plan,
+                'settings' => $tenantRecord->settings,
+                'is_default_agency' => $tenantRecord->isDefaultAgency(),
+                'master_commission_rate' => $tenantRecord->getMasterCommissionRate(),
+                'uses_own_airline_credentials' => $tenantRecord->usesOwnAirlineCredentials(),
+                'domains' => $tenantRecord->domains->pluck('domain')->values(),
+                'created_at' => $tenantRecord->created_at,
+                'last_activity_at' => $tenantRecord->last_activity_at,
                 'wallet_balances' => $walletBalances,
                 'recent_wallet_transactions' => $recentWalletTransactions,
                 'agency_settings' => $agencySettings,
@@ -88,9 +87,9 @@ class TenantManagementController extends Controller
         ]);
     }
 
-    public function updateStatus(UpdateTenantStatusRequest $request, Tenant $tenant): RedirectResponse
+    public function updateStatus(UpdateTenantStatusRequest $request, Tenant $tenantRecord): RedirectResponse
     {
-        $tenant->update([
+        $tenantRecord->update([
             'status' => $request->validated('status'),
         ]);
 
@@ -99,6 +98,19 @@ class TenantManagementController extends Controller
 
     protected function tenantSnapshot(Tenant $tenant): array
     {
+        $dbPath = database_path('tenant'.$tenant->id.'.sqlite');
+
+        if (! file_exists($dbPath)) {
+            return [
+                'database_missing' => true,
+                'stats' => ['users' => 0, 'active_users' => 0, 'providers' => 0, 'active_providers' => 0, 'bookings' => 0],
+                'admin_user' => null,
+                'providers' => [],
+                'recent_bookings' => [],
+                'users' => [],
+            ];
+        }
+
         try {
             $data = $tenant->run(function (): array {
                 $providerModels = TenantProvider::query()->get([
@@ -199,8 +211,8 @@ class TenantManagementController extends Controller
                 'recent_bookings' => $data['recent_bookings'],
                 'users' => $data['users'],
             ];
-        } catch (TenantDatabaseDoesNotExistException $e) {
-            Log::warning("Tenant [{$tenant->id}] database does not exist: {$e->getMessage()}");
+        } catch (\Throwable $e) {
+            Log::warning("Tenant [{$tenant->id}] snapshot failed: {$e->getMessage()}", ['exception' => $e]);
 
             return [
                 'database_missing' => true,
@@ -257,16 +269,31 @@ class TenantManagementController extends Controller
      */
     protected function resolveAgencySettings(Tenant $tenant): array
     {
-        return $tenant->run(function (): array {
-            $settings = AgencySetting::current();
+        $defaults = [
+            'can_use_own_airline_credentials' => false,
+            'force_use_default_agency' => false,
+            'default_agency_tenant_id' => null,
+            'master_commission_percent' => 0,
+        ];
 
-            return [
-                'can_use_own_airline_credentials' => $settings->canUseOwnAirlineCredentials(),
-                'force_use_default_agency' => $settings->isForcedToUseDefaultAgency(),
-                'default_agency_tenant_id' => $settings->default_agency_tenant_id,
-                'master_commission_percent' => $settings->getMasterCommissionPercent(),
-            ];
-        });
+        if (! file_exists(database_path('tenant'.$tenant->id.'.sqlite'))) {
+            return $defaults;
+        }
+
+        try {
+            return $tenant->run(function (): array {
+                $settings = AgencySetting::current();
+
+                return [
+                    'can_use_own_airline_credentials' => $settings->canUseOwnAirlineCredentials(),
+                    'force_use_default_agency' => $settings->isForcedToUseDefaultAgency(),
+                    'default_agency_tenant_id' => $settings->default_agency_tenant_id,
+                    'master_commission_percent' => $settings->getMasterCommissionPercent(),
+                ];
+            });
+        } catch (\Throwable) {
+            return $defaults;
+        }
     }
 
     /**

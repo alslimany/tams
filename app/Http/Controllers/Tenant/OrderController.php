@@ -33,19 +33,66 @@ class OrderController extends Controller
 
     public function index(): Response
     {
+        $filters = request()->only(['number', 'type', 'customer', 'date_from', 'date_to', 'reference', 'user_id']);
+
         $orders = Order::query()
             ->with([
                 'owner',
                 'items:id,order_id,type,product_type,product_subtype,provider,provider_reference,ticket_number,total,total_amount,currency,status,item_details,product_details',
             ])
             ->withCount('items')
+            ->when(filled($filters['number'] ?? null), function ($query) use ($filters): void {
+                $query->where('number', 'like', '%'.$filters['number'].'%');
+            })
+            ->when(filled($filters['customer'] ?? null), function ($query) use ($filters): void {
+                $term = '%'.$filters['customer'].'%';
+                $query->where(function ($q) use ($term): void {
+                    $q->where('contact', 'like', $term)
+                        ->orWhereHasMorph('owner', [User::class], function ($q) use ($term): void {
+                            $q->where('name', 'like', $term);
+                        });
+                });
+            })
+            ->when(filled($filters['user_id'] ?? null), function ($query) use ($filters): void {
+                $query->where('owner_type', (new User)->getMorphClass())
+                    ->where('owner_id', $filters['user_id']);
+            })
+            ->when(filled($filters['date_from'] ?? null), function ($query) use ($filters): void {
+                $query->whereDate('issued_at', '>=', $filters['date_from']);
+            })
+            ->when(filled($filters['date_to'] ?? null), function ($query) use ($filters): void {
+                $query->whereDate('issued_at', '<=', $filters['date_to']);
+            })
+            ->when(filled($filters['type'] ?? null), function ($query) use ($filters): void {
+                $type = $filters['type'];
+                $query->whereHas('items', function ($q) use ($type): void {
+                    $q->where(function ($q) use ($type): void {
+                        $q->where('type', $type)
+                            ->orWhere('product_type', $type);
+                    });
+                });
+            })
+            ->when(filled($filters['reference'] ?? null), function ($query) use ($filters): void {
+                $term = '%'.$filters['reference'].'%';
+                $query->whereHas('items', function ($q) use ($term): void {
+                    $q->where('provider_reference', 'like', $term)
+                        ->orWhere('ticket_number', 'like', $term)
+                        ->orWhere('id', 'like', $term);
+                });
+            })
             ->latest('issued_at')
             ->latest('created_at')
             ->paginate(20)
             ->withQueryString();
 
+        $users = User::query()
+            ->orderBy('name')
+            ->get(['id', 'name']);
+
         return Inertia::render('Orders/Index', [
             'orders' => $orders,
+            'users' => $users,
+            'filters' => $filters,
         ]);
     }
 
@@ -114,7 +161,7 @@ class OrderController extends Controller
     public function flightTicketPdf(Order $order, OrderItem $item): \Spatie\LaravelPdf\PdfBuilder
     {
         abort_unless($item->order_id === $order->id, 404);
-        abort_unless((string) $item->type === 'flight' || (string) $item->product_type === 'flight', 404);
+        abort_unless(in_array((string) $item->type, ['flight', 'flight_ticket'], true) || in_array((string) $item->product_type, ['flight', 'airline'], true), 404);
 
         $order->loadMissing('owner');
 

@@ -1,23 +1,39 @@
 import { Head, useForm } from '@inertiajs/react';
+import { useState, useMemo } from 'react';
 import { Button } from '@/Components/ui/Button';
 import { Input } from '@/Components/ui/Input';
 import { Label } from '@/Components/ui/Label';
 import AuthSplitLayout from '@/Layouts/AuthSplitLayout';
 import { useTranslation } from '@/hooks/useTranslation';
 
-export default function Register({ centralDomain }) {
+export default function Register({ centralDomain, airports }) {
     const { t } = useTranslation();
     const { data, setData, post, processing, errors } = useForm({
         company_name: '',
         owner_name: '',
         phone: '',
         email: '',
-        agency_path: '',
+        city_iata: '',
         password: '',
         password_confirmation: '',
         commercial_register: null,
         passport: null,
     });
+
+    const [airportSearch, setAirportSearch] = useState('');
+
+    const filteredAirports = useMemo(() => {
+        const q = airportSearch.toLowerCase();
+        if (!q) return airports;
+        return airports.filter(
+            (a) =>
+                a.city.toLowerCase().includes(q) ||
+                a.country.toLowerCase().includes(q) ||
+                a.iata_code.toLowerCase().includes(q),
+        );
+    }, [airports, airportSearch]);
+
+    const selectedAirport = airports.find((a) => a.iata_code === data.city_iata);
 
     const submit = (e) => {
         e.preventDefault();
@@ -87,22 +103,46 @@ export default function Register({ centralDomain }) {
                         {errors.email && <p className="text-sm text-destructive">{errors.email}</p>}
                     </div>
 
+                    {/* City / Office Location */}
                     <div className="space-y-2 sm:col-span-2">
-                        <Label htmlFor="agency_path">{t('landlord.auth.agency_path')}</Label>
-                        <div className="flex items-center gap-2">
-                            <span className="shrink-0 text-sm text-muted-foreground">{centralDomain}/agency/</span>
-                            <Input
-                                id="agency_path"
-                                type="text"
-                                value={data.agency_path}
-                                onChange={(e) => setData('agency_path', e.target.value)}
-                                className="flex-1"
-                                placeholder="my-agency"
-                                required
-                            />
-                        </div>
-                        <p className="text-xs text-muted-foreground">{t('landlord.auth.agency_path_hint')}</p>
-                        {errors.agency_path && <p className="text-sm text-destructive">{errors.agency_path}</p>}
+                        <Label>{t('landlord.auth.agency_city')}</Label>
+                        <Input
+                            type="text"
+                            placeholder={t('landlord.auth.agency_city_search_placeholder')}
+                            value={airportSearch}
+                            onChange={(e) => {
+                                setAirportSearch(e.target.value);
+                                setData('city_iata', '');
+                            }}
+                        />
+                        {airportSearch && !selectedAirport && (
+                            <div className="max-h-48 overflow-y-auto rounded-md border bg-popover shadow-md">
+                                {filteredAirports.length === 0 ? (
+                                    <p className="px-3 py-2 text-sm text-muted-foreground">{t('common.no_results')}</p>
+                                ) : (
+                                    filteredAirports.slice(0, 50).map((airport) => (
+                                        <button
+                                            key={airport.iata_code}
+                                            type="button"
+                                            className="flex w-full flex-col px-3 py-2 text-left hover:bg-accent"
+                                            onClick={() => {
+                                                setData('city_iata', airport.iata_code);
+                                                setAirportSearch(airport.city);
+                                            }}
+                                        >
+                                            <span className="font-medium">{airport.city}</span>
+                                            <span className="text-xs text-muted-foreground">{airport.country} · {airport.iata_code}</span>
+                                        </button>
+                                    ))
+                                )}
+                            </div>
+                        )}
+                        {selectedAirport && (
+                            <p className="text-xs text-muted-foreground">
+                                {selectedAirport.city}, {selectedAirport.country} ({selectedAirport.iata_code})
+                            </p>
+                        )}
+                        {errors.city_iata && <p className="text-sm text-destructive">{errors.city_iata}</p>}
                     </div>
 
                     <div className="space-y-2 sm:col-span-2">

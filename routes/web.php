@@ -6,6 +6,7 @@ use App\Http\Controllers\Landlord\AirportController;
 use App\Http\Controllers\Landlord\Auth\AuthenticatedSessionController as LandlordAuthenticatedSessionController;
 use App\Http\Controllers\Landlord\DashboardController as LandlordDashboardController;
 use App\Http\Controllers\Landlord\GlobalFlightCacheSettingsController;
+use App\Http\Controllers\Landlord\MigrationController;
 use App\Http\Controllers\Landlord\TenantManagementController;
 use App\Http\Controllers\Landlord\TenantUserController;
 use App\Http\Controllers\LanguageController;
@@ -27,9 +28,6 @@ Route::post('/register-agency', [AgencyRegistrationController::class, 'store']);
 Route::get('/register-agency/success', [AgencyRegistrationController::class, 'success'])->name('agency.registration.success');
 Route::get('/agency', fn () => Inertia::render('Agency/Login'))->name('agency.login');
 
-// API routes (path-based tenancy)
-require __DIR__.'/api.php';
-
 Route::prefix('admin')->name('landlord.')->group(function () {
     Route::get('login', [LandlordAuthenticatedSessionController::class, 'create'])->name('login');
     Route::post('login', [LandlordAuthenticatedSessionController::class, 'store'])->name('login.store');
@@ -40,21 +38,31 @@ Route::prefix('admin')->name('landlord.')->group(function () {
         Route::get('settings/flight-cache', [GlobalFlightCacheSettingsController::class, 'index'])->name('settings.flight-cache.index');
         Route::patch('settings/flight-cache', [GlobalFlightCacheSettingsController::class, 'update'])->name('settings.flight-cache.update');
         Route::get('tenants', [TenantManagementController::class, 'index'])->name('tenants.index');
-        Route::get('tenants/{tenant}', [TenantManagementController::class, 'show'])->name('tenants.show');
-        Route::patch('tenants/{tenant}/status', [TenantManagementController::class, 'updateStatus'])->name('tenants.status');
+        Route::get('tenants/{tenantRecord}', [TenantManagementController::class, 'show'])->name('tenants.show');
+        Route::patch('tenants/{tenantRecord}/status', [TenantManagementController::class, 'updateStatus'])->name('tenants.status');
 
-        Route::post('tenants/{tenant}/users', [TenantUserController::class, 'store'])->name('tenants.users.store');
-        Route::put('tenants/{tenant}/users/{user}', [TenantUserController::class, 'update'])->name('tenants.users.update');
-        Route::delete('tenants/{tenant}/users/{user}', [TenantUserController::class, 'destroy'])->name('tenants.users.destroy');
+        Route::post('tenants/{tenantRecord}/users', [TenantUserController::class, 'store'])->name('tenants.users.store');
+        Route::put('tenants/{tenantRecord}/users/{user}', [TenantUserController::class, 'update'])->name('tenants.users.update');
+        Route::delete('tenants/{tenantRecord}/users/{user}', [TenantUserController::class, 'destroy'])->name('tenants.users.destroy');
 
         // Agency Wallet & Master Agency Management
-        Route::post('tenants/{tenant}/wallet-topup', [AgencyWalletController::class, 'topUp'])->name('tenants.wallet.topup');
-        Route::patch('tenants/{tenant}/default-agency', [AgencyWalletController::class, 'setDefaultAgency'])->name('tenants.default-agency');
-        Route::patch('tenants/{tenant}/credentials-permission', [AgencyWalletController::class, 'updateCredentialsPermission'])->name('tenants.credentials-permission');
-        Route::patch('tenants/{tenant}/agency-settings', [AgencyWalletController::class, 'updateAgencySettings'])->name('tenants.agency-settings');
-        Route::patch('tenants/{tenant}/default-agency-settings', [AgencyWalletController::class, 'updateDefaultAgencySettings'])->name('tenants.default-agency-settings');
+        Route::post('tenants/{tenantRecord}/wallet-topup', [AgencyWalletController::class, 'topUp'])->name('tenants.wallet.topup');
+        Route::patch('tenants/{tenantRecord}/default-agency', [AgencyWalletController::class, 'setDefaultAgency'])->name('tenants.default-agency');
+        Route::patch('tenants/{tenantRecord}/credentials-permission', [AgencyWalletController::class, 'updateCredentialsPermission'])->name('tenants.credentials-permission');
+        Route::patch('tenants/{tenantRecord}/agency-settings', [AgencyWalletController::class, 'updateAgencySettings'])->name('tenants.agency-settings');
+        Route::patch('tenants/{tenantRecord}/default-agency-settings', [AgencyWalletController::class, 'updateDefaultAgencySettings'])->name('tenants.default-agency-settings');
 
         // Airport Management
         Route::resource('airports', AirportController::class)->names('airports');
+        Route::patch('airports/{airport}/toggle-registration', [AirportController::class, 'toggleRegistration'])->name('airports.toggle-registration');
+
+        // Legacy Agent Migration
+        Route::prefix('migration')->name('migration.')->group(function () {
+            Route::get('/', [MigrationController::class, 'index'])->name('index');
+            Route::get('/agents', [MigrationController::class, 'agents'])->name('agents');
+            Route::post('/run', [MigrationController::class, 'run'])->name('run');
+            Route::get('/status/{record}', [MigrationController::class, 'status'])->name('status');
+            Route::get('/report/{record}', [MigrationController::class, 'report'])->name('report');
+        });
     });
 });

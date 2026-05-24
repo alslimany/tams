@@ -45,6 +45,7 @@ Route::prefix(config('tenancy.tenant_path_prefix', 'agency').'/{tenant}')->group
     Route::middleware([
         'web',
         InitializeTenancyByPath::class,
+        \Illuminate\Routing\Middleware\SubstituteBindings::class,
     ])->group(function (): void {
         Route::get('/', fn () => inertia('Welcome'))->name('home');
 

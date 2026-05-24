@@ -13,7 +13,7 @@ use Illuminate\Validation\Rules\Password;
 
 class TenantUserController extends Controller
 {
-    public function store(Request $request, Tenant $tenant): RedirectResponse
+    public function store(Request $request, Tenant $tenantRecord): RedirectResponse
     {
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255'],
@@ -23,7 +23,7 @@ class TenantUserController extends Controller
             'is_active' => ['boolean'],
         ]);
 
-        $tenant->run(function () use ($validated) {
+        $tenantRecord->run(function () use ($validated) {
             User::create([
                 'name' => $validated['name'],
                 'email' => $validated['email'],
@@ -36,7 +36,7 @@ class TenantUserController extends Controller
         return back()->with('success', 'Tenant user created successfully.');
     }
 
-    public function update(Request $request, Tenant $tenant, $userId): RedirectResponse
+    public function update(Request $request, Tenant $tenantRecord, $userId): RedirectResponse
     {
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255'],
@@ -46,9 +46,9 @@ class TenantUserController extends Controller
             'is_active' => ['boolean'],
         ]);
 
-        $tenant->run(function () use ($validated, $userId) {
+        $tenantRecord->run(function () use ($validated, $userId) {
             $user = User::findOrFail($userId);
-            
+
             $updateData = [
                 'name' => $validated['name'],
                 'email' => $validated['email'],
@@ -56,7 +56,7 @@ class TenantUserController extends Controller
                 'is_active' => $validated['is_active'],
             ];
 
-            if (!empty($validated['password'])) {
+            if (! empty($validated['password'])) {
                 $updateData['password'] = Hash::make($validated['password']);
             }
 
@@ -66,9 +66,9 @@ class TenantUserController extends Controller
         return back()->with('success', 'Tenant user updated successfully.');
     }
 
-    public function destroy(Tenant $tenant, $userId): RedirectResponse
+    public function destroy(Tenant $tenantRecord, $userId): RedirectResponse
     {
-        $tenant->run(function () use ($userId) {
+        $tenantRecord->run(function () use ($userId) {
             $user = User::findOrFail($userId);
             $user->delete();
         });

@@ -981,7 +981,7 @@ export default function InsuranceSearch({ productTypes = [], lookupsByType = {},
                                     <p className="text-base font-semibold text-slate-800 dark:text-slate-100">
                                         {activeProvider?.name || 'Insurance Offer'}
                                     </p>
-                                    <p className="text-sm text-slate-500 dark:text-slate-300">Travel Insurance Offer</p>
+                                    <p className="text-sm text-slate-500 dark:text-slate-300">{t('common.travel_insurance_offer')}</p>
                                 </div>
 
                                 <div className="flex flex-wrap items-center gap-4 text-sm text-slate-600 dark:text-slate-300">
@@ -1017,7 +1017,7 @@ export default function InsuranceSearch({ productTypes = [], lookupsByType = {},
                                     <p className="text-base font-semibold text-slate-800 dark:text-slate-100">
                                         {activeProvider?.name || 'Insurance Offer'}
                                     </p>
-                                    <p className="text-sm text-slate-500 dark:text-slate-300">Orange Insurance Offer</p>
+                                    <p className="text-sm text-slate-500 dark:text-slate-300">{t('common.orange_insurance_offer')}</p>
                                 </div>
 
                                 <div className="flex flex-wrap items-center gap-4 text-sm text-slate-600 dark:text-slate-300">

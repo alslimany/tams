@@ -22,7 +22,7 @@ export default function Success({ registration }) {
     const details = [
         { label: t('landlord.auth.success.agency_name'), value: registration.agencyName },
         { label: t('landlord.auth.success.agency_number'), value: registration.agencyNumber },
-        { label: t('landlord.auth.success.agency_path'), value: registration.agencyPath },
+        { label: t('landlord.auth.success.agency_path'), value: registration.officeId },
         { label: t('landlord.auth.success.owner_name'), value: registration.ownerName },
         { label: t('landlord.auth.success.owner_email'), value: registration.ownerEmail },
         { label: t('landlord.auth.success.workspace_url'), value: registration.workspaceUrl },

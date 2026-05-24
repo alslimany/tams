@@ -18,7 +18,6 @@ class AirportController extends Controller
     {
         $query = Airport::query();
 
-        // Apply filters
         if ($request->filled('iata_code')) {
             $query->where('iata_code', 'like', '%'.$request->iata_code.'%');
         }
@@ -31,28 +30,31 @@ class AirportController extends Controller
             $query->whereJsonContains('city->en', $request->city);
         }
 
+        if ($request->filled('show_in_registration')) {
+            $query->where('show_in_registration', $request->show_in_registration === 'visible');
+        }
+
         $airports = $query->orderBy('iata_code')
             ->paginate(20)
-            ->through(function ($airport) {
-                return [
-                    'id' => $airport->id,
-                    'name' => $airport->getTranslations('name'),
-                    'city' => $airport->getTranslations('city'),
-                    'country' => $airport->getTranslations('country'),
-                    'iata_code' => $airport->iata_code,
-                    'icao_code' => $airport->icao_code,
-                    'latitude' => $airport->latitude,
-                    'longitude' => $airport->longitude,
-                    'elevation_ft' => $airport->elevation_ft,
-                    'type' => $airport->type,
-                    'created_at' => $airport->created_at,
-                    'updated_at' => $airport->updated_at,
-                ];
-            });
+            ->through(fn ($airport) => [
+                'id' => $airport->id,
+                'name' => $airport->getTranslations('name'),
+                'city' => $airport->getTranslations('city'),
+                'country' => $airport->getTranslations('country'),
+                'iata_code' => $airport->iata_code,
+                'icao_code' => $airport->icao_code,
+                'latitude' => $airport->latitude,
+                'longitude' => $airport->longitude,
+                'elevation_ft' => $airport->elevation_ft,
+                'type' => $airport->type,
+                'show_in_registration' => $airport->show_in_registration,
+                'created_at' => $airport->created_at,
+                'updated_at' => $airport->updated_at,
+            ]);
 
         return Inertia::render('Landlord/Airports/Index', [
             'airports' => $airports,
-            'filters' => $request->only(['iata_code', 'country', 'city']),
+            'filters' => $request->only(['iata_code', 'country', 'city', 'show_in_registration']),
         ]);
     }
 
@@ -144,9 +146,20 @@ class AirportController extends Controller
                 'longitude' => $airport->longitude,
                 'elevation_ft' => $airport->elevation_ft,
                 'type' => $airport->type,
+                'show_in_registration' => $airport->show_in_registration,
                 'data' => $airport->data,
             ],
         ]);
+    }
+
+    /**
+     * Toggle the show_in_registration flag for an airport.
+     */
+    public function toggleRegistration(Airport $airport)
+    {
+        $airport->update(['show_in_registration' => ! $airport->show_in_registration]);
+
+        return back()->with('success', 'Airport visibility updated.');
     }
 
     /**
@@ -173,6 +186,7 @@ class AirportController extends Controller
             'longitude' => 'nullable|numeric|between:-180,180',
             'elevation_ft' => 'nullable|integer',
             'type' => 'nullable|string|max:50',
+            'show_in_registration' => 'boolean',
         ]);
 
         if ($validator->fails()) {
@@ -181,7 +195,7 @@ class AirportController extends Controller
 
         $airport->update($request->only([
             'name', 'city', 'country', 'iata_code', 'icao_code',
-            'latitude', 'longitude', 'elevation_ft', 'type',
+            'latitude', 'longitude', 'elevation_ft', 'type', 'show_in_registration',
         ]));
 
         return redirect()->route('landlord.airports.index')

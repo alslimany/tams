@@ -1,20 +1,48 @@
 <?php
 
+use App\Models\Airport;
 use App\Models\Tenant;
 use App\Models\User;
 use App\Notifications\AgencyCreatedConfirmation;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Notification;
-use Illuminate\Support\Str;
+
+afterEach(function () {
+    tenancy()->end();
+    Tenant::where('owner_email', 'like', '%@atlas.test')
+        ->orWhere('owner_email', 'like', '%@test.com')
+        ->get()
+        ->each(fn (Tenant $t) => $t->delete());
+});
+
+/**
+ * Insert a minimal MJI airport row so city_iata validation passes in tests.
+ * The airports table is populated from a CSV import (not a seeder), so it is
+ * empty after RefreshDatabase runs.
+ */
+function seedMjiAirport(): void
+{
+    Airport::firstOrCreate(
+        ['iata_code' => 'MJI'],
+        [
+            'name' => json_encode(['en' => 'Mitiga International Airport']),
+            'city' => json_encode(['en' => 'Tripoli']),
+            'country' => json_encode(['en' => 'Libya']),
+            'type' => 'large_airport',
+            'show_in_registration' => true,
+            'latitude' => 32.894,
+            'longitude' => 13.276,
+        ],
+    );
+}
 
 test('agency registration creates frozen tenant with documents and sends review email', function () {
     config()->set('app.url', 'https://atom.ly');
 
     Notification::fake();
-
     Storage::fake('public');
 
-    $agencyPath = 'atlas-'.Str::lower(Str::random(8));
+    seedMjiAirport();
 
     $commercialRegister = UploadedFile::fake()->create('commercial-register.pdf', 512, 'application/pdf');
     $passport = UploadedFile::fake()->create('passport.pdf', 256, 'application/pdf');
@@ -24,23 +52,30 @@ test('agency registration creates frozen tenant with documents and sends review 
         'owner_name' => 'Amina Saleh',
         'phone' => '+218900000000',
         'email' => 'owner@atlas.test',
-        'agency_path' => $agencyPath,
+        'city_iata' => 'MJI',
         'password' => 'password',
         'password_confirmation' => 'password',
         'commercial_register' => $commercialRegister,
         'passport' => $passport,
     ]);
 
-    $tenant = Tenant::findOrFail($agencyPath);
+    $response->assertRedirectToRoute('agency.registration.success');
+
+    $tenant = Tenant::where('city_iata', 'MJI')
+        ->where('owner_email', 'owner@atlas.test')
+        ->firstOrFail()
+        ->fresh();
 
     expect($tenant->company_name)->toBe('Atlas Travel');
     expect($tenant->owner_name)->toBe('Amina Saleh');
     expect($tenant->owner_email)->toBe('owner@atlas.test');
-    expect($tenant->path)->toBe($agencyPath);
+    expect($tenant->office_id)->toMatch('/^MJI[A-Z]{2}\d{2}AA$/');
+    expect($tenant->city_iata)->toBe('MJI');
+    expect($tenant->path)->toBe($tenant->office_id);
     expect($tenant->status)->toBe('frozen');
     expect($tenant->subscription_status)->toBe('trial');
-    expect($tenant->commercial_register_path)->toContain("registrations/{$agencyPath}/");
-    expect($tenant->passport_path)->toContain("registrations/{$agencyPath}/");
+    expect($tenant->commercial_register_path)->toContain("registrations/{$tenant->office_id}/");
+    expect($tenant->passport_path)->toContain("registrations/{$tenant->office_id}/");
 
     $owner = $tenant->run(fn () => User::where('email', 'owner@atlas.test')->first());
     expect($owner)->not->toBeNull();
@@ -49,24 +84,20 @@ test('agency registration creates frozen tenant with documents and sends review 
 
     expect($tenant->agency_number)->toStartWith('AG-');
 
-    $workspaceUrl = 'https://atom.ly/agency/'.$agencyPath.'/login';
+    $officeId = $tenant->office_id;
+    $workspaceUrl = 'https://atom.ly/agency/'.strtolower($officeId).'/login';
 
-    $response->assertRedirectToRoute('agency.registration.success');
-    $response->assertSessionHas('agency_registration', [
-        'agencyName' => 'Atlas Travel',
-        'agencyNumber' => $tenant->agency_number,
-        'agencyPath' => $agencyPath,
-        'ownerName' => 'Amina Saleh',
-        'ownerEmail' => 'owner@atlas.test',
-        'workspaceUrl' => $workspaceUrl,
-        'status' => 'frozen',
-    ]);
+    $response->assertSessionHas('agency_registration.agencyName', 'Atlas Travel');
+    $response->assertSessionHas('agency_registration.officeId', $officeId);
+    $response->assertSessionHas('agency_registration.ownerName', 'Amina Saleh');
+    $response->assertSessionHas('agency_registration.ownerEmail', 'owner@atlas.test');
+    $response->assertSessionHas('agency_registration.status', 'frozen');
 
     Notification::assertSentOnDemand(
         AgencyCreatedConfirmation::class,
         fn ($notification, $channels, $notifiable): bool => $notification->agencyName === 'Atlas Travel'
             && $notification->agencyNumber === $tenant->agency_number
-            && $notification->agencyPath === $agencyPath
+            && $notification->agencyPath === strtolower($officeId)
             && $notification->ownerName === 'Amina Saleh'
             && $notification->ownerEmail === 'owner@atlas.test'
             && $notification->workspaceUrl === $workspaceUrl
@@ -74,19 +105,18 @@ test('agency registration creates frozen tenant with documents and sends review 
             && $notifiable->routes['mail'] === ['owner@atlas.test' => 'Amina Saleh']
     );
 
-    // Verify files were stored
     Storage::disk('public')->assertExists($tenant->commercial_register_path);
     Storage::disk('public')->assertExists($tenant->passport_path);
 });
 
 test('agency registration validates required documents', function () {
-    $agencyPath = 'atlas-'.Str::lower(Str::random(8));
+    seedMjiAirport();
 
     $response = $this->post('/register-agency', [
         'company_name' => 'Atlas Travel',
         'owner_name' => 'Amina Saleh',
         'email' => 'owner@atlas.test',
-        'agency_path' => $agencyPath,
+        'city_iata' => 'MJI',
         'password' => 'password',
         'password_confirmation' => 'password',
     ]);
@@ -94,31 +124,44 @@ test('agency registration validates required documents', function () {
     $response->assertSessionHasErrors(['commercial_register', 'passport']);
 });
 
-test('agency registration validates agency_path format', function () {
+test('agency registration requires a valid city_iata from airports table', function () {
     Storage::fake('public');
     $pdf = UploadedFile::fake()->create('doc.pdf', 100, 'application/pdf');
 
+    // Missing city_iata
     $response = $this->post('/register-agency', [
-        'company_name' => 'Test',
+        'company_name' => 'Test Agency',
         'email' => 'test@example.com',
-        'agency_path' => 'INVALID PATH!',
         'password' => 'password',
         'password_confirmation' => 'password',
         'commercial_register' => $pdf,
         'passport' => $pdf,
     ]);
 
-    $response->assertSessionHasErrors(['agency_path']);
+    $response->assertSessionHasErrors(['city_iata']);
+
+    // Invalid IATA code not in airports table
+    $response2 = $this->post('/register-agency', [
+        'company_name' => 'Test Agency',
+        'email' => 'test@example.com',
+        'city_iata' => 'ZZZ',
+        'password' => 'password',
+        'password_confirmation' => 'password',
+        'commercial_register' => $pdf,
+        'passport' => $pdf,
+    ]);
+
+    $response2->assertSessionHasErrors(['city_iata']);
 });
 
 test('agency registration success page renders frozen session details', function () {
-    $workspaceUrl = 'https://atom.ly/agency/atlas-travel/login';
+    $workspaceUrl = 'https://atom.ly/agency/mjiat01aa/login';
 
     $this->withSession([
         'agency_registration' => [
             'agencyName' => 'Atlas Travel',
             'agencyNumber' => 'AG-100001',
-            'agencyPath' => 'atlas-travel',
+            'officeId' => 'MJIAT01AA',
             'ownerName' => 'Amina Saleh',
             'ownerEmail' => 'owner@atlas.test',
             'workspaceUrl' => $workspaceUrl,
@@ -132,7 +175,7 @@ test('agency registration success page renders frozen session details', function
             ->component('Agency/Success')
             ->where('registration.agencyName', 'Atlas Travel')
             ->where('registration.agencyNumber', 'AG-100001')
-            ->where('registration.agencyPath', 'atlas-travel')
+            ->where('registration.officeId', 'MJIAT01AA')
             ->where('registration.ownerName', 'Amina Saleh')
             ->where('registration.ownerEmail', 'owner@atlas.test')
             ->where('registration.workspaceUrl', $workspaceUrl)
@@ -145,33 +188,35 @@ test('agency registration success page redirects without session details', funct
         ->assertRedirectToRoute('agency.register');
 });
 
-test('agency_path is unique across tenants', function () {
+test('two registrations from same city get unique sequential office ids', function () {
     Storage::fake('public');
+    seedMjiAirport();
     $pdf = UploadedFile::fake()->create('doc.pdf', 100, 'application/pdf');
 
-    $path = 'unique-'.Str::lower(Str::random(4));
-
-    // First registration
     $this->post('/register-agency', [
         'company_name' => 'First Agency',
         'email' => 'first@test.com',
-        'agency_path' => $path,
+        'city_iata' => 'MJI',
         'password' => 'password',
         'password_confirmation' => 'password',
         'commercial_register' => $pdf,
         'passport' => $pdf,
     ]);
 
-    // Second registration with same path
-    $response = $this->post('/register-agency', [
-        'company_name' => 'Second Agency',
+    $this->post('/register-agency', [
+        'company_name' => 'First Agency',
         'email' => 'second@test.com',
-        'agency_path' => $path,
+        'city_iata' => 'MJI',
         'password' => 'password',
         'password_confirmation' => 'password',
         'commercial_register' => $pdf,
         'passport' => $pdf,
     ]);
 
-    $response->assertSessionHasErrors(['agency_path']);
+    $tenants = Tenant::where('city_iata', 'MJI')
+        ->whereIn('owner_email', ['first@test.com', 'second@test.com'])
+        ->get();
+
+    expect($tenants)->toHaveCount(2);
+    expect($tenants->pluck('office_id')->unique())->toHaveCount(2);
 });

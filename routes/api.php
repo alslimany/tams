@@ -20,6 +20,7 @@ use Stancl\Tenancy\Middleware\InitializeTenancyByPath;
 Route::prefix(config('tenancy.tenant_path_prefix', 'agency').'/{tenant}')->group(function (): void {
     Route::middleware([
         InitializeTenancyByPath::class,
+        \Illuminate\Routing\Middleware\SubstituteBindings::class,
     ])->group(function (): void {
         Route::prefix('api/v1')->group(__DIR__.'/api/v1.php');
     });

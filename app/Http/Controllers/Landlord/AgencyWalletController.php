@@ -19,7 +19,7 @@ class AgencyWalletController extends Controller
     /**
      * Top-up an agency wallet from the central admin panel.
      */
-    public function topUp(Request $request, Tenant $tenant): RedirectResponse
+    public function topUp(Request $request, Tenant $tenantRecord): RedirectResponse
     {
         $validated = $request->validate([
             'currency' => ['required', 'string', 'size:3', Rule::in(['LYD', 'USD', 'EUR'])],
@@ -32,7 +32,7 @@ class AgencyWalletController extends Controller
         $adminId = Auth::guard('landlord')->id();
 
         // Also deposit into the tenant wallet package so tenant-side wallet balance is in sync.
-        $tenant->run(function () use ($currency, $amount, $adminId): void {
+        $tenantRecord->run(function () use ($currency, $amount, $adminId): void {
             $walletHolder = User::query()
                 ->whereIn('role', ['admin', 'manager'])
                 ->orderBy('id')
@@ -60,11 +60,11 @@ class AgencyWalletController extends Controller
             ]);
         });
 
-        $currentBalance = $this->getCurrentBalance($tenant->id, $currency);
+        $currentBalance = $this->getCurrentBalance($tenantRecord->id, $currency);
         $newBalance = $currentBalance + $amount;
 
         AgencyWalletTransaction::recordTopUp(
-            tenantId: $tenant->id,
+            tenantId: $tenantRecord->id,
             currency: $currency,
             amount: $amount,
             balanceAfter: $newBalance,
@@ -79,7 +79,7 @@ class AgencyWalletController extends Controller
      * Set a tenant as the default agency (or remove the designation).
      * Also creates/updates the DefaultAgencySetting row in the central DB.
      */
-    public function setDefaultAgency(Request $request, Tenant $tenant): RedirectResponse
+    public function setDefaultAgency(Request $request, Tenant $tenantRecord): RedirectResponse
     {
         $validated = $request->validate([
             'is_default_agency' => ['required', 'boolean'],
@@ -98,11 +98,11 @@ class AgencyWalletController extends Controller
             // Remove default agency status from any existing default agency.
             Tenant::query()
                 ->where('is_default_agency', true)
-                ->where('id', '!=', $tenant->id)
+                ->where('id', '!=', $tenantRecord->id)
                 ->update(['is_default_agency' => false]);
         }
 
-        $tenant->update([
+        $tenantRecord->update([
             'is_default_agency' => $validated['is_default_agency'],
             'master_commission_rate' => $validated['is_default_agency']
                 ? ($validated['master_commission_rate'] ?? 0)
@@ -112,14 +112,14 @@ class AgencyWalletController extends Controller
         // Create or update the DefaultAgencySetting row.
         if ($validated['is_default_agency']) {
             DefaultAgencySetting::updateOrCreate(
-                ['default_agency_tenant_id' => $tenant->id],
+                ['default_agency_tenant_id' => $tenantRecord->id],
                 [
                     'master_commission_percent' => $validated['master_commission_rate'] ?? 0,
                     'allowed_airline_codes' => $validated['allowed_airline_codes'] ?? null,
                 ],
             );
         } else {
-            DefaultAgencySetting::where('default_agency_tenant_id', $tenant->id)->delete();
+            DefaultAgencySetting::where('default_agency_tenant_id', $tenantRecord->id)->delete();
         }
 
         $status = $validated['is_default_agency'] ? 'set as default agency' : 'removed as default agency';
@@ -131,19 +131,19 @@ class AgencyWalletController extends Controller
      * Update the per-agency permission for using own airline credentials.
      * Writes to both the tenant JSON settings (legacy) and agency_settings (tenant DB).
      */
-    public function updateCredentialsPermission(Request $request, Tenant $tenant): RedirectResponse
+    public function updateCredentialsPermission(Request $request, Tenant $tenantRecord): RedirectResponse
     {
         $validated = $request->validate([
             'use_own_airline_credentials' => ['required', 'boolean'],
         ]);
 
         // Update legacy JSON settings.
-        $settings = $tenant->settings ?? [];
+        $settings = $tenantRecord->settings ?? [];
         data_set($settings, 'finance.use_own_airline_credentials', $validated['use_own_airline_credentials']);
-        $tenant->update(['settings' => $settings]);
+        $tenantRecord->update(['settings' => $settings]);
 
         // Sync to agency_settings in tenant DB.
-        $tenant->run(function () use ($validated): void {
+        $tenantRecord->run(function () use ($validated): void {
             \App\Models\Tenant\AgencySetting::current()->update([
                 'can_use_own_airline_credentials' => $validated['use_own_airline_credentials'],
             ]);
@@ -158,7 +158,7 @@ class AgencyWalletController extends Controller
      * Update per-agency settings in the tenant database.
      * Includes can_use_own_airline_credentials, force_use_default_agency, and master_commission_percent.
      */
-    public function updateAgencySettings(Request $request, Tenant $tenant): RedirectResponse
+    public function updateAgencySettings(Request $request, Tenant $tenantRecord): RedirectResponse
     {
         $validated = $request->validate([
             'can_use_own_airline_credentials' => ['sometimes', 'boolean'],
@@ -166,7 +166,7 @@ class AgencyWalletController extends Controller
             'master_commission_percent' => ['sometimes', 'nullable', 'numeric', 'min:0', 'max:100'],
         ]);
 
-        $tenant->run(function () use ($validated): void {
+        $tenantRecord->run(function () use ($validated): void {
             $settings = \App\Models\Tenant\AgencySetting::current();
 
             if (array_key_exists('can_use_own_airline_credentials', $validated)) {
@@ -186,9 +186,9 @@ class AgencyWalletController extends Controller
 
         // Sync can_use_own_airline_credentials to legacy JSON settings.
         if (array_key_exists('can_use_own_airline_credentials', $validated)) {
-            $jsonSettings = $tenant->settings ?? [];
+            $jsonSettings = $tenantRecord->settings ?? [];
             data_set($jsonSettings, 'finance.use_own_airline_credentials', $validated['can_use_own_airline_credentials']);
-            $tenant->update(['settings' => $jsonSettings]);
+            $tenantRecord->update(['settings' => $jsonSettings]);
         }
 
         return back()->with('success', 'Agency settings updated successfully.');
@@ -198,7 +198,7 @@ class AgencyWalletController extends Controller
      * Update the default agency settings in the central database.
      * Includes allowed_airline_codes and master_commission_percent.
      */
-    public function updateDefaultAgencySettings(Request $request, Tenant $tenant): RedirectResponse
+    public function updateDefaultAgencySettings(Request $request, Tenant $tenantRecord): RedirectResponse
     {
         $validated = $request->validate([
             'allowed_airline_codes' => ['nullable', 'array'],
@@ -206,11 +206,11 @@ class AgencyWalletController extends Controller
             'master_commission_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
         ]);
 
-        if (! $tenant->isDefaultAgency()) {
+        if (! $tenantRecord->isDefaultAgency()) {
             return back()->with('error', 'This tenant is not the default agency.');
         }
 
-        $settings = DefaultAgencySetting::forDefaultAgency($tenant->id);
+        $settings = DefaultAgencySetting::forDefaultAgency($tenantRecord->id);
         $settings->update([
             'allowed_airline_codes' => $validated['allowed_airline_codes'] ?? $settings->allowed_airline_codes,
             'master_commission_percent' => $validated['master_commission_percent'] ?? $settings->master_commission_percent,
@@ -218,7 +218,7 @@ class AgencyWalletController extends Controller
 
         // Also sync to the tenants table for backward compatibility.
         if (isset($validated['master_commission_percent'])) {
-            $tenant->update(['master_commission_rate' => $validated['master_commission_percent']]);
+            $tenantRecord->update(['master_commission_rate' => $validated['master_commission_percent']]);
         }
 
         return back()->with('success', 'Default agency settings updated successfully.');
@@ -240,7 +240,7 @@ class AgencyWalletController extends Controller
 
     protected function tenantHasActiveAirlineCredentials(Tenant $tenant): bool
     {
-        return (bool) $tenant->run(function (): bool {
+        return (bool) $tenantRecord->run(function (): bool {
             return TenantProvider::query()
                 ->where('is_active', true)
                 ->whereNotNull('credentials')

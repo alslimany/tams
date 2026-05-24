@@ -20,7 +20,7 @@ import {
     DropdownMenuItem,
     DropdownMenuTrigger,
 } from '@/Components/ui/dropdown-menu';
-import { Search, Plus, MoreHorizontal, Edit, Trash2, Eye, Filter } from 'lucide-react';
+import { Search, Plus, MoreHorizontal, Edit, Trash2, Eye, EyeOff, Filter } from 'lucide-react';
 
 export default function Index({ airports, filters }) {
     const { t } = useTranslation();
@@ -28,6 +28,7 @@ export default function Index({ airports, filters }) {
         iata_code: filters.iata_code || '',
         country: filters.country || '',
         city: filters.city || '',
+        show_in_registration: filters.show_in_registration || '',
     });
 
     const handleFilterChange = (field, value) => {
@@ -42,7 +43,7 @@ export default function Index({ airports, filters }) {
     };
 
     const clearFilters = () => {
-        setSearchFilters({ iata_code: '', country: '', city: '' });
+        setSearchFilters({ iata_code: '', country: '', city: '', show_in_registration: '' });
         router.get(route('landlord.airports.index'), {}, {
             preserveState: true,
             preserveScroll: true,
@@ -53,6 +54,12 @@ export default function Index({ airports, filters }) {
         if (confirm(`Are you sure you want to delete airport ${airport.iata_code}?`)) {
             router.delete(route('landlord.airports.destroy', airport.id));
         }
+    };
+
+    const handleToggleRegistration = (airport) => {
+        router.patch(route('landlord.airports.toggle-registration', airport.id), {}, {
+            preserveScroll: true,
+        });
     };
 
     return (
@@ -88,7 +95,7 @@ export default function Index({ airports, filters }) {
                         </CardDescription>
                     </CardHeader>
                     <CardContent>
-                        <div className="grid gap-4 md:grid-cols-4">
+                        <div className="grid gap-4 md:grid-cols-5">
                             <div className="space-y-2">
                                 <label className="text-sm font-medium">IATA Code</label>
                                 <Input
@@ -112,6 +119,18 @@ export default function Index({ airports, filters }) {
                                     value={searchFilters.city}
                                     onChange={(e) => handleFilterChange('city', e.target.value)}
                                 />
+                            </div>
+                            <div className="space-y-2">
+                                <label className="text-sm font-medium">Registration Visibility</label>
+                                <select
+                                    className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                                    value={searchFilters.show_in_registration}
+                                    onChange={(e) => handleFilterChange('show_in_registration', e.target.value)}
+                                >
+                                    <option value="">All</option>
+                                    <option value="visible">Visible</option>
+                                    <option value="hidden">Hidden</option>
+                                </select>
                             </div>
                             <div className="flex items-end gap-2">
                                 <Button onClick={applyFilters} className="flex-1">
@@ -144,6 +163,7 @@ export default function Index({ airports, filters }) {
                                     <TableHead>City (EN)</TableHead>
                                     <TableHead>Country (EN)</TableHead>
                                     <TableHead>Type</TableHead>
+                                    <TableHead>Registration</TableHead>
                                     <TableHead className="text-right">Actions</TableHead>
                                 </TableRow>
                             </TableHeader>
@@ -163,6 +183,22 @@ export default function Index({ airports, filters }) {
                                         <TableCell>{airport.country?.en}</TableCell>
                                         <TableCell>
                                             <Badge variant="outline">{airport.type || 'Unknown'}</Badge>
+                                        </TableCell>
+                                        <TableCell>
+                                            <button
+                                                onClick={() => handleToggleRegistration(airport)}
+                                                title={airport.show_in_registration ? 'Visible in registration — click to hide' : 'Hidden from registration — click to show'}
+                                                className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold transition-colors ${
+                                                    airport.show_in_registration
+                                                        ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                                                        : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+                                                }`}
+                                            >
+                                                {airport.show_in_registration
+                                                    ? <><Eye className="h-3 w-3" /> Visible</>
+                                                    : <><EyeOff className="h-3 w-3" /> Hidden</>
+                                                }
+                                            </button>
                                         </TableCell>
                                         <TableCell className="text-right">
                                             <DropdownMenu>
