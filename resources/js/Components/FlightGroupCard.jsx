@@ -1,9 +1,18 @@
 import React, { useState } from "react";
+import axios from "axios";
 import { route } from "ziggy-js";
 import { useTranslation } from "@/hooks/useTranslation";
 import { Button } from "@/Components/ui/Button";
 import { Card, CardContent } from "@/Components/ui/Card";
 import { Badge } from "@/Components/ui/Badge";
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogHeader,
+    DialogTitle,
+    DialogTrigger,
+} from "@/Components/ui/Dialog";
 import {
     ChevronLeftIcon,
     ChevronRightIcon,
@@ -16,15 +25,9 @@ import {
     ArrowRightLeft,
     ChevronDownIcon,
     ChevronUpIcon,
+    Loader2,
 } from "lucide-react";
-import {
-    Dialog,
-    DialogContent,
-    DialogDescription,
-    DialogHeader,
-    DialogTitle,
-    DialogTrigger,
-} from "@/Components/ui/Dialog";
+
 import {
     Table,
     TableBody,
@@ -38,6 +41,7 @@ import { formatMoney, formatMoneyValue } from "@/lib/currency";
 export default function FlightGroupCard({
     flightGroup,
     providers,
+    showSoldoutClasses = true,
     openReservationAvailability,
     openReservationAvailabilityLoading,
     openOfferSummaryKey,
@@ -67,6 +71,9 @@ export default function FlightGroupCard({
 
     const cabins = {};
     flightGroup.offers.forEach((offer) => {
+        if (!showSoldoutClasses && isSoldOut(offer)) {
+            return;
+        }
         const cabinType = offer.pricing?.cabin_type || "Y";
         const normalizedCabin =
             cabinType === "C" || cabinType === "J" ? "Business" : "Economy";
@@ -92,6 +99,60 @@ export default function FlightGroupCard({
                 : cabins[cabin][0]?.pricing?.total || 0;
     });
     const currency = flightGroup.offers[0]?.pricing?.currency || "LYD";
+
+    const [fareRulesModal, setFareRulesModal] = useState({ open: false, loading: false, text: '', error: '' });
+
+    const fetchFareRules = (offer) => {
+        const fareId = offer?.pricing?.fare_id;
+        if (!fareId) return;
+        setFareRulesModal({ open: true, loading: true, text: '', error: '' });
+        axios
+            .post(route('flights.fare-rules'), {
+                provider_id: flightGroup.provider_id,
+                fare_id: fareId,
+            })
+            .then((res) => setFareRulesModal({ open: true, loading: false, text: res.data.rules || '', error: '' }))
+            .catch(() => setFareRulesModal({ open: true, loading: false, text: '', error: t('common.error_loading_fare_rules') || 'Failed to load fare rules.' }));
+    };
+
+    /**
+     * Inline fare rules block for the Offer Summary modal.
+     * Fetches once when isOpen becomes true, then caches in local state.
+     */
+    const FareRulesSection = ({ fareId, providerId, isOpen }) => {
+        const [state, setState] = useState({ loaded: false, loading: false, text: '', error: '' });
+
+        React.useEffect(() => {
+            if (!isOpen || state.loaded || state.loading) return;
+            setState((s) => ({ ...s, loading: true }));
+            axios
+                .post(route('flights.fare-rules'), { provider_id: providerId, fare_id: fareId })
+                .then((res) => setState({ loaded: true, loading: false, text: res.data.rules || '', error: '' }))
+                .catch(() => setState({ loaded: true, loading: false, text: '', error: t('common.error_loading_fare_rules') || 'Failed to load fare rules.' }));
+        }, [isOpen]);
+
+        return (
+            <div>
+                <p className="font-bold mb-3 tracking-widest text-xs text-muted-foreground">
+                    {t('common.fare_rules') || 'Fare Rules'}
+                </p>
+                {state.loading && (
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground py-2">
+                        <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                        {t('common.loading') || 'Loading…'}
+                    </div>
+                )}
+                {state.error && (
+                    <p className="text-xs text-destructive">{state.error}</p>
+                )}
+                {!state.loading && !state.error && state.text && (
+                    <pre className="whitespace-pre-wrap text-xs leading-relaxed font-sans text-foreground bg-muted/20 rounded-xl p-4 border">
+                        {state.text}
+                    </pre>
+                )}
+            </div>
+        );
+    };
 
     const parseBrandDetails = (details) => {
         if (!details) return {};
@@ -381,12 +442,25 @@ export default function FlightGroupCard({
             parseBrandDetails(offer.pricing?.brand_details),
         );
 
-        // Fixed feature rows: Baggage, Refundable
+        // Parse "20K" → "20 kg" (translated), "0K" → null (skip zeros)
+        const formatWeight = (raw) => {
+            if (!raw) return null;
+            const match = String(raw).match(/(\d+)/);
+            if (!match) return null;
+            const num = parseInt(match[1], 10);
+            if (num === 0) return null;
+            return `${num} ${t('common.kg') || 'kg'}`;
+        };
+
+        // Fixed feature rows: Checked baggage, Cabin baggage, Refundable
         const featureRows = [
             {
-                key: 'baggage',
-                label: t('common.baggage_allowance') || 'Baggage Allowance',
-                extract: (features) => {
+                key: 'checked_baggage',
+                label: t('common.checked_baggage') || 'Checked',
+                extract: (features, offer) => {
+                    const holdWt = offer?.pricing?.hold_weight;
+                    if (holdWt) return formatWeight(holdWt);
+                    // Fallback: brand_details text
                     const found = Object.keys(features).find(
                         (k) =>
                             k.toLowerCase().includes('bag') ||
@@ -394,6 +468,14 @@ export default function FlightGroupCard({
                             k.toLowerCase().includes('kg'),
                     );
                     return found ? features[found] : null;
+                },
+            },
+            {
+                key: 'hand_baggage',
+                label: t('common.hand_baggage') || 'Cabin',
+                extract: (_features, offer) => {
+                    const handWt = offer?.pricing?.hand_weight;
+                    return formatWeight(handWt);
                 },
             },
             {
@@ -432,6 +514,15 @@ export default function FlightGroupCard({
                                         <span className="text-[10px] text-muted-foreground font-semibold ">
                                             ({offer.pricing?.brand_name || 'Y'})
                                         </span>
+                                        {offer.pricing?.fare_id && (
+                                            <button
+                                                type="button"
+                                                onClick={() => fetchFareRules(offer)}
+                                                className="text-[10px] text-primary underline underline-offset-2 hover:opacity-75 transition-opacity"
+                                            >
+                                                {t('common.fare_rules') || 'Fare Rules'}
+                                            </button>
+                                        )}
                                     </div>
                                 </th>
                             ))}
@@ -447,7 +538,7 @@ export default function FlightGroupCard({
                                     {row.label}
                                 </td>
                                 {offersFeatures.map((features, i) => {
-                                    const value = row.extract(features);
+                                    const value = row.extract(features, offers[i]);
                                     return (
                                         <td
                                             key={offers[i].id}
@@ -506,10 +597,10 @@ export default function FlightGroupCard({
                                     className="py-2.5 px-4 text-center"
                                 >
                                     {isSoldOut(offer) ? (
-                                        <Badge
-                                            variant="destructive"
-                                            className="text-[10px] font-bold"
-                                        >
+                                                        <Badge
+                                                            variant="destructive"
+                                                            className="text-[10px] font-bold text-white"
+                                                        >
                                             {t('common.sold_out')}
                                         </Badge>
                                     ) : (
@@ -709,6 +800,15 @@ export default function FlightGroupCard({
                                                             )}
                                                         </div>
                                                     </div>
+
+                                                    {/* Fare Rules */}
+                                                    {offer.pricing?.fare_id && (
+                                                        <FareRulesSection
+                                                            fareId={offer.pricing.fare_id}
+                                                            providerId={provider?.id ?? flightGroup.provider_id}
+                                                            isOpen={openOfferSummaryKey === offerSummaryKey(offer, provider?.id)}
+                                                        />
+                                                    )}
                                                 </div>
                                                 <div className="p-6 border-t bg-muted/30 flex flex-col sm:flex-row gap-3">
                                                     {openReservationAllowed ? (
@@ -928,6 +1028,29 @@ export default function FlightGroupCard({
                     {renderComparisonTable(cabins[expandedCabin])}
                 </div>
             )}
+
+            {/* Fare Rules Modal */}
+            <Dialog open={fareRulesModal.open} onOpenChange={(open) => setFareRulesModal((s) => ({ ...s, open }))}>
+                <DialogContent className="max-w-lg" aria-describedby={undefined}>
+                    <DialogHeader>
+                        <DialogTitle>{t('common.fare_rules') || 'Fare Rules'}</DialogTitle>
+                    </DialogHeader>
+                    {fareRulesModal.loading && (
+                        <div className="flex items-center justify-center py-8 text-muted-foreground text-sm gap-2">
+                            <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                            {t('common.loading') || 'Loading…'}
+                        </div>
+                    )}
+                    {fareRulesModal.error && (
+                        <p className="text-destructive text-sm">{fareRulesModal.error}</p>
+                    )}
+                    {!fareRulesModal.loading && !fareRulesModal.error && fareRulesModal.text && (
+                        <pre className="whitespace-pre-wrap text-sm leading-relaxed font-sans text-foreground max-h-[60vh] overflow-y-auto">
+                            {fareRulesModal.text}
+                        </pre>
+                    )}
+                </DialogContent>
+            </Dialog>
         </Card>
     );
 }

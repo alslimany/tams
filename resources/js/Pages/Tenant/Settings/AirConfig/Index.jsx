@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import axios from 'axios';
-import { Head, useForm, router } from '@inertiajs/react';
+import { Head, Link, useForm, router } from '@inertiajs/react';
 import TenantSidebarLayout from '@/Layouts/TenantSidebarLayout';
 import { Button } from "@/Components/ui/Button";
 import { Input } from "@/Components/ui/Input";
@@ -9,7 +9,7 @@ import { Badge } from "@/Components/ui/Badge";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/Components/ui/Card";
 import { Switch } from "@/Components/ui/Switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/Components/ui/Tabs";
-import { Loader2, CheckCircle2, XCircle, Plane, Globe, Settings } from "lucide-react";
+import { Loader2, CheckCircle2, XCircle, Plane, Globe, Settings, Terminal } from "lucide-react";
 import { toast } from "sonner";
 import { formatMoney } from '@/lib/currency';
 
@@ -242,6 +242,13 @@ export default function Index({ airlines }) {
                                                 <Settings className="h-3.5 w-3.5" />
 
                                             </Button>
+                                            {airline.provider_type === 'videcom' && account.config_id && (
+                                                <Link href={route('settings.airlines.terminal', account.config_id)}>
+                                                    <Button type="button" variant="outline" size="sm" title="Open VRS Terminal">
+                                                        <Terminal className="h-3.5 w-3.5" />
+                                                    </Button>
+                                                </Link>
+                                            )}
                                         </div>
                                     </div>
                                 ))}

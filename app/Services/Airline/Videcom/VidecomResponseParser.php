@@ -3,6 +3,7 @@
 namespace App\Services\Airline\Videcom;
 
 use App\DTOs\Airline\FlightOption;
+use Carbon\Carbon;
 use SimpleXMLElement;
 
 class VidecomResponseParser
@@ -105,6 +106,114 @@ class VidecomResponseParser
                             raw_data: (array) $flt
                         );
                     }
+                }
+            }
+        }
+
+        return $options;
+    }
+
+    /**
+     * Parse the ~X availability XML format (AvailabilityResponse) into FlightOption DTOs.
+     *
+     * The ~X command returns a simpler XML structure:
+     *   <AvailabilityResponse>
+     *     <Journeys>
+     *       <Journey>
+     *         <Legs>
+     *           <BookFlightSegmentType>
+     *             <Availability>
+     *               <Class id="Y" av="35" cab="Y" />
+     *             </Availability>
+     *           </BookFlightSegmentType>
+     *         </Legs>
+     *       </Journey>
+     *     </Journeys>
+     *   </AvailabilityResponse>
+     *
+     * @return array<FlightOption>
+     */
+    public static function parseXAvailability(SimpleXMLElement $xml, string $airlineCode, string $airlineName, string $currency = 'LYD'): array
+    {
+        $options = [];
+
+        if (! isset($xml->Journeys->Journey)) {
+            return [];
+        }
+
+        foreach ($xml->Journeys->Journey as $journey) {
+            if (! isset($journey->Legs->BookFlightSegmentType)) {
+                continue;
+            }
+
+            foreach ($journey->Legs->BookFlightSegmentType as $segment) {
+                $fltno = (string) ($segment->FlightNumber ?? '');
+                $dep = (string) ($segment->DepartureAirport['LocationCode'] ?? '');
+                $arr = (string) ($segment->ArrivalAirport['LocationCode'] ?? '');
+                $departureTime = str_replace('T', ' ', (string) ($segment->XSDDepartureDateTime ?? $segment['DepartureDateTime'] ?? ''));
+                $arrivalTime = str_replace('T', ' ', (string) ($segment->XSDArrivalDateTime ?? $segment->ArrivalDateTime ?? ''));
+                $aircraft = (string) ($segment->Equipment['AirEquipType'] ?? '');
+
+                // Compute duration in minutes from ISO timestamps
+                $duration = 0;
+
+                try {
+                    $depCarbon = Carbon::parse($departureTime);
+                    $arrCarbon = Carbon::parse($arrivalTime);
+                    $duration = (int) $depCarbon->diffInMinutes($arrCarbon);
+                } catch (\Throwable) {
+                    // Leave duration as 0 if parsing fails
+                }
+
+                if (! isset($segment->Availability->Class)) {
+                    continue;
+                }
+
+                foreach ($segment->Availability->Class as $class) {
+                    $classCode = strtoupper((string) ($class['id'] ?? ''));
+                    $seatsAvailable = (int) ($class['av'] ?? 0);
+                    $cabinType = strtoupper((string) ($class['cab'] ?? 'Y'));
+
+                    if ($classCode === '') {
+                        continue;
+                    }
+
+                    $date = substr($departureTime, 0, 10);
+
+                    $options[] = new FlightOption(
+                        id: $fltno.'-'.$dep.'-'.$arr.'-'.$date.'-'.$classCode,
+                        airline_code: $airlineCode,
+                        airline_name: $airlineName.' (Class '.$classCode.')',
+                        flight_number: $fltno,
+                        departure_airport: $dep,
+                        arrival_airport: $arr,
+                        departure_time: $departureTime,
+                        arrival_time: $arrivalTime,
+                        segments: [
+                            [
+                                'flight_number' => $fltno,
+                                'departure_airport' => $dep,
+                                'arrival_airport' => $arr,
+                                'departure_time' => $departureTime,
+                                'arrival_time' => $arrivalTime,
+                                'aircraft' => $aircraft,
+                                'class' => $classCode,
+                                'cabin_type' => $cabinType,
+                                'duration' => $duration,
+                            ],
+                        ],
+                        pricing: [
+                            'currency' => $currency,
+                            'total' => 0,
+                            'breakdown' => [],
+                            'brand_name' => 'Class '.$classCode,
+                            'brand_details' => '',
+                            'class_code' => $classCode,
+                            'cabin_type' => $cabinType,
+                        ],
+                        available_seats: $seatsAvailable,
+                        raw_data: []
+                    );
                 }
             }
         }

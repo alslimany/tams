@@ -17,6 +17,7 @@ class SettingController extends Controller
         return Inertia::render('Tenant/Settings/General', [
             'settings' => [
                 'search_display_mode' => tenant()->getInternal('search_display_mode') ?? 'per_offer',
+                'show_soldout_classes' => (bool) (tenant()->getInternal('show_soldout_classes') ?? true),
             ],
         ]);
     }
@@ -28,10 +29,12 @@ class SettingController extends Controller
     {
         $validated = $request->validate([
             'search_display_mode' => 'required|in:per_offer,per_flight',
+            'show_soldout_classes' => 'required|boolean',
         ]);
 
         $tenant = tenant();
         $tenant->setInternal('search_display_mode', $validated['search_display_mode']);
+        $tenant->setInternal('show_soldout_classes', $validated['show_soldout_classes']);
         $tenant->save();
 
         return back()->with('success', 'Settings updated successfully.');

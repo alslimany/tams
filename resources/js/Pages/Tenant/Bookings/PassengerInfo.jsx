@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Head, Link, useForm, usePage } from '@inertiajs/react';
 import axios from 'axios';
 import TenantNavbarLayout from '@/Layouts/TenantNavbarLayout';
@@ -11,10 +11,113 @@ import { Label } from '@/Components/ui/Label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/Components/ui/Tabs';
 import { Armchair, Briefcase, CheckCircle2, ChevronLeft, ChevronRight, Loader2, Settings2, Users } from 'lucide-react';
 
-export default function PassengerInfo({ uuid, provider_id, flight, reservation_type, is_round_trip = false, outbound_provider_id = null, return_provider_id = null, passportRequired = false, searchParams, ancillaryCatalog = [], ancillaryCatalogByOffer = {}, cached_passengers = [], cached_customer = null }) {
+export default function PassengerInfo({ uuid, provider_id, flight, reservation_type, is_round_trip = false, outbound_provider_id = null, return_provider_id = null, passportRequired = false, searchParams, ancillaryCatalog = [], ancillaryCatalogByOffer = {}, cached_passengers = [], cached_customer = null, countries = [] }) {
      const { t, getAirlineName, getCurrencyName, getCabinName } = useTranslation();
     const flash = usePage().props.flash ?? {};
+    const locale = usePage().props.locale || 'en';
     const issueCommandPreview = flash.issue_command_preview || '';
+
+    /** Return the localised country name from a country object. */
+    const countryLabel = (c) => {
+        if (locale === 'ar' && c.name_ar) return c.name_ar;
+        if (locale === 'fr' && c.name_fr) return c.name_fr;
+        return c.name_en;
+    };
+
+    /**
+     * Searchable country select — stores the alpha3 code.
+     * Keeps a local query string; filters on both name and code.
+     */
+    const CountrySelect = ({ value, onChange, required, placeholder }) => {
+        const [query, setQuery] = useState('');
+        const [open, setOpen] = useState(false);
+        const [dropdownStyle, setDropdownStyle] = useState({});
+        const inputRef = useRef(null);
+        const containerRef = useRef(null);
+
+        const selected = countries.find((c) => c.alpha3 === value?.toLowerCase());
+        const displayValue = selected ? countryLabel(selected) : (value || '');
+
+        const filtered = useMemo(() => {
+            if (!query) return countries;
+            const q = query.toLowerCase();
+            return countries.filter(
+                (c) =>
+                    (c.alpha3 || '').includes(q) ||
+                    (c.alpha2 || '').includes(q) ||
+                    (c.name_en || '').toLowerCase().includes(q) ||
+                    (c.name_ar || '').includes(q) ||
+                    (c.name_fr || '').toLowerCase().includes(q),
+            );
+        }, [query]);
+
+        const updateDropdownPosition = () => {
+            if (!inputRef.current) return;
+            const rect = inputRef.current.getBoundingClientRect();
+            setDropdownStyle({
+                position: 'fixed',
+                top: rect.bottom + 4,
+                left: rect.left,
+                width: rect.width,
+                zIndex: 9999,
+            });
+        };
+
+        // Close on outside click
+        useEffect(() => {
+            const handler = (e) => {
+                if (containerRef.current && !containerRef.current.contains(e.target)) {
+                    setOpen(false);
+                    setQuery('');
+                }
+            };
+            document.addEventListener('mousedown', handler);
+            return () => document.removeEventListener('mousedown', handler);
+        }, []);
+
+        return (
+            <div ref={containerRef} className="relative">
+                <Input
+                    ref={inputRef}
+                    required={required}
+                    placeholder={placeholder || 'Search country…'}
+                    value={open ? query : displayValue}
+                    onFocus={() => {
+                        updateDropdownPosition();
+                        setOpen(true);
+                        setQuery('');
+                    }}
+                    onChange={(e) => {
+                        setQuery(e.target.value);
+                        updateDropdownPosition();
+                    }}
+                    autoComplete="off"
+                />
+                {open && (
+                    <ul style={dropdownStyle} className="max-h-52 overflow-y-auto rounded-md border bg-popover shadow-md text-sm">
+                        {filtered.length === 0 && (
+                            <li className="px-3 py-2 text-muted-foreground">{t('common.no_results') || 'No results'}</li>
+                        )}
+                        {filtered.map((c) => (
+                            <li
+                                key={c.alpha3}
+                                className={`cursor-pointer px-3 py-2 hover:bg-accent hover:text-accent-foreground ${value?.toLowerCase() === c.alpha3 ? 'bg-accent font-semibold' : ''}`}
+                                onMouseDown={(e) => {
+                                    e.preventDefault();
+                                    onChange(c.alpha3.toUpperCase());
+                                    setOpen(false);
+                                    setQuery('');
+                                }}
+                            >
+                                <span className="font-mono text-xs text-muted-foreground me-2">{c.alpha3.toUpperCase()}</span>
+                                {countryLabel(c)}
+                            </li>
+                        ))}
+                    </ul>
+                )}
+            </div>
+        );
+    };
 
     const initialPassengers = cached_passengers?.length > 0 ? cached_passengers : [];
     const types = [
@@ -654,12 +757,22 @@ export default function PassengerInfo({ uuid, provider_id, flight, reservation_t
                                             </div>
                                             <div className="space-y-2">
                                                 <Label>{t('common.nationality')}</Label>
-                                                <Input required={passportRequired} maxLength={3} value={passenger.nationality} onChange={(event) => handlePassengerChange(index, 'nationality', event.target.value.toUpperCase())} placeholder="LBY" />
+                                                <CountrySelect
+                                                    required={passportRequired}
+                                                    value={passenger.nationality}
+                                                    onChange={(val) => handlePassengerChange(index, 'nationality', val)}
+                                                    placeholder="LBY"
+                                                />
                                                 {(localErrors[`passengers.${index}.nationality`] || errors[`passengers.${index}.nationality`]) && <p className="text-xs text-destructive">{localErrors[`passengers.${index}.nationality`] || errors[`passengers.${index}.nationality`]}</p>}
                                             </div>
                                             <div className="space-y-2">
                                                 <Label>{t('common.passport_issue_country')}</Label>
-                                                <Input required={passportRequired} maxLength={3} value={passenger.passport_issue_country} onChange={(event) => handlePassengerChange(index, 'passport_issue_country', event.target.value.toUpperCase())} placeholder="LBY" />
+                                                <CountrySelect
+                                                    required={passportRequired}
+                                                    value={passenger.passport_issue_country}
+                                                    onChange={(val) => handlePassengerChange(index, 'passport_issue_country', val)}
+                                                    placeholder="LBY"
+                                                />
                                                 {(localErrors[`passengers.${index}.passport_issue_country`] || errors[`passengers.${index}.passport_issue_country`]) && <p className="text-xs text-destructive">{localErrors[`passengers.${index}.passport_issue_country`] || errors[`passengers.${index}.passport_issue_country`]}</p>}
                                             </div>
                                         </CardContent>

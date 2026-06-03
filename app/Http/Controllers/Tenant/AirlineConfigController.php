@@ -7,6 +7,7 @@ use App\Models\TenantProvider;
 use App\Services\Airline\AgencyProviderResolver;
 use App\Services\Airline\ProviderFactory;
 use App\Services\Airline\Videcom\BaseVidecomAirline;
+use App\Services\Airline\Videcom\VidecomClient;
 use Exception;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -48,8 +49,8 @@ class AirlineConfigController extends Controller
                 'videcom_code' => 'Medsky',
                 'base_url' => 'https://customer3.videcom.com/Medsky',
                 'accounts' => [
-                    ['name' => 'Default Account', 'currency' => 'LYD', 'airports' => ['IST', 'MJI', 'BEN']],
-                    ['name' => 'EUR Account', 'currency' => 'EUR', 'airports' => ['MLA', 'FCO']],
+                    ['name' => 'Default Account', 'currency' => 'LYD', 'airports' => ['IST', 'MRA', 'BEN', 'TUN']],
+                    ['name' => 'EUR Account', 'currency' => 'EUR', 'airports' => ['MLA', 'FCO', 'MXP', 'MAD', 'DUS']],
                 ],
             ],
             [
@@ -408,6 +409,54 @@ class AirlineConfigController extends Controller
             }
         } catch (\Throwable $exception) {
             report($exception);
+        }
+    }
+
+    public function terminalPage(TenantProvider $provider)
+    {
+        if (! $this->providerResolver->canManageOwnProviders()) {
+            return redirect()->route('dashboard')->with('error', 'Airline providers are managed by the system.');
+        }
+
+        return Inertia::render('Tenant/Settings/AirConfig/Terminal', [
+            'provider' => [
+                'id' => $provider->id,
+                'airline_name' => $provider->airline_name,
+                'airline_code' => $provider->airline_code,
+                'account_name' => $provider->account_name,
+                'provider_type' => $provider->provider_type,
+            ],
+        ]);
+    }
+
+    public function terminal(Request $request, TenantProvider $provider)
+    {
+        if (! $this->providerResolver->canManageOwnProviders()) {
+            return response()->json(['error' => 'Airline providers are managed by the system.'], 403);
+        }
+
+        $validated = $request->validate([
+            'command' => ['required', 'string', 'max:500'],
+        ]);
+
+        $command = trim((string) $validated['command']);
+
+        try {
+            $client = new VidecomClient((array) $provider->credentials);
+            $start = microtime(true);
+            $output = $client->runCommand($command);
+            $duration = round((microtime(true) - $start) * 1000);
+
+            return response()->json([
+                'output' => $output,
+                'command' => $command,
+                'duration_ms' => $duration,
+            ]);
+        } catch (Exception $e) {
+            return response()->json([
+                'error' => $e->getMessage(),
+                'command' => $command,
+            ], 422);
         }
     }
 

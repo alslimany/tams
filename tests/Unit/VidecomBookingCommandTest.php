@@ -84,7 +84,7 @@ test('create booking does not include a manual time limit by default', function 
 
     expect($client->lastCommand)->not->toContain('^8/')
         ->and($client->lastCommand)->toStartWith('i^-1ABDULLAH/ABDULLAHMR^9-1M*+911388788^9-1E*alslimany@gmail.com')
-        ->and($client->lastCommand)->toContain('^0YI0510Y12AprMJISEBNN1')
+        ->and($client->lastCommand)->toContain('^0YI0510Y12APRMJISEBNN1')
         ->and($client->lastCommand)->toContain('^FG^FS1^MI-ABC TOURS01012^EZT*R^EZRE^*R~x')
         ->and($client->lastCommand)->not->toContain('FDOCS');
 });
@@ -167,7 +167,7 @@ test('create booking can include docs entry when enabled and passport data is co
     ]);
 
     expect($client->lastCommand)
-        ->toStartWith('i^-1ABDULLAH/ABDULLAHMR^9-1M*+218910000000^9-1E*i.abdullah@median.ly^0UZ0123H30AprMJITUNNN1')
+        ->toStartWith('i^-1ABDULLAH/ABDULLAHMR^9-1M*+218910000000^9-1E*i.abdullah@median.ly^0UZ0123H30APRMJITUNNN1')
         ->and($client->lastCommand)->toContain('4-1FDOCS/P/LBY/LB1234567/LBY/07May92/m/01Oct29/ABDULLAH/ABDULLAH/')
         ->and($client->lastCommand)->toContain('^FG^FS1^MI-ABC TOURS01012^EZT*R^EZRE^*R~x');
 });

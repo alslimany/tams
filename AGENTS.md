@@ -246,4 +246,13 @@ This project has domain-specific skills available. You MUST activate the relevan
 
 - IMPORTANT: Activate `inertia-react-development` when working with Inertia React client-side patterns.
 
+=== ui/loading rules ===
+
+# Loading States
+
+- Always use `<Loader2 className="h-4 w-4 animate-spin text-primary" />` from `lucide-react` for any loading indicator.
+- Never use emoji spinners (⏳), plain text, or other custom spinners.
+- For inline/small loading states use `h-4 w-4`, for larger/centered loading states use `h-5 w-5` or `h-6 w-6`.
+- Always pair the icon with a short descriptive label when space allows.
+
 </laravel-boost-guidelines>

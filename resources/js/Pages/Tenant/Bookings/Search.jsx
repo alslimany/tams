@@ -304,9 +304,18 @@ export default function Search({ searchDisplayMode, bookings, filters, airlines,
                                     </div>
 
                                     <div className="hidden items-end justify-center pb-2 md:col-span-1 md:flex">
-                                        <div className="rounded-md border p-2">
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                const prev = data.origin;
+                                                setData('origin', data.destination);
+                                                setData('destination', prev);
+                                            }}
+                                            className="rounded-md border p-2 transition-colors hover:bg-muted"
+                                            title="Swap airports"
+                                        >
                                             <ArrowRightLeft className="h-4 w-4 text-muted-foreground" />
-                                        </div>
+                                        </button>
                                     </div>
 
                                     <div className="space-y-2 md:col-span-4">
@@ -352,15 +361,16 @@ export default function Search({ searchDisplayMode, bookings, filters, airlines,
                                                 </Button>
                                                 </PopoverTrigger>
                                                 <PopoverContent className="w-auto p-0" align="start">
-                                                    <Calendar
-                                                        mode="single"
-                                                        selected={departureDate}
-                                                        onSelect={applySingleDate}
-                                                        onMonthChange={setVisibleMonth}
-                                                        month={visibleMonth}
-                                                        components={{ DayButton: renderDayButton }}
-                                                        initialFocus
-                                                    />
+                                                                    <Calendar
+                                                                        mode="single"
+                                                                        selected={departureDate}
+                                                                        onSelect={applySingleDate}
+                                                                        onMonthChange={setVisibleMonth}
+                                                                        month={visibleMonth}
+                                                                        disabled={{ before: new Date() }}
+                                                                        components={{ DayButton: renderDayButton }}
+                                                                        initialFocus
+                                                                    />
                                                 </PopoverContent>
                                             </Popover>
                                             {errors.date && <p className="text-xs text-destructive">{errors.date}</p>}
@@ -380,16 +390,17 @@ export default function Search({ searchDisplayMode, bookings, filters, airlines,
                                                     </Button>
                                                 </PopoverTrigger>
                                                 <PopoverContent className="w-auto p-0" align="start">
-                                                    <Calendar
-                                                        mode="range"
-                                                        selected={tripRange}
-                                                        onSelect={applyRangeDate}
-                                                        onMonthChange={setVisibleMonth}
-                                                        month={visibleMonth}
-                                                        components={{ DayButton: renderDayButton }}
-                                                        numberOfMonths={2}
-                                                        initialFocus
-                                                    />
+                                                                    <Calendar
+                                                                        mode="range"
+                                                                        selected={tripRange}
+                                                                        onSelect={applyRangeDate}
+                                                                        onMonthChange={setVisibleMonth}
+                                                                        month={visibleMonth}
+                                                                        disabled={{ before: new Date() }}
+                                                                        components={{ DayButton: renderDayButton }}
+                                                                        numberOfMonths={2}
+                                                                        initialFocus
+                                                                    />
                                                 </PopoverContent>
                                             </Popover>
                                             {errors.date && <p className="text-xs text-destructive">{errors.date}</p>}

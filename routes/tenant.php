@@ -65,6 +65,7 @@ Route::prefix(config('tenancy.tenant_path_prefix', 'agency').'/{tenant}')->group
             Route::get('api/flights/calendar-hints', [BookingController::class, 'calendarHints'])->name('flights.calendar-hints');
             Route::post('flights/open-reservation-availability', [BookingController::class, 'openReservationAvailability'])->name('flights.open-reservation-availability');
             Route::post('flights/seatmap', [BookingController::class, 'seatmap'])->name('flights.seatmap');
+            Route::post('flights/fare-rules', [BookingController::class, 'fareRules'])->name('flights.fare-rules');
             Route::post('flights/select', [BookingController::class, 'select'])->name('flights.select');
             Route::get('flights/passengers/{uuid}', [BookingController::class, 'passengers'])->name('flights.passengers');
             Route::post('flights', [BookingController::class, 'store'])->middleware('wallet.balance')->name('flights.store');
@@ -178,6 +179,8 @@ Route::prefix(config('tenancy.tenant_path_prefix', 'agency').'/{tenant}')->group
                 Route::post('settings/airlines/test', [AirlineConfigController::class, 'testConnection'])->name('settings.airlines.test');
                 Route::post('settings/airlines/deposit', [AirlineConfigController::class, 'deposit'])->name('settings.airlines.deposit');
                 Route::patch('settings/airlines/{provider}/toggle', [AirlineConfigController::class, 'toggle'])->name('settings.airlines.toggle');
+                Route::get('settings/airlines/{provider}/terminal', [AirlineConfigController::class, 'terminalPage'])->name('settings.airlines.terminal');
+                Route::post('settings/airlines/{provider}/terminal', [AirlineConfigController::class, 'terminal'])->name('settings.airlines.terminal.run');
 
                 // General Tenant Settings
                 Route::get('settings/general', [SettingController::class, 'index'])->name('settings.general.index');

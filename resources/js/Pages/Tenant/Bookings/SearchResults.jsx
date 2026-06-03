@@ -20,8 +20,10 @@ import { formatMoney, formatMoneyValue } from '@/lib/currency';
 import FlightGroupCard from '@/Components/FlightGroupCard';
 import { useTranslation } from '@/hooks/useTranslation';
 
-export default function SearchResults({ providers, providerSources = {}, query, uuid, searchDisplayMode }) {
+export default function SearchResults({ providers, providerSources = {}, query, uuid, searchDisplayMode, showSoldoutClasses = true, airports = {} }) {
     const { t, loading: translationsLoading, locale } = useTranslation();
+
+    const airportInfo = (iata) => airports[iata] || { iata, name: null, city: null, country: null };
 
     const isRoundTripSearch = Boolean(query?.is_return);
     const initialActiveSearchDate = query?.date;
@@ -142,8 +144,9 @@ export default function SearchResults({ providers, providerSources = {}, query, 
                 const newFlights = response.data?.flights || [];
 
                 if (newFlights.length > 0) {
+                    const flightsWithProvider = newFlights.map((f) => ({ ...f, provider_id: provider.id }));
                     setResults(prev => {
-                        return [...prev, ...newFlights].sort((a, b) => {
+                        return [...prev, ...flightsWithProvider].sort((a, b) => {
                             const timeA = new Date(a.departure_time);
                             const timeB = new Date(b.departure_time);
                             return timeA - timeB;
@@ -703,7 +706,7 @@ export default function SearchResults({ providers, providerSources = {}, query, 
 
     return (
         <TenantNavbarLayout>
-            <Head title={`Flights to ${activeDestination}`} />
+            <Head title={`Flights to ${airportInfo(activeDestination).name || activeDestination}`} />
 
             <div className={`max-w-7xl mx-auto py-8 px-4 ${((isRoundTripSearch && selectedOutboundFlight && selectedReturnFlight) || (!isRoundTripSearch && selectedOneWayFlight)) ? 'pb-28' : ''}`}>
                 <div className="flex flex-col md:flex-row md:items-end justify-between mb-10 gap-6">
@@ -713,7 +716,25 @@ export default function SearchResults({ providers, providerSources = {}, query, 
                             Search Results
                         </div> */}
                         <h2 className="text-4xl font-black tracking-tight flex items-center gap-3">
-                            {activeOrigin} <ChevronRight className="h-8 w-8 text-muted-foreground/30" /> {activeDestination}
+                            <span className="flex flex-col leading-none">
+                                <span>{activeOrigin}</span>
+                                {airportInfo(activeOrigin).name && (
+                                    <span className="text-sm font-semibold text-muted-foreground mt-1">
+                                        {airportInfo(activeOrigin).name}
+                                        {airportInfo(activeOrigin).country ? ` · ${airportInfo(activeOrigin).country}` : ''}
+                                    </span>
+                                )}
+                            </span>
+                            <ChevronRight className="h-8 w-8 text-muted-foreground/30 shrink-0" />
+                            <span className="flex flex-col leading-none">
+                                <span>{activeDestination}</span>
+                                {airportInfo(activeDestination).name && (
+                                    <span className="text-sm font-semibold text-muted-foreground mt-1">
+                                        {airportInfo(activeDestination).name}
+                                        {airportInfo(activeDestination).country ? ` · ${airportInfo(activeDestination).country}` : ''}
+                                    </span>
+                                )}
+                            </span>
                         </h2>
                         <p className="text-muted-foreground font-medium mt-1">
                             {new Date(activeDate).toLocaleDateString(locale, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })} • {
@@ -865,12 +886,9 @@ export default function SearchResults({ providers, providerSources = {}, query, 
                     )}
 
                     {providerErrors.length > 0 && (
-                        <div className="rounded-2xl border border-destructive/40 bg-destructive/5 p-4">
-                            <p className="text-sm font-bold text-destructive">
-                                Some airlines timed out or failed to respond. You can adjust the search and try again.
-                            </p>
-                            <p className="mt-1 text-xs text-destructive/90">
-                                {providerErrors.map((entry) => `${entry.provider}: ${entry.message}`).join(' | ')}
+                        <div className="rounded-2xl border border-amber-500/40 bg-amber-500/5 p-4">
+                            <p className="text-sm font-bold text-amber-700 dark:text-amber-400">
+                                {t('common.some_flights_unavailable')}
                             </p>
                         </div>
                     )}
@@ -893,6 +911,7 @@ export default function SearchResults({ providers, providerSources = {}, query, 
                                     key={`${flightGroup.airline_code}-${flightGroup.flight_number}`}
                                     flightGroup={flightGroup}
                                     providers={providers}
+                                    showSoldoutClasses={showSoldoutClasses}
                                     openReservationAvailability={openReservationAvailability}
                                     openReservationAvailabilityLoading={openReservationAvailabilityLoading}
                                     openOfferSummaryKey={openOfferSummaryKey}

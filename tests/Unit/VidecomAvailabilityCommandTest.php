@@ -74,7 +74,7 @@ XML;
     ]);
 
     expect($client->commands[0] ?? null)
-        ->toContain('ClassBands=false')
+        ->toContain('~X')
         ->and($results)->toHaveCount(1)
         ->and($results[0]->available_seats)->toBe(5)
         ->and($results[0]->segments[0]['class'])->toBe('Z');
@@ -403,7 +403,7 @@ XML;
 
     expect($pricingCommand)
         ->not->toBeNull()
-        ->and($pricingCommand)->toContain('0'.'5S'.'0754'.'Y'.'30APR'.'MJI'.'BEN'.'QQ2')
+        ->and($pricingCommand)->toContain('0'.'5S'.'0754'.'Y'.'30APR'.'MJI'.'BEN'.'NN2')
         ->and($pricingCommand)->not->toContain('0754 30APR');
 });
 

@@ -67,7 +67,7 @@ XML;
         ->and($result->returnLegPrice)->toBe(180.0)
         ->and($result->totalPrice)->toBe(390.0)
         ->and($result->currency)->toBe('LYD')
-        ->and($client->commands[0] ?? '')->toContain('QQ1');
+        ->and($client->commands[0] ?? '')->toContain('NN1');
 });
 
 test('price round trip derives return leg from combined fare when provider returns one total', function () {

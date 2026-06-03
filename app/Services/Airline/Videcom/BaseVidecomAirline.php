@@ -102,15 +102,12 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
             throw new Exception("Route {$origin}-{$destination} is not allowed for this airline account.");
         }
 
-        $classBands = $this->shouldUseClassBandsInAvailability() ? 'True' : 'false';
-
-        $command = "A{$date}{$origin}{$destination}[SalesCity={$origin},VARS=True,ClassBands={$classBands},StartCity={$origin},SingleSeg=".($isReturn ? 'r' : 's').",FGNoAv=True,qtyseats={$qty}";
+        $command = "A{$date}{$origin}{$destination}~X";
 
         if ($isReturn && $returnDate) {
-            $command .= ",RetDate={$returnDate}";
+            // ~X returns multiple weeks; return leg filters by date on its own search call.
+            // No special command modification needed.
         }
-
-        $command .= ']';
 
         $response = $this->client->runCommand($command);
         $xml = $this->parseXml($response);
@@ -119,7 +116,9 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
             return [];
         }
 
-        $options = VidecomResponseParser::parseAvailability($xml, $this->getIataCode(), $this->getName());
+        $options = $xml->getName() === 'AvailabilityResponse'
+            ? VidecomResponseParser::parseXAvailability($xml, $this->getIataCode(), $this->getName(), $this->getCurrency())
+            : VidecomResponseParser::parseAvailability($xml, $this->getIataCode(), $this->getName());
 
         // Warm route/class cache from all returned dates first.
         // Pricing cache key is intentionally date-agnostic, so a priced date can seed
@@ -188,6 +187,11 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
                 continue;
             }
 
+            // Skip pricing probe entirely when no seats are available — it will always fail.
+            if (($candidate->available_seats ?? 0) <= 0) {
+                continue;
+            }
+
             $this->prefetchPrices($candidate, $class);
         }
     }
@@ -238,6 +242,17 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
             $option->pricing['total'] = $total;
             $option->pricing['breakdown'] = $breakdown;
         }
+
+        // Attach baggage allowance and fare ID if cached
+        $baggage = PricingCacheService::getBaggage($this->getIataCode(), $option->departure_airport, $option->arrival_airport, $class);
+        if ($baggage) {
+            $option->pricing['hold_weight'] = $baggage['hold_weight'];
+            $option->pricing['hand_weight'] = $baggage['hand_weight'];
+            $option->pricing['hold_pieces'] = $baggage['hold_pieces'];
+            if (! empty($baggage['fare_id'])) {
+                $option->pricing['fare_id'] = $baggage['fare_id'];
+            }
+        }
     }
 
     /**
@@ -264,10 +279,21 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
         try {
             $prices = $this->fetchAllPaxPricesFromVrs($option, $class);
             foreach ($prices as $type => $data) {
-                PricingCacheService::put($airline, $origin, $dest, $class, $type, $data);
+                if ($type === '_baggage') {
+                    PricingCacheService::putBaggage($airline, $origin, $dest, $class, $data);
+                } else {
+                    PricingCacheService::put($airline, $origin, $dest, $class, $type, $data);
+                }
             }
         } catch (Exception $e) {
             \Illuminate\Support\Facades\Log::warning("Failed to fetch consolidated prices for $airline $origin-$dest ($class): ".$e->getMessage());
+
+            // Cache a sentinel so subsequent calls within this request don't retry the same failing probe.
+            foreach (['AD', 'CH', 'IN'] as $type) {
+                if (PricingCacheService::get($airline, $origin, $dest, $class, $type) === null) {
+                    PricingCacheService::put($airline, $origin, $dest, $class, $type, false);
+                }
+            }
         }
     }
 
@@ -304,8 +330,8 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
         $origin = $this->normalizeAirportCode((string) ($option->departure_airport ?? ''), 'TIP');
         $destination = $this->normalizeAirportCode((string) ($option->arrival_airport ?? ''), 'BEN');
 
-        // QQ count is 2 (AD + CH) - infants are Lap children and don't take a seat
-        $flightEntry = "0{$this->getIataCode()}{$flightNumber}{$classCode}{$date}{$origin}{$destination}QQ2";
+        // NN (confirmed) count is 2 (AD + CH) - infants are Lap children and don't take a seat
+        $flightEntry = "0{$this->getIataCode()}{$flightNumber}{$classCode}{$date}{$origin}{$destination}NN2";
 
         $command = "i^{$paxEntry}^{$flightEntry}^FG^FS1^*r~x";
         $response = $this->client->runCommand($command);
@@ -334,6 +360,34 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
                     'fare' => (float) ($fs->SegmentFS['Fare'] ?? 0),
                     'tax' => (float) ($fs->SegmentFS['Tax1'] ?? 0) + (float) ($fs->SegmentFS['Tax2'] ?? 0) + (float) ($fs->SegmentFS['Tax3'] ?? 0),
                 ];
+
+                // Baggage is per-flight (not per pax type) — capture once from AD (Pax 1)
+                if ($paxIndex === 1) {
+                    // Extract numeric fare ID from FQItin e.g. "SITI 384" → "384"
+                    // Try xpath first (most reliable), then direct child, then FareStore attribute
+                    $fareId = null;
+                    $fqiRaw = '';
+
+                    $fqiNodes = $xml->xpath('//FareQuote/FQItin[@FQI]') ?: [];
+                    if (! empty($fqiNodes)) {
+                        $fqiRaw = (string) ($fqiNodes[0]['FQI'] ?? '');
+                    } elseif (isset($xml->FareQuote->FQItin)) {
+                        $fqiRaw = (string) ($xml->FareQuote->FQItin['FQI'] ?? '');
+                    } elseif (isset($fs['FQI'])) {
+                        $fqiRaw = (string) $fs['FQI'];
+                    }
+
+                    if ($fqiRaw !== '' && preg_match('/(\d+)\s*$/', $fqiRaw, $m)) {
+                        $fareId = $m[1];
+                    }
+
+                    $results['_baggage'] = [
+                        'hold_weight' => (string) ($fs->SegmentFS['HoldWt'] ?? ''),
+                        'hand_weight' => (string) ($fs->SegmentFS['HandWt'] ?? ''),
+                        'hold_pieces' => (string) ($fs->SegmentFS['HoldPcs'] ?? ''),
+                        'fare_id' => $fareId,
+                    ];
+                }
             }
         }
 
@@ -343,9 +397,50 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
     /**
      * Get pricing for a selected itinerary.
      */
+    /**
+     * Fetch and clean fare rules text for a given fare ID.
+     * Runs the VRS FN (Fare Note) command and strips the standard header/footer lines.
+     */
+    public function getFareRules(string $fareId): string
+    {
+        $response = $this->client->runCommand("FN{$fareId}");
+
+        // Strip header:  "* * * Fare Rules for Fare ID [#### 384] * * *"
+        // Strip footer:  "End of list"
+        $lines = explode("\n", $response);
+        $cleaned = [];
+        $inRules = false;
+
+        foreach ($lines as $line) {
+            $trimmed = trim($line);
+
+            if (str_contains($trimmed, 'Fare Rules for Fare ID')) {
+                $inRules = true;
+
+                continue;
+            }
+
+            if (! $inRules) {
+                continue;
+            }
+
+            if (preg_match('/^end\s+of\s+list/i', $trimmed)) {
+                break;
+            }
+
+            // Skip the standalone "Rules" heading line some providers emit
+            if (strtolower($trimmed) === 'rules') {
+                continue;
+            }
+
+            $cleaned[] = $line;
+        }
+
+        return trim(implode("\n", $cleaned));
+    }
+
     public function getPricing(array $itinerary, array $passengers)
     {
-        $paxCount = count($passengers);
         $paxEntry = $this->buildPaxPricingEntry($passengers);
 
         $flightEntries = [];
@@ -387,9 +482,9 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
 
         $paxInfo = $this->buildPricingPaxEntry($adults, $children, $infants);
 
-        // QQ is pricing-only and avoids holding seats.
-        $outboundEntry = "0{$this->getIataCode()}{$outboundFlightNo}{$outboundClass}{$outboundDate}{$origin}{$destination}QQ{$seatQty}";
-        $returnEntry = "0{$this->getIataCode()}{$returnFlightNo}{$returnClass}{$returnDate}{$destination}{$origin}QQ{$seatQty}";
+        // NN (confirmed) avoids open-route rejection on restricted classes.
+        $outboundEntry = "0{$this->getIataCode()}{$outboundFlightNo}{$outboundClass}{$outboundDate}{$origin}{$destination}NN{$seatQty}";
+        $returnEntry = "0{$this->getIataCode()}{$returnFlightNo}{$returnClass}{$returnDate}{$destination}{$origin}NN{$seatQty}";
         $command = "i^{$paxInfo}^{$outboundEntry}^{$returnEntry}^FG^FS1^*r~x";
 
         $response = $this->client->runCommand($command);
@@ -500,7 +595,7 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
                     $date = $this->normalizeDateToken($segment['date'] ?? $segment['departure_time'] ?? now());
                     $fltNo = $this->normalizeFlightNumber((string) ($segment['flt_no'] ?? $segment['flight_number'] ?? ''));
                     $paxEntry = '-1TEST/PAXMR';
-                    $flightEntry = "0{$this->getIataCode()}{$fltNo}{$class}{$date}{$origin}{$destination}QQ1";
+                    $flightEntry = "0{$this->getIataCode()}{$fltNo}{$class}{$date}{$origin}{$destination}NN1";
                     $command = "i^{$paxEntry}^{$flightEntry}^FG^*r~x";
                     $response = $this->client->runCommand($command);
                     $xml = $this->parseXml($response);

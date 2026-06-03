@@ -5,11 +5,13 @@ import { Button } from "@/Components/ui/Button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/Components/ui/Card";
 import { Label } from "@/Components/ui/Label";
 import { RadioGroup, RadioGroupItem } from "@/Components/ui/RadioGroup";
+import { Switch } from "@/Components/ui/Switch";
 import { toast } from "sonner";
 
 export default function General({ settings }) {
     const { data, setData, post, processing, errors } = useForm({
         search_display_mode: settings.search_display_mode || 'per_offer',
+        show_soldout_classes: settings.show_soldout_classes ?? true,
     });
 
     const submit = (e) => {
@@ -31,8 +33,8 @@ export default function General({ settings }) {
                 </div>
             </div>
 
-            <div className="max-w-2xl">
-                <form onSubmit={submit}>
+            <div className="max-w-2xl space-y-6">
+                <form onSubmit={submit} className="space-y-6">
                     <Card>
                         <CardHeader>
                             <CardTitle>Search Display Mode</CardTitle>
@@ -67,8 +69,21 @@ export default function General({ settings }) {
                             </RadioGroup>
                             {errors.search_display_mode && <p className="text-sm text-destructive font-medium">{errors.search_display_mode}</p>}
                         </CardContent>
-                        <CardFooter className="border-t px-6 py-4">
-                            <Button type="submit" disabled={processing}>
+                        <CardFooter className="border-t px-6 py-4 flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                                <Switch
+                                    id="show_soldout_classes"
+                                    checked={data.show_soldout_classes}
+                                    onCheckedChange={(val) => setData('show_soldout_classes', val)}
+                                />
+                                <div>
+                                    <Label htmlFor="show_soldout_classes" className="font-bold cursor-pointer">Show Sold-Out Classes</Label>
+                                    <p className="text-xs text-muted-foreground mt-0.5">
+                                        When enabled, sold-out fare classes are visible (but not selectable) in grouped flight results.
+                                    </p>
+                                </div>
+                            </div>
+                            <Button type="submit" disabled={processing} className="ml-6 shrink-0">
                                 {processing ? "Saving..." : "Save Changes"}
                             </Button>
                         </CardFooter>

@@ -12,6 +12,7 @@ use App\DTOs\Airline\RoundTripPriceRequest;
 use App\Exceptions\InsufficientWalletBalanceException;
 use App\Http\Controllers\Controller;
 use App\Models\Airport;
+use App\Models\Country;
 use App\Models\Tenant\Order;
 use App\Models\Tenant\OrderItem;
 use App\Models\TenantProvider;
@@ -130,7 +131,7 @@ class BookingController extends Controller
         $providers = $this->providerResolver->getAllActiveProviders();
 
         $filteredProviders = $this->filterProvidersByRouteAvailability(
-            $providers,
+            $this->filterProvidersByAccountAirports($providers, (string) ($searchParams['origin'] ?? ''), (string) ($searchParams['destination'] ?? '')),
             (string) ($searchParams['origin'] ?? ''),
             (string) ($searchParams['destination'] ?? ''),
         );
@@ -198,6 +199,22 @@ class BookingController extends Controller
             }
         }
 
+        $airportCodes = array_filter([
+            $searchParams['origin'] ?? null,
+            $searchParams['destination'] ?? null,
+        ]);
+
+        $airports = Airport::query()
+            ->whereIn('iata_code', $airportCodes)
+            ->get(['iata_code', 'name', 'city', 'country'])
+            ->keyBy('iata_code')
+            ->map(fn ($a) => [
+                'iata' => $a->iata_code,
+                'name' => $a->getTranslation('name', app()->getLocale(), true),
+                'city' => $a->getTranslation('city', app()->getLocale(), true),
+                'country' => $a->getTranslation('country', app()->getLocale(), true),
+            ]);
+
         return Inertia::render('Tenant/Bookings/SearchResults', [
             'uuid' => $uuid,
             'query' => $searchParams,
@@ -205,6 +222,8 @@ class BookingController extends Controller
             'providerSources' => $this->providerSourcesFor($filteredProviders),
             'flights' => $flights,
             'searchDisplayMode' => tenant()->getInternal('search_display_mode') ?? 'per_offer',
+            'showSoldoutClasses' => (bool) (tenant()->getInternal('show_soldout_classes') ?? true),
+            'airports' => $airports,
         ]);
     }
 
@@ -248,7 +267,7 @@ class BookingController extends Controller
         }
 
         $filteredProviders = $this->filterProvidersByRouteAvailability(
-            $providers,
+            $this->filterProvidersByAccountAirports($providers, $searchParams['origin'], $searchParams['destination']),
             $searchParams['origin'],
             $searchParams['destination'],
         );
@@ -259,6 +278,7 @@ class BookingController extends Controller
             'providers' => $filteredProviders,
             'providerSources' => $this->providerSourcesFor($filteredProviders),
             'searchDisplayMode' => tenant()->getInternal('search_display_mode') ?? 'per_offer',
+            'showSoldoutClasses' => (bool) (tenant()->getInternal('show_soldout_classes') ?? true),
             'order' => [
                 'id' => $order->id,
                 'number' => $order->number,
@@ -415,6 +435,35 @@ class BookingController extends Controller
             Log::error('Async seat map fetch failed: '.$e->getMessage());
 
             return response()->json(['error' => 'Failed to fetch seat map: '.$e->getMessage()], 422);
+        }
+    }
+
+    public function fareRules(Request $request)
+    {
+        $validated = $request->validate([
+            'provider_id' => 'required|integer',
+            'provider_selector' => 'nullable|string',
+            'fare_id' => 'required|string|max:20',
+        ]);
+
+        $providerConfig = $this->resolveSelectedProvider(
+            (int) $validated['provider_id'],
+            $validated['provider_selector'] ?? null,
+        );
+
+        if (! $providerConfig) {
+            return response()->json(['error' => 'Provider not found.'], 422);
+        }
+
+        try {
+            $provider = ProviderFactory::make($providerConfig);
+            $rules = $provider->getFareRules($validated['fare_id']);
+
+            return response()->json(['rules' => $rules]);
+        } catch (Exception $e) {
+            Log::error('Fare rules fetch failed: '.$e->getMessage());
+
+            return response()->json(['error' => 'Failed to fetch fare rules.'], 422);
         }
     }
 
@@ -749,6 +798,8 @@ class BookingController extends Controller
             'ancillaryCatalogByOffer' => $ancillaryCatalogByOffer,
             'cached_passengers' => $cachedPassengers,
             'cached_customer' => $cachedCustomer,
+            'countries' => Country::orderBy('name_en')
+                ->get(['alpha3', 'name_en', 'name_ar', 'name_fr']),
         ]);
     }
 
@@ -1566,6 +1617,37 @@ class BookingController extends Controller
         unset($params['return_date']);
 
         return $params;
+    }
+
+    /**
+     * Filter providers by account-level airport restrictions.
+     *
+     * When a provider's credentials define an `airports` list, the origin takes
+     * priority: only providers whose airport list contains the origin are kept.
+     * If no provider covers the origin, fall back to providers that cover the
+     * destination. Providers with no `airports` restriction are always included.
+     */
+    protected function filterProvidersByAccountAirports(Collection $providers, string $origin, string $destination): Collection
+    {
+        $origin = strtoupper($origin);
+        $destination = strtoupper($destination);
+
+        $unrestricted = $providers->filter(fn (TenantProvider $p): bool => empty($p->credentials['airports'] ?? []));
+        $restricted = $providers->filter(fn (TenantProvider $p): bool => ! empty($p->credentials['airports'] ?? []));
+
+        if ($restricted->isEmpty()) {
+            return $providers;
+        }
+
+        $normalize = fn (array $airports): array => array_map('strtoupper', $airports);
+
+        $byOrigin = $restricted->filter(fn (TenantProvider $p): bool => in_array($origin, $normalize($p->credentials['airports']), true));
+
+        $matched = $byOrigin->isNotEmpty()
+            ? $byOrigin
+            : $restricted->filter(fn (TenantProvider $p): bool => in_array($destination, $normalize($p->credentials['airports']), true));
+
+        return $unrestricted->concat($matched)->values();
     }
 
     protected function filterProvidersByRouteAvailability(Collection $providers, string $origin, string $destination): Collection
