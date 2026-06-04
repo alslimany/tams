@@ -98,19 +98,6 @@ class TenantManagementController extends Controller
 
     protected function tenantSnapshot(Tenant $tenant): array
     {
-        $dbPath = database_path('tenant'.$tenant->id.'.sqlite');
-
-        if (! file_exists($dbPath)) {
-            return [
-                'database_missing' => true,
-                'stats' => ['users' => 0, 'active_users' => 0, 'providers' => 0, 'active_providers' => 0, 'bookings' => 0],
-                'admin_user' => null,
-                'providers' => [],
-                'recent_bookings' => [],
-                'users' => [],
-            ];
-        }
-
         try {
             $data = $tenant->run(function (): array {
                 $providerModels = TenantProvider::query()->get([
@@ -275,10 +262,6 @@ class TenantManagementController extends Controller
             'default_agency_tenant_id' => null,
             'master_commission_percent' => 0,
         ];
-
-        if (! file_exists(database_path('tenant'.$tenant->id.'.sqlite'))) {
-            return $defaults;
-        }
 
         try {
             return $tenant->run(function (): array {

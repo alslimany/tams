@@ -34,6 +34,9 @@ import { useTranslation } from '@/hooks/useTranslation';
 
 export default function Search({ searchDisplayMode, bookings, filters, airlines, searchDefaults = {} }) {
     const [isPaxDropdownOpen, setIsPaxDropdownOpen] = useState(false);
+    const [isDateOpen, setIsDateOpen] = useState(false);
+    const [isRangeOpen, setIsRangeOpen] = useState(false);
+    const [rangeDraft, setRangeDraft] = useState(undefined);
     const [visibleMonth, setVisibleMonth] = useState(() => (searchDefaults.date ? new Date(searchDefaults.date) : new Date()));
     const [calendarHints, setCalendarHints] = useState({});
     const paxDropdownRef = useRef(null);
@@ -136,11 +139,24 @@ export default function Search({ searchDisplayMode, bookings, filters, airlines,
         }
 
         setData('date', format(selectedDate, 'yyyy-MM-dd'));
+        setIsDateOpen(false);
     };
 
     const applyRangeDate = (selectedRange) => {
-        setData('date', selectedRange?.from ? format(selectedRange.from, 'yyyy-MM-dd') : '');
-        setData('return_date', selectedRange?.to ? format(selectedRange.to, 'yyyy-MM-dd') : '');
+        setRangeDraft(selectedRange);
+
+        if (selectedRange?.from && selectedRange?.to && selectedRange.to > selectedRange.from) {
+            setData('date', format(selectedRange.from, 'yyyy-MM-dd'));
+            setData('return_date', format(selectedRange.to, 'yyyy-MM-dd'));
+            setIsRangeOpen(false);
+        }
+    };
+
+    const handleRangeOpenChange = (open) => {
+        if (open) {
+            setRangeDraft(undefined);
+        }
+        setIsRangeOpen(open);
     };
 
     const renderDayButton = ({ day, children, ...dayButtonProps }) => {
@@ -353,7 +369,7 @@ export default function Search({ searchDisplayMode, bookings, filters, airlines,
                                     {!data.is_return ? (
                                         <div className="space-y-2 md:col-span-6">
                                             <Label htmlFor="date">{t('common.departure_date')}</Label>
-                                            <Popover>
+                                            <Popover open={isDateOpen} onOpenChange={setIsDateOpen}>
                                                 <PopoverTrigger asChild>
                                                 <Button id="date" variant="outline" className="w-full justify-start text-left font-normal">
                                                     <CalendarIcon className="mr-2 h-4 w-4" />
@@ -378,7 +394,7 @@ export default function Search({ searchDisplayMode, bookings, filters, airlines,
                                     ) : (
                                         <div className="space-y-2 md:col-span-6">
                                             <Label htmlFor="date-range">{t('common.trip_dates')}</Label>
-                                            <Popover>
+                                            <Popover open={isRangeOpen} onOpenChange={handleRangeOpenChange}>
                                                 <PopoverTrigger asChild>
                                                     <Button id="date-range" variant="outline" className="w-full justify-start text-left font-normal">
                                                         <CalendarIcon className="mr-2 h-4 w-4" />
@@ -392,7 +408,7 @@ export default function Search({ searchDisplayMode, bookings, filters, airlines,
                                                 <PopoverContent className="w-auto p-0" align="start">
                                                                     <Calendar
                                                                         mode="range"
-                                                                        selected={tripRange}
+                                                                        selected={rangeDraft}
                                                                         onSelect={applyRangeDate}
                                                                         onMonthChange={setVisibleMonth}
                                                                         month={visibleMonth}

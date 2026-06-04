@@ -67,6 +67,8 @@ return [
         'company_name' => 'Nom de l\'entreprise',
         'owner_name' => 'Nom du propriétaire',
         'agency_path' => 'Identifiant agence',
+        'agency_city' => 'Ville de l\'agence',
+        'agency_city_search_placeholder' => 'Commencez à taper pour rechercher votre ville',
         'agency_path_hint' => 'Lettres minuscules, chiffres et tirets. Votre espace sera sur /agency/votre-id',
         'commercial_register' => 'Registre de commerce',
         'commercial_register_hint' => 'Téléchargez votre registre de commerce (PDF, JPG ou PNG, max 10 Mo)',

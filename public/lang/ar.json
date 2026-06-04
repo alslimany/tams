@@ -841,6 +841,8 @@
     "landlord.auth.company_name": "اسم الشركة",
     "landlord.auth.owner_name": "اسم المالك",
     "landlord.auth.agency_path": "معرف الوكالة",
+    "landlord.auth.agency_city": "المدينة",
+    "landlord.auth.agency_city_search_placeholder": "ابدأ بالكتابة للبحث عن مدينتك",
     "landlord.auth.agency_path_hint": "أحرف صغيرة وأرقام وشرطات. مساحة العمل ستكون في \/agency\/your-id",
     "landlord.auth.commercial_register": "السجل التجاري",
     "landlord.auth.commercial_register_hint": "ارفع مستند السجل التجاري (PDF أو JPG أو PNG، الحد الأقصى 10 ميجابايت)",

@@ -836,6 +836,8 @@
     "landlord.auth.company_name": "Nom de l'entreprise",
     "landlord.auth.owner_name": "Nom du propriétaire",
     "landlord.auth.agency_path": "Identifiant agence",
+    "landlord.auth.agency_city": "Ville de l'agence",
+    "landlord.auth.agency_city_search_placeholder": "Commencez à taper pour rechercher votre ville",
     "landlord.auth.agency_path_hint": "Lettres minuscules, chiffres et tirets. Votre espace sera sur \/agency\/votre-id",
     "landlord.auth.commercial_register": "Registre de commerce",
     "landlord.auth.commercial_register_hint": "Téléchargez votre registre de commerce (PDF, JPG ou PNG, max 10 Mo)",

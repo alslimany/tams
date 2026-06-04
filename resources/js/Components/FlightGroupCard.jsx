@@ -911,7 +911,6 @@ export default function FlightGroupCard({
                                     {getAirlineName(flightGroup.airline_code) || flightGroup.airline_name?.split(" (")[0]}
                                 </p>
                                 <p className="text-[11px] text-muted-foreground font-semibold  tracking-widest">
-                                    {flightGroup.airline_code}
                                     {flightGroup.flight_number}
                                 </p>
                             </div>

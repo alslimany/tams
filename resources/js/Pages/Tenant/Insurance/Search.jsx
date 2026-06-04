@@ -85,6 +85,10 @@ export default function InsuranceSearch({ productTypes = [], lookupsByType = {},
     const [compulsoryQuote, setCompulsoryQuote] = React.useState(null);
     const [compulsoryQuoteError, setCompulsoryQuoteError] = React.useState('');
     const [travelQuote, setTravelQuote] = React.useState(null);
+    const [isTravelDateOpen, setIsTravelDateOpen] = React.useState(false);
+    const [isOrangeDateOpen, setIsOrangeDateOpen] = React.useState(false);
+    const [travelDraftRange, setTravelDraftRange] = React.useState(undefined);
+    const [orangeDraftRange, setOrangeDraftRange] = React.useState(undefined);
     const [travelQuoteError, setTravelQuoteError] = React.useState('');
     const [travelPricingLoading, setTravelPricingLoading] = React.useState(false);
     const [travelReferences, setTravelReferences] = React.useState({ zones: [] });
@@ -353,8 +357,20 @@ export default function InsuranceSearch({ productTypes = [], lookupsByType = {},
             return;
         }
 
-        setFieldValue('travel', 'policy_date_from', range.from ? format(range.from, 'yyyy-MM-dd') : '');
-        setFieldValue('travel', 'policy_date_to', range.to ? format(range.to, 'yyyy-MM-dd') : '');
+        setTravelDraftRange(range);
+
+        if (range.from && range.to && range.to > range.from) {
+            setFieldValue('travel', 'policy_date_from', format(range.from, 'yyyy-MM-dd'));
+            setFieldValue('travel', 'policy_date_to', format(range.to, 'yyyy-MM-dd'));
+            setIsTravelDateOpen(false);
+        }
+    };
+
+    const handleTravelDateOpenChange = (open) => {
+        if (open) {
+            setTravelDraftRange(undefined);
+        }
+        setIsTravelDateOpen(open);
     };
 
     const applyOrangeDateRange = (range) => {
@@ -362,8 +378,20 @@ export default function InsuranceSearch({ productTypes = [], lookupsByType = {},
             return;
         }
 
-        setFieldValue('orange', 'policy_date_from', range.from ? format(range.from, 'yyyy-MM-dd') : '');
-        setFieldValue('orange', 'policy_date_to', range.to ? format(range.to, 'yyyy-MM-dd') : '');
+        setOrangeDraftRange(range);
+
+        if (range.from && range.to && range.to > range.from) {
+            setFieldValue('orange', 'policy_date_from', format(range.from, 'yyyy-MM-dd'));
+            setFieldValue('orange', 'policy_date_to', format(range.to, 'yyyy-MM-dd'));
+            setIsOrangeDateOpen(false);
+        }
+    };
+
+    const handleOrangeDateOpenChange = (open) => {
+        if (open) {
+            setOrangeDraftRange(undefined);
+        }
+        setIsOrangeDateOpen(open);
     };
 
     const buildPayload = () => {
@@ -751,7 +779,7 @@ export default function InsuranceSearch({ productTypes = [], lookupsByType = {},
 
                                         <div className="space-y-2 md:col-span-4">
                                             <Label>Travel Dates</Label>
-                                            <Popover>
+                                            <Popover open={isTravelDateOpen} onOpenChange={handleTravelDateOpenChange}>
                                                 <PopoverTrigger asChild>
                                                     <Button variant="outline" className="w-full justify-start text-left font-normal">
                                                         <CalendarIcon className="mr-2 h-4 w-4" />
@@ -765,7 +793,7 @@ export default function InsuranceSearch({ productTypes = [], lookupsByType = {},
                                                 <PopoverContent className="w-auto p-0" align="start">
                                                     <Calendar
                                                         mode="range"
-                                                        selected={travelDateRange}
+                                                        selected={travelDraftRange}
                                                         onSelect={applyTravelDateRange}
                                                         onMonthChange={setTravelVisibleMonth}
                                                         month={travelVisibleMonth}
@@ -893,7 +921,7 @@ export default function InsuranceSearch({ productTypes = [], lookupsByType = {},
 
                                         <div className="space-y-2 md:col-span-4">
                                             <Label>Policy dates</Label>
-                                            <Popover>
+                                            <Popover open={isOrangeDateOpen} onOpenChange={handleOrangeDateOpenChange}>
                                                 <PopoverTrigger asChild>
                                                     <Button variant="outline" className="w-full justify-start text-left font-normal">
                                                         <CalendarIcon className="mr-2 h-4 w-4" />
@@ -905,10 +933,10 @@ export default function InsuranceSearch({ productTypes = [], lookupsByType = {},
                                                     </Button>
                                                 </PopoverTrigger>
                                                 <PopoverContent className="w-auto p-0" align="start">
-                                                    <Calendar
-                                                        mode="range"
-                                                        selected={orangeDateRange}
-                                                        onSelect={applyOrangeDateRange}
+                                                     <Calendar
+                                                         mode="range"
+                                                         selected={orangeDraftRange}
+                                                         onSelect={applyOrangeDateRange}
                                                         onMonthChange={setOrangeVisibleMonth}
                                                         month={orangeVisibleMonth}
                                                         numberOfMonths={2}

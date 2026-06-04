@@ -570,6 +570,13 @@ class BookingController extends Controller
                     }
 
                     data_set($returnFlightData, 'provider_id', $providerConfig->id);
+
+                    // Skip flights where pricing is still zero after all attempts.
+                    // This happens when one-way pricing failed AND round-trip pricing also failed.
+                    if ((float) data_get($returnFlightData, 'pricing.total', 0) <= 0) {
+                        continue;
+                    }
+
                     $returnOptions[] = $returnFlightData;
                 }
             } catch (\Throwable $exception) {

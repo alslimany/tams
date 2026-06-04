@@ -208,6 +208,7 @@ return [
     'confirm_tab' => '3. التأكيد',
     'insurance_details' => 'تفاصيل التأمين',
     'vehicle_information' => 'معلومات المركبة',
+    'owner_and_vehicle_information' => 'معلومات المالك والمركبة',
     'vehicle_owner_name' => 'اسم مالك المركبة',
     'full_name' => 'الاسم الكامل',
     'metal_plate_number' => 'رقم اللوحة المعدنية',

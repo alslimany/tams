@@ -102,20 +102,10 @@ export default function OrangeBeneficiary({ quoteToken, quote, cars = [], vehicl
                                     <>
                                         <div className="rounded-md border bg-muted/30 p-3 text-sm font-medium">Owner Information</div>
                                         <div className="grid gap-4 md:grid-cols-2">
-                                            <div className="space-y-2">
+                                            <div className="space-y-2 md:col-span-2">
                                                 <Label>Name</Label>
                                                 <Input value={form.data.name} onChange={(event) => form.setData('name', event.target.value)} />
                                                 {form.errors.name ? <p className="text-xs text-red-600">{form.errors.name}</p> : null}
-                                            </div>
-                                            <div className="space-y-2">
-                                                <Label>Phone</Label>
-                                                <Input value={form.data.phone} onChange={(event) => form.setData('phone', event.target.value)} />
-                                                {form.errors.phone ? <p className="text-xs text-red-600">{form.errors.phone}</p> : null}
-                                            </div>
-                                            <div className="space-y-2 md:col-span-2">
-                                                <Label>Address</Label>
-                                                <Input value={form.data.address} onChange={(event) => form.setData('address', event.target.value)} />
-                                                {form.errors.address ? <p className="text-xs text-red-600">{form.errors.address}</p> : null}
                                             </div>
                                         </div>
 
@@ -152,6 +142,23 @@ export default function OrangeBeneficiary({ quoteToken, quote, cars = [], vehicl
                                                     {vehicleNationalities.map((nationality, index) => <option key={`${optionValue(nationality)}-${index}`} value={optionValue(nationality)}>{optionLabel(nationality)}</option>)}
                                                 </select>
                                                 {form.errors.nationality ? <p className="text-xs text-red-600">{form.errors.nationality}</p> : null}
+                                            </div>
+                                        </div>
+
+                                        <div className="space-y-4 border-t pt-6">
+                                            <div className="rounded-md border bg-muted/30 p-3 text-sm font-medium">Contact Information</div>
+
+                                            <div className="grid gap-4 md:grid-cols-2">
+                                                <div className="space-y-2">
+                                                    <Label>Phone</Label>
+                                                    <Input value={form.data.phone} onChange={(event) => form.setData('phone', event.target.value)} />
+                                                    {form.errors.phone ? <p className="text-xs text-red-600">{form.errors.phone}</p> : null}
+                                                </div>
+                                                <div className="space-y-2">
+                                                    <Label>Address</Label>
+                                                    <Input value={form.data.address} onChange={(event) => form.setData('address', event.target.value)} />
+                                                    {form.errors.address ? <p className="text-xs text-red-600">{form.errors.address}</p> : null}
+                                                </div>
                                             </div>
                                         </div>
 

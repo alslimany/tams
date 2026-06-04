@@ -71,7 +71,7 @@ class Tenant extends BaseTenant implements TenantWithDatabase, WalletInterface
         $latest = static::query()
             ->whereNotNull('agency_number')
             ->where('agency_number', 'like', 'AG-%')
-            ->orderByDesc(DB::raw('CAST(SUBSTR(agency_number, 4) AS INTEGER)'))
+            ->orderByDesc(DB::raw('CAST(SUBSTR(agency_number, 4) AS UNSIGNED)'))
             ->value('agency_number');
 
         $sequence = is_string($latest) ? ((int) Str::after($latest, 'AG-')) + 1 : 100001;

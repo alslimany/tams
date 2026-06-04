@@ -70,6 +70,8 @@ return [
         'company_name' => 'Company name',
         'owner_name' => 'Owner name',
         'agency_path' => 'Agency ID',
+        'agency_city' => 'City',
+        'agency_city_search_placeholder' => 'Start typing to search for your city',
         'agency_path_hint' => 'Lowercase letters, numbers, and hyphens. Your workspace will be at /agency/your-id',
         'commercial_register' => 'Commercial register',
         'commercial_register_hint' => 'Upload your commercial registration document (PDF, JPG, or PNG, max 10 MB)',

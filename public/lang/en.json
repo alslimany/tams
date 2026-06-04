@@ -841,6 +841,8 @@
     "landlord.auth.company_name": "Company name",
     "landlord.auth.owner_name": "Owner name",
     "landlord.auth.agency_path": "Agency ID",
+    "landlord.auth.agency_city": "City",
+    "landlord.auth.agency_city_search_placeholder": "Start typing to search for your city",
     "landlord.auth.agency_path_hint": "Lowercase letters, numbers, and hyphens. Your workspace will be at \/agency\/your-id",
     "landlord.auth.commercial_register": "Commercial register",
     "landlord.auth.commercial_register_hint": "Upload your commercial registration document (PDF, JPG, or PNG, max 10 MB)",

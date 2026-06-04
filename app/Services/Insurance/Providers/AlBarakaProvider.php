@@ -46,6 +46,8 @@ class AlBarakaProvider implements InsuranceProviderInterface
      */
     public function compulsoryDurations(): array
     {
+        // $data = $this->requestLookup('/api/Compulsories/DurationsLookup');
+        // dd($data);
         return $this->normalizeLookupItems($this->requestLookup('/api/Compulsories/DurationsLookup'));
     }
 

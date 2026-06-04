@@ -245,7 +245,7 @@ export default function CompulsoryBeneficiary({ quoteToken, quote, vehicleTypes 
                             <form className="space-y-6 p-6" onSubmit={submit}>
                                 {activeStep === 'details' && (
                                     <>
-                                        <div className="rounded-md border bg-muted/30 p-3 text-sm font-medium">{t('common.vehicle_information')}</div>
+                                        <div className="rounded-md border bg-muted/30 p-3 text-sm font-medium">{t('common.owner_and_vehicle_information')}</div>
 
                                 <div className="grid gap-4 md:grid-cols-2">
                                             <div className="space-y-2">

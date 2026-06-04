@@ -42,6 +42,7 @@ export default function HotelSearch() {
     const [isDestinationOpen, setIsDestinationOpen] = useState(false);
     const [isLoadingDestinations, setIsLoadingDestinations] = useState(false);
     const [isTravellersOpen, setIsTravellersOpen] = useState(false);
+    const [isDateOpen, setIsDateOpen] = useState(false);
     const [visibleMonth, setVisibleMonth] = useState(new Date());
     const destinationLoadError = t('common.unable_to_load_hotel_destinations');
     const destinationRef = useRef(null);
@@ -173,6 +174,10 @@ export default function HotelSearch() {
             check_in: range.from ? format(range.from, 'yyyy-MM-dd') : '',
             check_out: range.to ? format(range.to, 'yyyy-MM-dd') : '',
         });
+
+        if (range.from && range.to) {
+            setIsDateOpen(false);
+        }
     };
 
     const selectDestination = (destination) => {
@@ -323,27 +328,6 @@ export default function HotelSearch() {
                                                     />
                                                 </div>
 
-                                                {selectedDestination && (
-                                                    <div className="mt-2 flex items-center justify-between gap-2 rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-800 dark:border-sky-900 dark:bg-sky-950 dark:text-sky-200">
-                                                        <span className="truncate">{t('common.selected_destination')}: {destinationLabel(selectedDestination)}</span>
-                                                        <Button
-                                                            type="button"
-                                                            variant="ghost"
-                                                            size="sm"
-                                                            className="h-6 px-2 text-xs"
-                                                            onClick={() => {
-                                                                setSelectedDestination(null);
-                                                                setDestinationQuery('');
-                                                                setDestinationError('');
-                                                                form.clearErrors('city', 'city_id');
-                                                                form.setData({ ...form.data, city: '', city_id: '' });
-                                                            }}
-                                                        >
-                                                            {t('common.change')}
-                                                        </Button>
-                                                    </div>
-                                                )}
-
                                                 {isDestinationOpen && !selectedDestination && (
                                                     <div className="absolute z-50 mt-1 max-h-80 w-full overflow-auto rounded-md border bg-popover p-1 text-popover-foreground shadow-md">
                                                 {isLoadingDestinations ? (
@@ -380,7 +364,7 @@ export default function HotelSearch() {
 
                                     <div className="space-y-2 lg:col-span-4">
                                         <Label>{t('common.stay_dates')}</Label>
-                                        <Popover>
+                                        <Popover open={isDateOpen} onOpenChange={setIsDateOpen}>
                                             <PopoverTrigger asChild>
                                                 <Button type="button" variant="outline" className="w-full justify-start bg-white text-left font-normal dark:bg-slate-900">
                                                     <CalendarDays className="mr-2 size-4 text-muted-foreground" />

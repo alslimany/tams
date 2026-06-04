@@ -146,8 +146,8 @@ export default function Show({ tenantRecord }) {
                     <div className="flex items-start gap-3 rounded-lg border border-red-300 bg-red-50 p-4 text-red-800">
                         <DatabaseZap className="mt-0.5 h-5 w-5 shrink-0 text-red-600" />
                         <div>
-                            <p className="font-semibold">Tenant database is missing</p>
-                            <p className="text-sm text-red-700">The SQLite database file for this tenant does not exist. Stats, users, providers, and bookings cannot be loaded. Re-run tenant migrations or restore the database to resolve this.</p>
+                            <p className="font-semibold">Tenant database is not ready</p>
+                            <p className="text-sm text-red-700">The database for this tenant could not be accessed. Re-run tenant migrations to resolve this.</p>
                         </div>
                     </div>
                 )}

@@ -210,6 +210,7 @@ return [
     'confirm_tab' => '3. Confirmation',
     'insurance_details' => 'Détails de l\'assurance',
     'vehicle_information' => 'Informations sur le véhicule',
+    'owner_and_vehicle_information' => 'Informations propriétaire et véhicule',
     'vehicle_owner_name' => 'Nom du propriétaire du véhicule',
     'full_name' => 'Nom complet',
     'metal_plate_number' => 'Numéro de plaque d\'immatriculation',

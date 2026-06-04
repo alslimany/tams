@@ -36,5 +36,7 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
-        //
+        $exceptions->render(function (\Stancl\Tenancy\Exceptions\TenantCouldNotBeIdentifiedByPathException $e, \Illuminate\Http\Request $request) {
+            return response()->view('errors.tenant-not-found', [], 404);
+        });
     })->create();

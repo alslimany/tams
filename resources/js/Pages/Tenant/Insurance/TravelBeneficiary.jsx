@@ -31,7 +31,6 @@ export default function TravelBeneficiary({ quoteToken, quote, genders = [], nat
 
     const form = useForm({
         quote_token: quoteToken,
-        client_name: '',
         client_phone: '',
         client_address: '',
         client_email: '',
@@ -64,6 +63,10 @@ export default function TravelBeneficiary({ quoteToken, quote, genders = [], nat
 
         form.transform((data) => ({
             ...data,
+            client_name: [
+                String(data.passengers[0]?.first_name ?? '').trim(),
+                String(data.passengers[0]?.last_name ?? '').trim(),
+            ].filter(Boolean).join(' ') || 'Not provided',
             passengers: data.passengers.map((passenger) => ({
                 first_name: passenger.first_name.trim(),
                 last_name: passenger.last_name.trim(),
@@ -118,99 +121,93 @@ export default function TravelBeneficiary({ quoteToken, quote, genders = [], nat
                             <form className="space-y-6 p-6" onSubmit={submit}>
                                 {activeStep === 'details' && (
                                     <>
-                                        <div className="rounded-md border bg-muted/30 p-3 text-sm font-medium">Primary Insured (Client Profile)</div>
+                                        <div className="rounded-md border bg-muted/30 p-3 text-sm font-medium">Passengers</div>
 
-                                        <div className="grid gap-4 md:grid-cols-2">
-                                            <div className="space-y-2">
-                                                <Label>Full Name</Label>
-                                                <Input value={form.data.client_name} onChange={(event) => form.setData('client_name', event.target.value)} />
-                                                {form.errors.client_name ? <p className="text-xs text-red-600">{form.errors.client_name}</p> : null}
-                                            </div>
+                                        {form.data.passengers.map((passenger, index) => (
+                                            <div key={index} className="space-y-4 rounded-lg border p-4">
+                                                <h4 className="font-semibold">Passenger {index + 1}</h4>
 
-                                            <div className="space-y-2">
-                                                <Label>Phone</Label>
-                                                <Input value={form.data.client_phone} onChange={(event) => form.setData('client_phone', event.target.value)} />
-                                                {form.errors.client_phone ? <p className="text-xs text-red-600">{form.errors.client_phone}</p> : null}
-                                            </div>
+                                                <div className="grid gap-4 md:grid-cols-2">
+                                                    <div className="space-y-2">
+                                                        <Label>First Name</Label>
+                                                        <Input value={passenger.first_name} onChange={(event) => updatePassenger(index, 'first_name', event.target.value)} />
+                                                    </div>
 
-                                            <div className="space-y-2 md:col-span-2">
-                                                <Label>Address</Label>
-                                                <Input value={form.data.client_address} onChange={(event) => form.setData('client_address', event.target.value)} />
-                                                {form.errors.client_address ? <p className="text-xs text-red-600">{form.errors.client_address}</p> : null}
-                                            </div>
+                                                    <div className="space-y-2">
+                                                        <Label>Last Name</Label>
+                                                        <Input value={passenger.last_name} onChange={(event) => updatePassenger(index, 'last_name', event.target.value)} />
+                                                    </div>
 
-                                            <div className="space-y-2 md:col-span-2">
-                                                <Label>Email</Label>
-                                                <Input type="email" value={form.data.client_email} onChange={(event) => form.setData('client_email', event.target.value)} />
-                                                {form.errors.client_email ? <p className="text-xs text-red-600">{form.errors.client_email}</p> : null}
-                                            </div>
-                                        </div>
+                                                    <div className="space-y-2">
+                                                        <Label>Birth Date</Label>
+                                                        <Input type="date" value={passenger.birth_date} onChange={(event) => updatePassenger(index, 'birth_date', event.target.value)} />
+                                                    </div>
 
-                                        <div className="space-y-4 border-t pt-6">
-                                            <h3 className="text-2xl font-black tracking-tight">Passengers</h3>
+                                                    <div className="space-y-2">
+                                                        <Label>Gender</Label>
+                                                        <select
+                                                            className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                                                            value={passenger.gender_id}
+                                                            onChange={(event) => updatePassenger(index, 'gender_id', event.target.value)}
+                                                        >
+                                                            <option value="">Select gender</option>
+                                                            {genders.map((gender) => (
+                                                                <option key={gender.id} value={String(gender.id)}>{gender.name}</option>
+                                                            ))}
+                                                        </select>
+                                                    </div>
 
-                                            {form.data.passengers.map((passenger, index) => (
-                                                <div key={index} className="space-y-4 rounded-lg border p-4">
-                                                    <h4 className="font-semibold">Passenger {index + 1}</h4>
+                                                    <div className="space-y-2">
+                                                        <Label>Birth Place</Label>
+                                                        <Input value={passenger.birth_place} onChange={(event) => updatePassenger(index, 'birth_place', event.target.value)} />
+                                                    </div>
 
-                                                    <div className="grid gap-4 md:grid-cols-2">
-                                                        <div className="space-y-2">
-                                                            <Label>First Name</Label>
-                                                            <Input value={passenger.first_name} onChange={(event) => updatePassenger(index, 'first_name', event.target.value)} />
-                                                        </div>
+                                                    <div className="space-y-2">
+                                                        <Label>Passport Number</Label>
+                                                        <Input value={passenger.passport_number} onChange={(event) => updatePassenger(index, 'passport_number', event.target.value)} />
+                                                    </div>
 
-                                                        <div className="space-y-2">
-                                                            <Label>Last Name</Label>
-                                                            <Input value={passenger.last_name} onChange={(event) => updatePassenger(index, 'last_name', event.target.value)} />
-                                                        </div>
-
-                                                        <div className="space-y-2">
-                                                            <Label>Birth Date</Label>
-                                                            <Input type="date" value={passenger.birth_date} onChange={(event) => updatePassenger(index, 'birth_date', event.target.value)} />
-                                                        </div>
-
-                                                        <div className="space-y-2">
-                                                            <Label>Gender</Label>
-                                                            <select
-                                                                className="h-10 w-full rounded-md border bg-background px-3 text-sm"
-                                                                value={passenger.gender_id}
-                                                                onChange={(event) => updatePassenger(index, 'gender_id', event.target.value)}
-                                                            >
-                                                                <option value="">Select gender</option>
-                                                                {genders.map((gender) => (
-                                                                    <option key={gender.id} value={String(gender.id)}>{gender.name}</option>
-                                                                ))}
-                                                            </select>
-                                                        </div>
-
-                                                        <div className="space-y-2">
-                                                            <Label>Birth Place</Label>
-                                                            <Input value={passenger.birth_place} onChange={(event) => updatePassenger(index, 'birth_place', event.target.value)} />
-                                                        </div>
-
-                                                        <div className="space-y-2">
-                                                            <Label>Passport Number</Label>
-                                                            <Input value={passenger.passport_number} onChange={(event) => updatePassenger(index, 'passport_number', event.target.value)} />
-                                                        </div>
-
-                                                        <div className="space-y-2 md:col-span-2">
-                                                            <Label>Nationality</Label>
-                                                            <select
-                                                                className="h-10 w-full rounded-md border bg-background px-3 text-sm"
-                                                                value={passenger.nationality_id}
-                                                                onChange={(event) => updatePassenger(index, 'nationality_id', event.target.value)}
-                                                            >
-                                                                <option value="">Select nationality</option>
-                                                                {nationalities.map((nationality, nationalityIndex) => (
-                                                                    <option key={`${optionValue(nationality)}-${nationalityIndex}`} value={optionValue(nationality)}>
-                                                                        {optionLabel(nationality)}
-                                                                    </option>
-                                                                ))}
-                                                            </select>
-                                                        </div>
+                                                    <div className="space-y-2 md:col-span-2">
+                                                        <Label>Nationality</Label>
+                                                        <select
+                                                            className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                                                            value={passenger.nationality_id}
+                                                            onChange={(event) => updatePassenger(index, 'nationality_id', event.target.value)}
+                                                        >
+                                                            <option value="">Select nationality</option>
+                                                            {nationalities.map((nationality, nationalityIndex) => (
+                                                                <option key={`${optionValue(nationality)}-${nationalityIndex}`} value={optionValue(nationality)}>
+                                                                    {optionLabel(nationality)}
+                                                                </option>
+                                                            ))}
+                                                        </select>
                                                     </div>
                                                 </div>
-                                            ))}
+                                            </div>
+                                        ))}
+
+                                        <div className="space-y-4 border-t pt-6">
+                                            <div className="rounded-md border bg-muted/30 p-3 text-sm font-medium">Contact Information</div>
+
+                                            <div className="grid gap-4 md:grid-cols-2">
+                                                <div className="space-y-2">
+                                                    <Label>Phone</Label>
+                                                    <Input value={form.data.client_phone} onChange={(event) => form.setData('client_phone', event.target.value)} />
+                                                    {form.errors.client_phone ? <p className="text-xs text-red-600">{form.errors.client_phone}</p> : null}
+                                                </div>
+
+                                                <div className="space-y-2">
+                                                    <Label>Email</Label>
+                                                    <Input type="email" value={form.data.client_email} onChange={(event) => form.setData('client_email', event.target.value)} />
+                                                    {form.errors.client_email ? <p className="text-xs text-red-600">{form.errors.client_email}</p> : null}
+                                                </div>
+
+                                                <div className="space-y-2 md:col-span-2">
+                                                    <Label>Address</Label>
+                                                    <Input value={form.data.client_address} onChange={(event) => form.setData('client_address', event.target.value)} />
+                                                    {form.errors.client_address ? <p className="text-xs text-red-600">{form.errors.client_address}</p> : null}
+                                                </div>
+                                            </div>
                                         </div>
 
                                         <div className="mt-8 flex items-center justify-end border-t pt-8">
@@ -227,11 +224,11 @@ export default function TravelBeneficiary({ quoteToken, quote, genders = [], nat
                                             <p className="mb-3 text-xs font-black uppercase tracking-widest text-primary">Review Details</p>
                                             <div className="grid gap-4 text-sm md:grid-cols-2">
                                                 <div>
-                                                    <p className="text-muted-foreground">Client Name</p>
-                                                    <p className="font-bold">{form.data.client_name || '-'}</p>
+                                                    <p className="text-muted-foreground">Primary Passenger</p>
+                                                    <p className="font-bold">{[form.data.passengers[0]?.first_name, form.data.passengers[0]?.last_name].filter(Boolean).join(' ') || '-'}</p>
                                                 </div>
                                                 <div>
-                                                    <p className="text-muted-foreground">Client Phone</p>
+                                                    <p className="text-muted-foreground">Phone</p>
                                                     <p className="font-bold">{form.data.client_phone || '-'}</p>
                                                 </div>
                                                 <div>

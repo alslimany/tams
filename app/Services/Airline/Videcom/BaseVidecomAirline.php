@@ -79,8 +79,13 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
 
     /**
      * Search for flight availability.
+     *
+     * @param  bool  $filterByPrice  When false, flights with zero price are included.
+     *                               Set to false for return leg searches so that airlines
+     *                               that reject standalone return pricing (e.g. Berniq) still
+     *                               surface their flights for round-trip pricing in the caller.
      */
-    public function searchAvailability(array $params)
+    public function searchAvailability(array $params, bool $filterByPrice = true)
     {
         $rawDate = $params['date'] ?? now()->toDateTimeString();
         $date = strtoupper(\Carbon\Carbon::parse($rawDate)->format('dM'));
@@ -137,8 +142,8 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
             $this->applyAccuratePricing($option, $adults, $children, $infants);
         }
 
-        $options = array_values(array_filter($options, function ($option) {
-            return (float) ($option->pricing['total'] ?? 0) > 0;
+        $options = array_values(array_filter($options, function ($option) use ($filterByPrice) {
+            return ! $filterByPrice || (float) ($option->pricing['total'] ?? 0) > 0;
         }));
 
         return $options;
@@ -146,7 +151,7 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
 
     public function searchReturnLeg(array $params)
     {
-        return $this->searchAvailability($params);
+        return $this->searchAvailability($params, filterByPrice: false);
     }
 
     /**

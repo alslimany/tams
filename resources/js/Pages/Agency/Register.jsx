@@ -26,11 +26,10 @@ export default function Register({ centralDomain, airports }) {
         const q = airportSearch.toLowerCase();
         if (!q) return airports;
         return airports.filter(
-            (a) =>
-                a.city.toLowerCase().includes(q) ||
-                a.country.toLowerCase().includes(q) ||
-                a.iata_code.toLowerCase().includes(q),
-        );
+                (a) =>
+                    a.city.toLowerCase().includes(q) ||
+                    a.country.toLowerCase().includes(q),
+            );
     }, [airports, airportSearch]);
 
     const selectedAirport = airports.find((a) => a.iata_code === data.city_iata);
@@ -131,7 +130,7 @@ export default function Register({ centralDomain, airports }) {
                                             }}
                                         >
                                             <span className="font-medium">{airport.city}</span>
-                                            <span className="text-xs text-muted-foreground">{airport.country} · {airport.iata_code}</span>
+                                            <span className="text-xs text-muted-foreground">{airport.country}</span>
                                         </button>
                                     ))
                                 )}
@@ -139,7 +138,7 @@ export default function Register({ centralDomain, airports }) {
                         )}
                         {selectedAirport && (
                             <p className="text-xs text-muted-foreground">
-                                {selectedAirport.city}, {selectedAirport.country} ({selectedAirport.iata_code})
+                                {selectedAirport.city}, {selectedAirport.country}
                             </p>
                         )}
                         {errors.city_iata && <p className="text-sm text-destructive">{errors.city_iata}</p>}

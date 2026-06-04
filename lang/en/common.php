@@ -201,6 +201,7 @@ return [
     'confirm_tab' => '3. Confirm',
     'insurance_details' => 'Insurance Details',
     'vehicle_information' => 'Vehicle Information',
+    'owner_and_vehicle_information' => 'Owner & Vehicle Information',
     'vehicle_owner_name' => 'Name of Vehicle Owner',
     'full_name' => 'Full name',
     'metal_plate_number' => 'Metal Plate Number',

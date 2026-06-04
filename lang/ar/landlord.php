@@ -70,6 +70,8 @@ return [
         'company_name' => 'اسم الشركة',
         'owner_name' => 'اسم المالك',
         'agency_path' => 'معرف الوكالة',
+        'agency_city' => 'المدينة',
+        'agency_city_search_placeholder' => 'ابدأ بالكتابة للبحث عن مدينتك',
         'agency_path_hint' => 'أحرف صغيرة وأرقام وشرطات. مساحة العمل ستكون في /agency/your-id',
         'commercial_register' => 'السجل التجاري',
         'commercial_register_hint' => 'ارفع مستند السجل التجاري (PDF أو JPG أو PNG، الحد الأقصى 10 ميجابايت)',
