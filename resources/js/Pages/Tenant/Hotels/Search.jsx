@@ -43,6 +43,7 @@ export default function HotelSearch() {
     const [isLoadingDestinations, setIsLoadingDestinations] = useState(false);
     const [isTravellersOpen, setIsTravellersOpen] = useState(false);
     const [isDateOpen, setIsDateOpen] = useState(false);
+    const [dateDraft, setDateDraft] = useState(undefined);
     const [visibleMonth, setVisibleMonth] = useState(new Date());
     const destinationLoadError = t('common.unable_to_load_hotel_destinations');
     const destinationRef = useRef(null);
@@ -164,18 +165,27 @@ export default function HotelSearch() {
             : format(dateRange.from, 'LLL dd, y')
         : t('common.pick_date_range');
 
+    const handleDateOpenChange = (open) => {
+        setIsDateOpen(open);
+
+        if (open) {
+            setDateDraft(undefined);
+        }
+    };
+
     const applyDateRange = (range) => {
         if (!range) {
             return;
         }
 
-        form.setData({
-            ...form.data,
-            check_in: range.from ? format(range.from, 'yyyy-MM-dd') : '',
-            check_out: range.to ? format(range.to, 'yyyy-MM-dd') : '',
-        });
+        setDateDraft(range);
 
-        if (range.from && range.to) {
+        if (range.from && range.to && range.to > range.from) {
+            form.setData({
+                ...form.data,
+                check_in: format(range.from, 'yyyy-MM-dd'),
+                check_out: format(range.to, 'yyyy-MM-dd'),
+            });
             setIsDateOpen(false);
         }
     };
@@ -364,7 +374,7 @@ export default function HotelSearch() {
 
                                     <div className="space-y-2 lg:col-span-4">
                                         <Label>{t('common.stay_dates')}</Label>
-                                        <Popover open={isDateOpen} onOpenChange={setIsDateOpen}>
+                                        <Popover open={isDateOpen} onOpenChange={handleDateOpenChange}>
                                             <PopoverTrigger asChild>
                                                 <Button type="button" variant="outline" className="w-full justify-start bg-white text-left font-normal dark:bg-slate-900">
                                                     <CalendarDays className="mr-2 size-4 text-muted-foreground" />
@@ -374,7 +384,7 @@ export default function HotelSearch() {
                                             <PopoverContent className="w-auto p-0" align="start">
                                                 <Calendar
                                                     mode="range"
-                                                    selected={dateRange}
+                                                    selected={dateDraft}
                                                     onSelect={applyDateRange}
                                                     onMonthChange={setVisibleMonth}
                                                     month={visibleMonth}
