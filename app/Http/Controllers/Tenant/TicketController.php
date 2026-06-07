@@ -291,7 +291,7 @@ class TicketController extends Controller
                 : back()->with('error', 'This PNR cannot be voided. Please use refund instead.');
         }
 
-        $issueDate = $this->resolveIssueDateForVoid($item);
+        $issueDate = $this->resolveIssueDateForVoid($item, $booking);
         if (! $issueDate || ! $issueDate->isSameDay(now())) {
             return $request->wantsJson()
                 ? response()->json(['success' => false, 'message' => 'PNR can only be voided on the same issue date. Please use refund flow.'], 422)
@@ -690,22 +690,26 @@ class TicketController extends Controller
         ];
     }
 
-    protected function resolveIssueDateForVoid(OrderItem $item): ?Carbon
+    protected function resolveIssueDateForVoid(OrderItem $item, ?Order $booking = null): ?Carbon
     {
         $issueDate = (string) data_get($item->item_details, 'tickets.0.issue_date', '');
         if ($issueDate === '') {
             $issueDate = (string) data_get($item->item_details, 'payments.0.date', '');
         }
 
-        if ($issueDate === '') {
-            return null;
+        if ($issueDate !== '') {
+            try {
+                return Carbon::parse($issueDate)->startOfDay();
+            } catch (\Throwable) {
+                // fall through to model timestamps below
+            }
         }
 
-        try {
-            return Carbon::parse($issueDate)->startOfDay();
-        } catch (\Throwable) {
-            return null;
-        }
+        // Fall back to model timestamps when item_details lacks the issue date
+        // (e.g. tickets booked but not formally ticketed via HX command).
+        $fallback = $item->updated_at ?? $booking?->issued_at;
+
+        return $fallback ? Carbon::instance($fallback)->startOfDay() : null;
     }
 
     public function resolveProviderForTicketActionPublic(OrderItem $item): ?TenantProvider
