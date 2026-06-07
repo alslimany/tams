@@ -21,7 +21,7 @@ class TrackUserActivity
             return $next($request);
         }
 
-        if (auth('web')->check()) {
+        if (function_exists('tenant') && tenant() && auth('web')->check()) {
             auth('web')->user()->update([
                 'last_activity_at' => now(),
             ]);
