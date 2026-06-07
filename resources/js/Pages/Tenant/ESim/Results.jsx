@@ -4,15 +4,14 @@ import TenantNavbarLayout from '@/Layouts/TenantNavbarLayout';
 import { Card, CardContent } from '@/Components/ui/Card';
 import { Button } from '@/Components/ui/Button';
 import { Badge } from '@/Components/ui/Badge';
+import { Separator } from '@/Components/ui/separator';
 import { useTranslation } from '@/hooks/useTranslation';
 import { formatMoney } from '@/lib/currency';
 import { cn } from '@/lib/utils';
 import {
     AlertCircle,
     ArrowLeft,
-    ChevronRight,
-    Clock,
-    Database,
+    CalendarDays,
     Globe,
     Loader2,
     Signal,
@@ -28,6 +27,24 @@ const formatDataLabel = (dataMb, t) => {
     return dataMb >= 1024
         ? `${(dataMb / 1024) % 1 === 0 ? dataMb / 1024 : (dataMb / 1024).toFixed(1)} ${t('esim.results.gb_short')}`
         : `${dataMb} ${t('esim.results.mb_short')}`;
+};
+
+const getFlagEmoji = (iso2) => {
+    if (!iso2 || iso2.length !== 2) return null;
+    try {
+        return iso2.toUpperCase().replace(/./g, (c) => String.fromCodePoint(c.charCodeAt(0) + 127397));
+    } catch {
+        return null;
+    }
+};
+
+const getCountryDisplayName = (iso2, locale) => {
+    if (!iso2) return iso2;
+    try {
+        return new Intl.DisplayNames([locale || 'en'], { type: 'region' }).of(iso2.toUpperCase()) ?? iso2;
+    } catch {
+        return iso2;
+    }
 };
 
 // ─── Price Range Slider ───────────────────────────────────────────────────────
@@ -102,68 +119,89 @@ function ChipGroup({ label, options, value, onChange, anyLabel }) {
 
 // ─── Package Card ─────────────────────────────────────────────────────────────
 
-function PackageCard({ pkg, onSelect, t }) {
+function PackageCard({ pkg, onSelect, isBestValue, isMostPopular, isSelecting, locale, t }) {
     const dataMb = Number(pkg.data_mb ?? 0);
     const isUnlimited = Boolean(pkg.unlimited);
     const dataLabel = isUnlimited ? '∞' : formatDataLabel(dataMb, t);
     const speeds = Array.isArray(pkg.speeds) ? pkg.speeds : [];
+    const speedsLabel = speeds.length > 0 ? speeds.join(' / ') : null;
+
+    const countries = Array.isArray(pkg.countries) ? pkg.countries : [];
+    const isMultiCountry = countries.length > 1;
+    const countryIso = (pkg.country ?? '').toUpperCase();
+    const flagEmoji = !isMultiCountry ? getFlagEmoji(countryIso) : null;
+    const countryName = getCountryDisplayName(countryIso, locale) || pkg.country;
 
     return (
         <Card className="group relative overflow-hidden transition-shadow hover:shadow-md">
-            <div className="absolute inset-x-0 top-0 h-1 bg-primary" />
+            {isSelecting && (
+                <div className="absolute inset-0 z-10 flex items-center justify-center rounded-xl bg-background/70">
+                    <Loader2 className="size-6 animate-spin text-primary" />
+                </div>
+            )}
             <CardContent className="p-5">
-                {/* Header: country + badges */}
-                <div className="mb-4 flex items-center justify-between gap-3">
-                    <p className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground">
-                        <Globe className="size-4 shrink-0" />
-                        {pkg.country}
-                    </p>
-                    <div className="flex shrink-0 items-center gap-1">
-                        {isUnlimited && (
-                            <Badge className="bg-primary text-xs text-primary-foreground hover:bg-primary">
-                                {t('esim.results.unlimited')}
-                            </Badge>
-                        )}
-                        <Badge variant="secondary" className="text-xs capitalize">
-                            {pkg.provider}
-                        </Badge>
+                {/* Header: flag circle + region label + country name + badge */}
+                <div className="mb-5 flex items-start justify-between gap-2">
+                    <div className="flex items-center gap-3">
+                        <div className="flex size-11 shrink-0 items-center justify-center rounded-full border bg-muted/30 text-2xl">
+                            {flagEmoji
+                                ? <span>{flagEmoji}</span>
+                                : <Globe className="size-5 text-muted-foreground" />
+                            }
+                        </div>
+                        <div>
+                            <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+                                {t('esim.results.region')}
+                            </p>
+                            <p className="text-lg font-bold leading-tight text-foreground">{countryName}</p>
+                        </div>
                     </div>
+                    {isBestValue && (
+                        <span className="shrink-0 rounded-full bg-amber-100 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+                            {t('esim.results.best_value')}
+                        </span>
+                    )}
+                    {isMostPopular && (
+                        <span className="shrink-0 rounded-full bg-teal-100 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-teal-700 dark:bg-teal-900/30 dark:text-teal-400">
+                            {t('esim.results.popular')}
+                        </span>
+                    )}
                 </div>
 
-                {/* Stats */}
-                <div className="mb-4 grid grid-cols-2 gap-3">
-                    <div className="rounded-lg bg-muted/50 p-3 text-center">
-                        <Database className="mx-auto mb-1 size-4 text-primary" />
-                        <p className={`font-black text-foreground ${isUnlimited ? 'text-2xl' : 'text-lg'}`}>{dataLabel}</p>
-                        <p className="text-xs text-muted-foreground">{t('esim.results.data_size')}</p>
+                {/* Data headline */}
+                <p className="mb-4 text-3xl font-black tracking-tight text-foreground">
+                    {dataLabel}
+                    <span className="ms-2 text-sm font-medium text-muted-foreground">
+                        {isUnlimited ? t('esim.results.unlimited') : t('esim.results.total_data')}
+                    </span>
+                </p>
+
+                {/* Stats row */}
+                <div className="mb-5 flex flex-wrap items-center gap-x-5 gap-y-2">
+                    <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                        <CalendarDays className="size-4" />
+                        <span>{pkg.validity_days} {t('esim.results.days_label')}</span>
                     </div>
-                    <div className="rounded-lg bg-muted/50 p-3 text-center">
-                        <Clock className="mx-auto mb-1 size-4 text-primary" />
-                        <p className="text-lg font-black text-foreground">{pkg.validity_days}</p>
-                        <p className="text-xs text-muted-foreground">{t('esim.results.validity_days', { days: '' }).replace(':days', '').trim() || 'days'}</p>
-                    </div>
+                    {speedsLabel && (
+                        <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                            <Signal className="size-4" />
+                            <span>{speedsLabel} {t('esim.results.network')}</span>
+                        </div>
+                    )}
                 </div>
 
-                {speeds.length > 0 && (
-                    <div className="mb-4 flex flex-wrap gap-1">
-                        {speeds.map((speed) => (
-                            <Badge key={speed} variant="outline" className="text-xs">
-                                {speed}
-                            </Badge>
-                        ))}
-                    </div>
-                )}
+                <Separator className="mb-4" />
 
+                {/* Price + CTA */}
                 <div className="flex items-center justify-between gap-3">
                     <div>
-                        <p className="text-2xl font-black text-primary">
+                        <p className="text-xs text-muted-foreground">{t('esim.results.starting_at')}</p>
+                        <p className="text-2xl font-black text-foreground">
                             {formatMoney(pkg.price, pkg.currency ?? 'USD')}
                         </p>
-                        <p className="text-xs text-muted-foreground">{t('esim.results.per_package')}</p>
                     </div>
-                    <Button type="button" onClick={() => onSelect(pkg)}>
-                        {t('esim.results.select_package')}
-                        <ChevronRight className="ml-1 size-4" />
+                    <Button type="button" onClick={() => onSelect(pkg)} className="shrink-0">
+                        {t('esim.results.select_plan')}
                     </Button>
                 </div>
             </CardContent>
@@ -442,6 +480,30 @@ export default function ESimResults({ searchUuid, search, countryNames = null })
         return list;
     }, [state.packages, filters, sort]);
 
+    const bestValueId = React.useMemo(() => {
+        if (filtered.length === 0) return null;
+        const unlimitedPkgs = filtered.filter((p) => p.unlimited);
+        if (unlimitedPkgs.length > 0) {
+            return unlimitedPkgs.reduce((a, b) => Number(a.price) <= Number(b.price) ? a : b).id;
+        }
+        return filtered.reduce((best, pkg) => {
+            const bestScore = Number(best.data_mb) / (Number(best.price) || 1);
+            const pkgScore = Number(pkg.data_mb) / (Number(pkg.price) || 1);
+            return pkgScore > bestScore ? pkg : best;
+        }).id;
+    }, [filtered]);
+
+    const mostPopularId = React.useMemo(() => {
+        if (filtered.length < 2) return null;
+        // Unlimited packages are "popular"; otherwise pick the one with the most data.
+        // Never overlap with bestValueId.
+        const candidates = filtered.filter((p) => p.id !== bestValueId);
+        if (candidates.length === 0) return null;
+        const unlimited = candidates.filter((p) => p.unlimited);
+        if (unlimited.length > 0) return unlimited[0].id;
+        return candidates.reduce((a, b) => Number(a.data_mb) >= Number(b.data_mb) ? a : b).id;
+    }, [filtered, bestValueId]);
+
     const handleSelect = (pkg) => {
         setSelecting(pkg.id);
         router.post(
@@ -549,14 +611,16 @@ export default function ESimResults({ searchUuid, search, countryNames = null })
                                     </p>
                                     <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
                                         {filtered.map((pkg) => (
-                                            <div key={pkg.id} className="relative">
-                                                {selecting === pkg.id && (
-                                                    <div className="absolute inset-0 z-10 flex items-center justify-center rounded-xl bg-background/70">
-                                                        <Loader2 className="size-6 animate-spin text-primary" />
-                                                    </div>
-                                                )}
-                                                <PackageCard pkg={pkg} onSelect={handleSelect} t={t} />
-                                            </div>
+                                            <PackageCard
+                                                key={pkg.id}
+                                                pkg={pkg}
+                                                onSelect={handleSelect}
+                                                isBestValue={pkg.id === bestValueId}
+                                                isMostPopular={pkg.id === mostPopularId}
+                                                isSelecting={selecting === pkg.id}
+                                                locale={locale}
+                                                t={t}
+                                            />
                                         ))}
                                     </div>
                                 </>

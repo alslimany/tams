@@ -18,6 +18,7 @@ class DatabaseSeeder extends Seeder
 
         $this->call([
             CountrySeeder::class,
+            AirportTranslationSeeder::class,
         ]);
 
         $email = config('landlord.default_admin.email');

@@ -65,8 +65,8 @@ class HandleInertiaRequests extends Middleware
             ],
             'csrf_token' => csrf_token(),
             'auth' => [
-                'user' => $request->user(),
-                'landlordUser' => auth('landlord')->user(),
+                'user' => $request->user() ?? [],
+                'landlordUser' => auth('landlord')->user() ?? [],
             ],
             'flash' => [
                 'success' => fn () => $request->session()->get('success'),
