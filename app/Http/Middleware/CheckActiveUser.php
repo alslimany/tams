@@ -15,7 +15,7 @@ class CheckActiveUser
      */
     public function handle(Request $request, Closure $next): Response
     {
-        if (auth('web')->check() && ! auth('web')->user()->is_active) {
+        if (function_exists('tenant') && tenant() && auth('web')->check() && ! auth('web')->user()->is_active) {
             auth('web')->logout();
             $request->session()->invalidate();
             $request->session()->regenerateToken();
