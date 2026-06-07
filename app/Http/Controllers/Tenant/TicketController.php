@@ -33,6 +33,7 @@ use App\Services\Videcom\VidecomOrderParser;
 use Bavix\Wallet\Models\Transaction as WalletTransaction;
 use Carbon\Carbon;
 use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -49,13 +50,15 @@ class TicketController extends Controller
         protected LedgerPostingService $ledgerPostingService,
     ) {}
 
-    public function issue(Request $request, Order $booking): RedirectResponse
+    public function issue(Request $request, Order $booking): RedirectResponse|JsonResponse
     {
         $booking->loadMissing('items');
 
         $firstItem = $booking->items->first();
         if (! $firstItem) {
-            return back()->with('error', 'No flight item found for this booking.');
+            return $request->wantsJson()
+                ? response()->json(['success' => false, 'message' => 'No flight item found for this booking.'], 404)
+                : back()->with('error', 'No flight item found for this booking.');
         }
 
         $pnr = (string) ($firstItem->provider_reference ?: $booking->payment_reference);
@@ -66,20 +69,26 @@ class TicketController extends Controller
         $providerConfig = $resolved['provider'];
 
         if (! $providerConfig) {
-            return back()->with('error', 'No active provider found for this booking.');
+            return $request->wantsJson()
+                ? response()->json(['success' => false, 'message' => 'No active provider found for this booking.'], 422)
+                : back()->with('error', 'No active provider found for this booking.');
         }
 
         $provider = ProviderFactory::make($providerConfig);
 
         $issuer = $request->user();
         if (! $issuer instanceof User) {
-            return back()->with('error', 'An authenticated user is required to issue a ticket.');
+            return $request->wantsJson()
+                ? response()->json(['success' => false, 'message' => 'An authenticated user is required to issue a ticket.'], 401)
+                : back()->with('error', 'An authenticated user is required to issue a ticket.');
         }
 
         try {
             $this->assertWalletBalanceBeforeIssue($booking, $issuer, $providerConfig);
         } catch (InsufficientWalletBalanceException $exception) {
-            return back()->with('error', $exception->getMessage());
+            return $request->wantsJson()
+                ? response()->json(['success' => false, 'message' => $exception->getMessage()], 402)
+                : back()->with('error', $exception->getMessage());
         }
 
         $paymentType = strtolower((string) $request->input('payment_type', 'airline_token'));
@@ -174,6 +183,14 @@ class TicketController extends Controller
                 $contact->notify(new TicketIssued($issuedOrder, $issuedOrder->items->first()));
             }
 
+            if ($request->wantsJson()) {
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Ticket issued successfully.',
+                    'data' => $issuedOrder->refresh()->load('items'),
+                ], 201);
+            }
+
             return redirect()
                 ->route('tickets.completed', ['booking' => $issuedOrder->id, 'order' => $issuedOrder->id])
                 ->with('success', 'Ticket issued successfully.');
@@ -183,14 +200,18 @@ class TicketController extends Controller
             // Rollback is automatic; void the PNR to avoid orphaned tickets.
             $this->voidProviderPnrSafely($provider, $pnr);
 
-            return back()->with('error', 'Airline ticket issuance timed out. Please try again.');
+            return $request->wantsJson()
+                ? response()->json(['success' => false, 'message' => 'Airline ticket issuance timed out. Please try again.'], 503)
+                : back()->with('error', 'Airline ticket issuance timed out. Please try again.');
         } catch (\Throwable $exception) {
             report($exception);
 
             // Rollback is automatic; void the PNR to avoid orphaned tickets.
             $this->voidProviderPnrSafely($provider, $pnr);
 
-            return back()->with('error', 'Failed to issue ticket and post financial transactions. The PNR void command was attempted.');
+            return $request->wantsJson()
+                ? response()->json(['success' => false, 'message' => 'Failed to issue ticket and post financial transactions. The PNR void command was attempted.'], 500)
+                : back()->with('error', 'Failed to issue ticket and post financial transactions. The PNR void command was attempted.');
         }
     }
 
@@ -252,34 +273,44 @@ class TicketController extends Controller
         ]);
     }
 
-    public function void(Request $request, Order $booking, string $ticket): RedirectResponse
+    public function void(Request $request, Order $booking, string $ticket): RedirectResponse|JsonResponse
     {
         $booking->loadMissing('items');
 
         $item = $booking->items()->whereKey($ticket)->first();
         if (! $item) {
-            return back()->with('error', 'Ticket item not found.');
+            return $request->wantsJson()
+                ? response()->json(['success' => false, 'message' => 'Ticket item not found.'], 404)
+                : back()->with('error', 'Ticket item not found.');
         }
 
         $voidable = data_get($item->item_details, 'is_voidable', true);
         if (! $voidable) {
-            return back()->with('error', 'This PNR cannot be voided. Please use refund instead.');
+            return $request->wantsJson()
+                ? response()->json(['success' => false, 'message' => 'This PNR cannot be voided. Please use refund instead.'], 422)
+                : back()->with('error', 'This PNR cannot be voided. Please use refund instead.');
         }
 
         $issueDate = $this->resolveIssueDateForVoid($item);
         if (! $issueDate || ! $issueDate->isSameDay(now())) {
-            return back()->with('error', 'PNR can only be voided on the same issue date. Please use refund flow.');
+            return $request->wantsJson()
+                ? response()->json(['success' => false, 'message' => 'PNR can only be voided on the same issue date. Please use refund flow.'], 422)
+                : back()->with('error', 'PNR can only be voided on the same issue date. Please use refund flow.');
         }
 
         $pnr = (string) ($item->provider_reference ?: $booking->payment_reference);
         if ($pnr === '') {
-            return back()->with('error', 'PNR reference not found for this order item.');
+            return $request->wantsJson()
+                ? response()->json(['success' => false, 'message' => 'PNR reference not found for this order item.'], 422)
+                : back()->with('error', 'PNR reference not found for this order item.');
         }
 
         $providerConfig = $this->resolveProviderForTicketAction($item);
 
         if (! $providerConfig) {
-            return back()->with('error', 'No active provider found for this booking.');
+            return $request->wantsJson()
+                ? response()->json(['success' => false, 'message' => 'No active provider found for this booking.'], 422)
+                : back()->with('error', 'No active provider found for this booking.');
         }
 
         $provider = ProviderFactory::make($providerConfig);
@@ -289,21 +320,29 @@ class TicketController extends Controller
         } catch (ConnectionException $exception) {
             report($exception);
 
-            return back()->with('error', 'Airline void request timed out. Please try again.');
+            return $request->wantsJson()
+                ? response()->json(['success' => false, 'message' => 'Airline void request timed out. Please try again.'], 503)
+                : back()->with('error', 'Airline void request timed out. Please try again.');
         } catch (\Throwable $exception) {
             report($exception);
 
-            return back()->with('error', 'Failed to void PNR with the airline provider.');
+            return $request->wantsJson()
+                ? response()->json(['success' => false, 'message' => 'Failed to void PNR with the airline provider.'], 500)
+                : back()->with('error', 'Failed to void PNR with the airline provider.');
         }
 
         $voidXml = $this->toXml($voidResponse);
         if (! $voidXml) {
-            return back()->with('error', 'Airline returned invalid PNR payload after void command.');
+            return $request->wantsJson()
+                ? response()->json(['success' => false, 'message' => 'Airline returned invalid PNR payload after void command.'], 502)
+                : back()->with('error', 'Airline returned invalid PNR payload after void command.');
         }
 
         $voidSnapshot = VidecomPnrParser::formatForOrderDetails($voidXml);
         if (collect($voidSnapshot['tickets'] ?? [])->isNotEmpty()) {
-            return back()->with('error', 'PNR still contains tickets after void command. Void was not completed.');
+            return $request->wantsJson()
+                ? response()->json(['success' => false, 'message' => 'PNR still contains tickets after void command. Void was not completed.'], 422)
+                : back()->with('error', 'PNR still contains tickets after void command. Void was not completed.');
         }
 
         $voidedItems = $booking->items
@@ -358,6 +397,19 @@ class TicketController extends Controller
             $contact->notify(new TicketVoided($booking, $item));
         }
 
+        if ($request->wantsJson()) {
+            return response()->json([
+                'success' => true,
+                'message' => 'Ticket voided successfully.',
+                'data' => [
+                    'booking_id' => $booking->id,
+                    'status' => 'voided',
+                    'amount_refunded' => (float) $booking->fresh()?->amount_refunded,
+                    'currency' => $booking->currency,
+                ],
+            ]);
+        }
+
         return back()->with('success', 'Ticket voided successfully.');
     }
 
@@ -403,26 +455,34 @@ class TicketController extends Controller
         return response()->json($quote);
     }
 
-    public function refund(Request $request, Order $booking, string $ticket): RedirectResponse
+    public function refund(Request $request, Order $booking, string $ticket): RedirectResponse|JsonResponse
     {
         $item = $booking->items()->whereKey($ticket)->first();
         if (! $item) {
-            return back()->with('error', 'Ticket item not found.');
+            return $request->wantsJson()
+                ? response()->json(['success' => false, 'message' => 'Ticket item not found.'], 404)
+                : back()->with('error', 'Ticket item not found.');
         }
 
         $ticketNumber = (string) ($item->ticket_number ?? '');
         if ($ticketNumber === '') {
-            return back()->with('error', 'Ticket number is required for refund operation.');
+            return $request->wantsJson()
+                ? response()->json(['success' => false, 'message' => 'Ticket number is required for refund operation.'], 422)
+                : back()->with('error', 'Ticket number is required for refund operation.');
         }
 
         $pnr = (string) ($item->provider_reference ?: $booking->payment_reference);
         if ($pnr === '') {
-            return back()->with('error', 'PNR reference not found for this order item.');
+            return $request->wantsJson()
+                ? response()->json(['success' => false, 'message' => 'PNR reference not found for this order item.'], 422)
+                : back()->with('error', 'PNR reference not found for this order item.');
         }
 
         $providerConfig = $this->resolveProviderForTicketAction($item);
         if (! $providerConfig) {
-            return back()->with('error', 'No active provider found for this booking.');
+            return $request->wantsJson()
+                ? response()->json(['success' => false, 'message' => 'No active provider found for this booking.'], 422)
+                : back()->with('error', 'No active provider found for this booking.');
         }
 
         $provider = ProviderFactory::make($providerConfig);
@@ -440,15 +500,21 @@ class TicketController extends Controller
         } catch (ConnectionException $exception) {
             report($exception);
 
-            return back()->with('error', 'Airline refund request timed out. Please try again.');
+            return $request->wantsJson()
+                ? response()->json(['success' => false, 'message' => 'Airline refund request timed out. Please try again.'], 503)
+                : back()->with('error', 'Airline refund request timed out. Please try again.');
         } catch (\Throwable $exception) {
             report($exception);
 
-            return back()->with('error', 'Failed to refund ticket with the airline provider.');
+            return $request->wantsJson()
+                ? response()->json(['success' => false, 'message' => 'Failed to refund ticket with the airline provider.'], 500)
+                : back()->with('error', 'Failed to refund ticket with the airline provider.');
         }
 
         if (! ($refundResult['success'] ?? false)) {
-            return back()->with('error', 'Airline rejected the refund request. Response: '.($refundResult['raw_response'] ?? 'unknown'));
+            return $request->wantsJson()
+                ? response()->json(['success' => false, 'message' => 'Airline rejected the refund request. Response: '.($refundResult['raw_response'] ?? 'unknown')], 422)
+                : back()->with('error', 'Airline rejected the refund request. Response: '.($refundResult['raw_response'] ?? 'unknown'));
         }
 
         DB::transaction(function () use ($booking, $item, $ticketNumber, $penaltyAmount, $refundAmount, $refundResult): void {
@@ -484,6 +550,20 @@ class TicketController extends Controller
         $contact = OrderContact::fromOrder($booking);
         if (filled($contact->email) || filled($contact->phone)) {
             $contact->notify(new TicketCancelled($booking, $item, $netRefund));
+        }
+
+        if ($request->wantsJson()) {
+            return response()->json([
+                'success' => true,
+                'message' => 'Refund processed successfully.',
+                'data' => [
+                    'booking_id' => $booking->id,
+                    'status' => 'refunded',
+                    'net_refund_amount' => $netRefund,
+                    'penalty_amount' => $penaltyAmount,
+                    'currency' => $booking->currency,
+                ],
+            ]);
         }
 
         return back()->with('success', 'Refund processed successfully.');

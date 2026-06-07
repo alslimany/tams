@@ -100,6 +100,7 @@ Route::middleware(['auth:sanctum', 'throttle:api', 'audit.api', 'idempotency'])-
     // ── Issue-gated routes (ability: issue OR *) ────────────────
     Route::middleware('ability:issue')->group(function (): void {
         Route::post('flights/{booking}/tickets/issue', [TicketController::class, 'issue']);
+        Route::get('flights/{booking}/tickets/{ticket}/refund-quote', [TicketController::class, 'refundQuote']);
         Route::post('flights/{booking}/tickets/{ticket}/void', [TicketController::class, 'void']);
         Route::post('flights/{booking}/tickets/{ticket}/refund', [TicketController::class, 'refund']);
         Route::post('insurance/compulsory/issue', [InsuranceController::class, 'compulsoryIssue']);

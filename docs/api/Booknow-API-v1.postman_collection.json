@@ -515,6 +515,211 @@
               "body": "{\n  \"success\": false,\n  \"message\": \"Insufficient wallet balance: requires 450.00 LYD, available 100.00 LYD\"\n}"
             }
           ]
+        },
+        {
+          "name": "7. Issue Ticket",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"payment_type\": \"airline_token\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/agency/{{tenant}}/api/v1/flights/{{booking_id}}/tickets/issue",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "agency",
+                "{{tenant}}",
+                "api",
+                "v1",
+                "flights",
+                "{{booking_id}}",
+                "tickets",
+                "issue"
+              ]
+            },
+            "description": "Issue a ticket for an existing pending booking. `booking_id` is the order ID returned by the book step. `payment_type` is `airline_token` (default) or `cash`.\n\nRequires `issue` token ability."
+          },
+          "response": [
+            {
+              "name": "201 \u2014 Issued",
+              "status": "Created",
+              "code": 201,
+              "body": "{\n  \"success\": true,\n  \"message\": \"Ticket issued successfully.\",\n  \"data\": {\n    \"id\": \"01jx...\",\n    \"number\": \"ORD-2026-0002\",\n    \"status\": \"issued\",\n    \"total\": 450.0,\n    \"currency\": \"LYD\",\n    \"items\": []\n  }\n}"
+            },
+            {
+              "name": "402 \u2014 Insufficient Balance",
+              "status": "Payment Required",
+              "code": 402,
+              "body": "{\n  \"success\": false,\n  \"message\": \"Insufficient wallet balance: requires 450.00 LYD, available 100.00 LYD\"\n}"
+            },
+            {
+              "name": "503 \u2014 Timeout",
+              "status": "Service Unavailable",
+              "code": 503,
+              "body": "{\n  \"success\": false,\n  \"message\": \"Airline ticket issuance timed out. Please try again.\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "8. Refund Quote",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/agency/{{tenant}}/api/v1/flights/{{booking_id}}/tickets/{{ticket_id}}/refund-quote",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "agency",
+                "{{tenant}}",
+                "api",
+                "v1",
+                "flights",
+                "{{booking_id}}",
+                "tickets",
+                "{{ticket_id}}",
+                "refund-quote"
+              ]
+            },
+            "description": "Fetch a refund quote (penalty + net refund amount) for a specific ticket item. Read-only \u2014 no state is changed. Present the returned amounts to the user before calling **Refund Ticket**.\n\nRequires `issue` token ability."
+          },
+          "response": [
+            {
+              "name": "200 \u2014 Quote",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"penalty\": 50.0,\n  \"net_refund\": 400.0,\n  \"gross_refund\": 450.0,\n  \"currency\": \"LYD\"\n}"
+            },
+            {
+              "name": "404 \u2014 Not Found",
+              "status": "Not Found",
+              "code": 404,
+              "body": "{\n  \"error\": \"Ticket item not found.\"\n}"
+            },
+            {
+              "name": "503 \u2014 Timeout",
+              "status": "Service Unavailable",
+              "code": 503,
+              "body": "{\n  \"error\": \"Airline refund quote request timed out. Please try again.\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "9. Void Ticket",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            },
+            "url": {
+              "raw": "{{base_url}}/agency/{{tenant}}/api/v1/flights/{{booking_id}}/tickets/{{ticket_id}}/void",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "agency",
+                "{{tenant}}",
+                "api",
+                "v1",
+                "flights",
+                "{{booking_id}}",
+                "tickets",
+                "{{ticket_id}}",
+                "void"
+              ]
+            },
+            "description": "Void a ticket. Only possible on the **same calendar day** as issue. If the ticket was issued on a previous day, use **Refund Ticket** instead.\n\nRequires `issue` token ability."
+          },
+          "response": [
+            {
+              "name": "200 \u2014 Voided",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"success\": true,\n  \"message\": \"Ticket voided successfully.\",\n  \"data\": {\n    \"booking_id\": \"01jx...\",\n    \"status\": \"voided\",\n    \"amount_refunded\": 450.0,\n    \"currency\": \"LYD\"\n  }\n}"
+            },
+            {
+              "name": "422 \u2014 Not Voidable",
+              "status": "Unprocessable Entity",
+              "code": 422,
+              "body": "{\n  \"success\": false,\n  \"message\": \"PNR can only be voided on the same issue date. Please use refund flow.\"\n}"
+            },
+            {
+              "name": "503 \u2014 Timeout",
+              "status": "Service Unavailable",
+              "code": 503,
+              "body": "{\n  \"success\": false,\n  \"message\": \"Airline void request timed out. Please try again.\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "10. Refund Ticket",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"penalty_amount\": 50.0,\n  \"refund_amount\": 400.0\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/agency/{{tenant}}/api/v1/flights/{{booking_id}}/tickets/{{ticket_id}}/refund",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "agency",
+                "{{tenant}}",
+                "api",
+                "v1",
+                "flights",
+                "{{booking_id}}",
+                "tickets",
+                "{{ticket_id}}",
+                "refund"
+              ]
+            },
+            "description": "Refund a ticket after the void window has passed. Use **Refund Quote** first to obtain the correct `penalty_amount` and `refund_amount` values to pass in the body.\n\nRequires `issue` token ability."
+          },
+          "response": [
+            {
+              "name": "200 \u2014 Refunded",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"success\": true,\n  \"message\": \"Refund processed successfully.\",\n  \"data\": {\n    \"booking_id\": \"01jx...\",\n    \"status\": \"refunded\",\n    \"net_refund_amount\": 400.0,\n    \"penalty_amount\": 50.0,\n    \"currency\": \"LYD\"\n  }\n}"
+            },
+            {
+              "name": "422 \u2014 Rejected by Airline",
+              "status": "Unprocessable Entity",
+              "code": 422,
+              "body": "{\n  \"success\": false,\n  \"message\": \"Airline rejected the refund request. Response: ...\"\n}"
+            },
+            {
+              "name": "503 \u2014 Timeout",
+              "status": "Service Unavailable",
+              "code": 503,
+              "body": "{\n  \"success\": false,\n  \"message\": \"Airline refund request timed out. Please try again.\"\n}"
+            }
+          ]
         }
       ]
     },
