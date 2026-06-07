@@ -17,9 +17,14 @@ class ESimSearchRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'country' => ['required', 'string', 'max:100'],
-            'data_mb' => ['nullable', 'integer', 'min:1'],
-            'validity_days' => ['nullable', 'integer', 'min:1'],
+            'country' => ['required', 'string', 'size:2'],
         ];
+    }
+
+    protected function prepareForValidation(): void
+    {
+        if ($this->has('country')) {
+            $this->merge(['country' => strtoupper((string) $this->input('country'))]);
+        }
     }
 }

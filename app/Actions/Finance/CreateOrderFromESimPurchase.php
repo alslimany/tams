@@ -88,8 +88,13 @@ class CreateOrderFromESimPurchase
                     'provider_order_id' => $orderResult->orderId,
                     'iccid' => $orderResult->iccid,
                     'activation_code' => $orderResult->activationCode,
+                    'smdp_address' => $orderResult->smdpAddress,
+                    'lpa_string' => $orderResult->smdpAddress && $orderResult->activationCode
+                        ? "LPA:1\${$orderResult->smdpAddress}\${$orderResult->activationCode}"
+                        : null,
                     'qr_code_url' => $orderResult->qrCodeUrl,
                     'status' => $orderResult->status,
+                    'assigned' => $orderResult->assigned,
                     'customer' => $customerData,
                 ]),
                 'product_details' => [
@@ -101,6 +106,10 @@ class CreateOrderFromESimPurchase
                     'validity_days' => (int) ($packageData['validity_days'] ?? 0),
                     'iccid' => $orderResult->iccid,
                     'activation_code' => $orderResult->activationCode,
+                    'smdp_address' => $orderResult->smdpAddress,
+                    'lpa_string' => $orderResult->smdpAddress && $orderResult->activationCode
+                        ? "LPA:1\${$orderResult->smdpAddress}\${$orderResult->activationCode}"
+                        : null,
                     'qr_code_url' => $orderResult->qrCodeUrl,
                     'customer' => $customerData,
                 ],

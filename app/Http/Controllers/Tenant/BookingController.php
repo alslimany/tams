@@ -10,6 +10,7 @@ use App\Actions\Finance\ProcessProviderWalletTransactions;
 use App\Actions\Finance\ProcessWalletTransactions;
 use App\DTOs\Airline\RoundTripPriceRequest;
 use App\Exceptions\InsufficientWalletBalanceException;
+use App\Http\Controllers\Concerns\ExtractsPnrLocator;
 use App\Http\Controllers\Controller;
 use App\Models\Airport;
 use App\Models\Country;
@@ -29,7 +30,10 @@ use App\Services\GlobalCache\RouteAvailabilityService;
 use App\Services\Orders\OrderNumberGenerator;
 use Carbon\Carbon;
 use Exception;
+use g4t\IDScanner\Scanner;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
@@ -41,6 +45,8 @@ use Inertia\Response;
 
 class BookingController extends Controller
 {
+    use ExtractsPnrLocator;
+
     public function __construct(
         protected OrderNumberGenerator $orderNumberGenerator,
         protected RoundTripPriceManager $roundTripPriceManager,
@@ -643,6 +649,7 @@ class BookingController extends Controller
             'source_provider_id' => 'nullable|integer',
             'flight' => 'nullable|array',
             'reservation_type' => 'nullable|in:QQ,NN',
+            'return_reservation_type' => 'nullable|in:QQ,NN',
             'is_round_trip' => 'nullable|boolean',
             'outbound_provider_id' => 'nullable|integer',
             'return_provider_id' => 'nullable|integer',
@@ -666,6 +673,7 @@ class BookingController extends Controller
         $isRoundTripRequested = $validated['is_round_trip'] ?? $cachedOffer['is_round_trip'] ?? false;
         $outboundProviderId = $validated['outbound_provider_id'] ?? $cachedOffer['outbound_provider_id'] ?? null;
         $returnProviderId = $validated['return_provider_id'] ?? $cachedOffer['return_provider_id'] ?? null;
+        $returnReservationType = $validated['return_reservation_type'] ?? $cachedOffer['return_reservation_type'] ?? $reservationType;
         $sourceMetadata = $this->selectedOfferSourceMetadata($validated, is_array($cachedOffer) ? $cachedOffer : []);
         $sourceMetadata = $this->selectedOfferSourceMetadata($validated, is_array($cachedOffer) ? $cachedOffer : []);
 
@@ -724,6 +732,7 @@ class BookingController extends Controller
             'provider_id' => $providerId,
             'flight' => $flight,
             'reservation_type' => $reservationType,
+            'return_reservation_type' => $returnReservationType,
             'is_round_trip' => $isRoundTrip,
             'outbound_provider_id' => $outboundProviderId,
             'return_provider_id' => $returnProviderId,
@@ -738,7 +747,7 @@ class BookingController extends Controller
         return redirect()->route('flights.passengers', ['uuid' => $validated['uuid']]);
     }
 
-    public function passengers(string $uuid): Response
+    public function passengers(string $uuid): Response|RedirectResponse
     {
         $searchParams = Cache::get("flight_search_{$uuid}");
         $cachedOffer = $searchParams['selected_offer'] ?? null;
@@ -750,6 +759,7 @@ class BookingController extends Controller
         $providerId = $cachedOffer['provider_id'];
         $flight = $cachedOffer['flight'];
         $reservationType = $cachedOffer['reservation_type'];
+        $returnReservationType = $cachedOffer['return_reservation_type'] ?? $reservationType;
         $isRoundTrip = filter_var($cachedOffer['is_round_trip'] ?? false, FILTER_VALIDATE_BOOLEAN);
         $outboundProviderId = $cachedOffer['outbound_provider_id'] ?? null;
         $returnProviderId = $cachedOffer['return_provider_id'] ?? null;
@@ -796,6 +806,7 @@ class BookingController extends Controller
             'provider_id' => $providerId,
             'flight' => $flight,
             'reservation_type' => $reservationType,
+            'return_reservation_type' => $returnReservationType,
             'is_round_trip' => $isRoundTrip,
             'outbound_provider_id' => $outboundProviderId,
             'return_provider_id' => $returnProviderId,
@@ -806,7 +817,70 @@ class BookingController extends Controller
             'cached_passengers' => $cachedPassengers,
             'cached_customer' => $cachedCustomer,
             'countries' => Country::orderBy('name_en')
-                ->get(['alpha3', 'name_en', 'name_ar', 'name_fr']),
+                ->get(['alpha2', 'alpha3', 'name_en', 'name_ar', 'name_fr']),
+            'airports_map' => $this->buildAirportsMap($flight),
+        ]);
+    }
+
+    /**
+     * Scan a passport image using the Regula Forensics OCR/MRZ API (via g4t/id-scanner)
+     * and return the extracted fields mapped to the passenger form format.
+     */
+    public function scanPassport(Request $request): JsonResponse
+    {
+        $request->validate([
+            'image' => 'required|file|mimes:jpg,jpeg,png,webp|max:10240',
+        ]);
+
+        try {
+            /** @var array<string, mixed> $result */
+            $result = Scanner::scan([$request->file('image')], 'files');
+        } catch (\Exception $e) {
+            return response()->json(['error' => $e->getMessage()], 422);
+        }
+
+        /**
+         * Parse a date that may come as YYMMDD (MRZ) or YYYY-MM-DD.
+         * For DOB: 2-digit year < 50 → 2000s, ≥ 50 → 1900s.
+         * For expiry: always future, so < 50 → 2000s.
+         */
+        $parseDate = function (?string $d): string {
+            if (! $d) {
+                return '';
+            }
+
+            // Already ISO format
+            if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $d)) {
+                return $d;
+            }
+
+            // YYMMDD (MRZ standard)
+            if (preg_match('/^(\d{2})(\d{2})(\d{2})$/', $d, $m)) {
+                $yy = (int) $m[1];
+                $yyyy = $yy < 50 ? "20{$m[1]}" : "19{$m[1]}";
+
+                return "{$yyyy}-{$m[2]}-{$m[3]}";
+            }
+
+            return '';
+        };
+
+        $sex = strtoupper(substr((string) ($result['sex'] ?? 'M'), 0, 1));
+
+        // MRZ given_name often contains first + father + grandfather names separated by spaces.
+        // Airlines only need the first given name in the name field.
+        $givenName = trim((string) ($result['given_name'] ?? ''));
+        $firstName = strtoupper(strtok($givenName, ' ') ?: $givenName);
+
+        return response()->json([
+            'first_name' => $firstName,
+            'last_name' => strtoupper(trim((string) ($result['surname'] ?? ''))),
+            'dob' => $parseDate($result['date_of_birth'] ?? null),
+            'passport_expiry' => $parseDate($result['date_of_expiry'] ?? null),
+            'passport_number' => strtoupper(trim((string) ($result['document_number'] ?? ''))),
+            'passport_issue_country' => strtoupper(trim((string) ($result['issuing_state_code'] ?? ''))),
+            'nationality' => strtoupper(trim((string) ($result['nationality_code'] ?? ''))),
+            'gender' => $sex === 'F' ? 'F' : 'M',
         ]);
     }
 
@@ -852,6 +926,11 @@ class BookingController extends Controller
             'extras.selected_services.*.quantity' => 'nullable|integer|min:0',
             'extras.selected_services.*.passengers' => 'nullable|array',
             'extras.selected_services.*.passengers.*' => 'integer|min:0',
+            'extras.esim_selection' => 'nullable|array',
+            'extras.esim_selection.package_id' => 'nullable|string|max:255',
+            'extras.esim_selection.name' => 'nullable|string|max:255',
+            'extras.esim_selection.price' => 'nullable|numeric|min:0',
+            'extras.esim_selection.currency' => 'nullable|string|max:10',
         ], [
             'passengers.*.first_name.alpha' => 'Passenger first name must contain letters only.',
             'passengers.*.last_name.alpha' => 'Passenger last name must contain letters only.',
@@ -881,6 +960,7 @@ class BookingController extends Controller
         $isRoundTrip = filter_var($validated['is_round_trip'] ?? $cachedOffer['is_round_trip'] ?? false, FILTER_VALIDATE_BOOLEAN);
         $outboundProviderId = $validated['outbound_provider_id'] ?? $cachedOffer['outbound_provider_id'] ?? null;
         $returnProviderId = $validated['return_provider_id'] ?? $cachedOffer['return_provider_id'] ?? null;
+        $returnReservationType = $validated['return_reservation_type'] ?? $cachedOffer['return_reservation_type'] ?? $reservationType;
         $sourceMetadata = $this->selectedOfferSourceMetadata($validated, is_array($cachedOffer) ? $cachedOffer : []);
 
         // Save passengers and extras to cache for potential retry
@@ -932,15 +1012,50 @@ class BookingController extends Controller
         $providerConfig->update(['last_used_at' => now()]);
 
         $itinerary = $flight['segments'] ?? [$flight];
-        $mappedItinerary = array_map(function ($segment): array {
-            return [
-                'flt_no' => $segment['flight_number'] ?? '000',
-                'class' => $segment['class'] ?? 'Y',
-                'date' => $segment['departure_time'] ?? now(),
-                'origin' => $segment['departure_airport'] ?? 'XXX',
-                'dest' => $segment['arrival_airport'] ?? 'XXX',
-            ];
-        }, $itinerary);
+
+        // For round trips, tag each segment with its own reservation_type so the
+        // provider can issue outbound and return legs independently (NN vs QQ).
+        if ($isRoundTrip && isset($flight['round_trip'])) {
+            $outboundSegments = $flight['round_trip']['outbound_flight']['segments']
+                ?? [$flight['round_trip']['outbound_flight']];
+            $returnSegments = $flight['round_trip']['return_flight']['segments']
+                ?? [$flight['round_trip']['return_flight']];
+
+            $mappedItinerary = [];
+
+            foreach ($outboundSegments as $segment) {
+                $mappedItinerary[] = [
+                    'flt_no' => $segment['flight_number'] ?? '000',
+                    'class' => $segment['class'] ?? 'Y',
+                    'date' => $segment['departure_time'] ?? now(),
+                    'origin' => $segment['departure_airport'] ?? 'XXX',
+                    'dest' => $segment['arrival_airport'] ?? 'XXX',
+                    'reservation_type' => $reservationType,
+                ];
+            }
+
+            foreach ($returnSegments as $segment) {
+                $mappedItinerary[] = [
+                    'flt_no' => $segment['flight_number'] ?? '000',
+                    'class' => $segment['class'] ?? 'Y',
+                    'date' => $segment['departure_time'] ?? now(),
+                    'origin' => $segment['departure_airport'] ?? 'XXX',
+                    'dest' => $segment['arrival_airport'] ?? 'XXX',
+                    'reservation_type' => $returnReservationType,
+                ];
+            }
+        } else {
+            $mappedItinerary = array_map(function ($segment) use ($reservationType): array {
+                return [
+                    'flt_no' => $segment['flight_number'] ?? '000',
+                    'class' => $segment['class'] ?? 'Y',
+                    'date' => $segment['departure_time'] ?? now(),
+                    'origin' => $segment['departure_airport'] ?? 'XXX',
+                    'dest' => $segment['arrival_airport'] ?? 'XXX',
+                    'reservation_type' => $reservationType,
+                ];
+            }, $itinerary);
+        }
 
         $catalogByOffer = [];
         $flightByOffer = [];
@@ -1033,6 +1148,12 @@ class BookingController extends Controller
 
         $extras = $validated['extras'] ?? [];
 
+        $esimSelection = isset($extras['esim_selection']) && is_array($extras['esim_selection'])
+            ? $extras['esim_selection']
+            : null;
+
+        unset($extras['esim_selection']);
+
         if (isset($extras['selected_services']) && is_array($extras['selected_services'])) {
             $extras['selected_services'] = array_map(fn (array $selection): array => [
                 'code' => $selection['code'] ?? null,
@@ -1119,7 +1240,7 @@ class BookingController extends Controller
                     : 'Failed to communicate with the airline: '.$exception->getMessage());
         }
 
-        $order = DB::transaction(function () use ($providerConfig, $totalPrice, $currency, $pnr, $providerPayload, $ancillaryCatalog, $ancillarySummary, $customer, $isRoundTrip, $outboundProviderId, $returnProviderId, $flight, $passengers, $baseTotal, $sourceMetadata): Order {
+        $order = DB::transaction(function () use ($providerConfig, $totalPrice, $currency, $pnr, $providerPayload, $ancillaryCatalog, $ancillarySummary, $customer, $isRoundTrip, $outboundProviderId, $returnProviderId, $flight, $passengers, $baseTotal, $sourceMetadata, $esimSelection): Order {
             $order = Order::query()->create([
                 'owner_type' => get_class(request()->user()),
                 'owner_id' => request()->user()?->id,
@@ -1150,6 +1271,7 @@ class BookingController extends Controller
                     'segments' => $flight['segments'] ?? [$flight],
                     'passengers' => $passengers,
                     'customer' => $customer,
+                    'esim_pending_selection' => $esimSelection,
                     'raw_request' => [
                         'provider_payload' => $providerPayload,
                         'ancillary_catalog' => $ancillaryCatalog,
@@ -1496,48 +1618,6 @@ class BookingController extends Controller
         }
     }
 
-    protected function extractPnrLocator(mixed $bookingResponse): ?string
-    {
-        if ($bookingResponse instanceof \SimpleXMLElement) {
-            $attributeLocator = strtoupper(trim((string) ($bookingResponse['RLOC'] ?? '')));
-            if ($attributeLocator !== '') {
-                return $attributeLocator;
-            }
-
-            $directLocator = strtoupper(trim((string) ($bookingResponse->Locator ?? $bookingResponse->RecordLocator ?? $bookingResponse->PNR ?? '')));
-            if ($directLocator !== '') {
-                return $directLocator;
-            }
-
-            $xmlString = $bookingResponse->asXML() ?: '';
-
-            return $this->extractPnrLocatorFromString($xmlString);
-        }
-
-        if (is_string($bookingResponse)) {
-            return $this->extractPnrLocatorFromString($bookingResponse);
-        }
-
-        return null;
-    }
-
-    protected function extractPnrLocatorFromString(string $bookingResponse): ?string
-    {
-        if (preg_match('/\bRLOC="([A-Z0-9]{5,8})"/i', $bookingResponse, $matches) === 1) {
-            return strtoupper($matches[1]);
-        }
-
-        if (preg_match('/<Locator>([A-Z0-9]{5,8})<\/Locator>/i', $bookingResponse, $matches) === 1) {
-            return strtoupper($matches[1]);
-        }
-
-        if (preg_match('/<RecordLocator>([A-Z0-9]{5,8})<\/RecordLocator>/i', $bookingResponse, $matches) === 1) {
-            return strtoupper($matches[1]);
-        }
-
-        return null;
-    }
-
     protected function isInternationalFlight(array $flight): bool
     {
         $segments = $flight['segments'] ?? [$flight];
@@ -1597,6 +1677,69 @@ class BookingController extends Controller
         }
 
         return strtoupper(trim($country));
+    }
+
+    /**
+     * Build a map of IATA code → country names for all airports in the flight.
+     * Used by the PassengerInfo page to display country names in the trip summary.
+     *
+     * @param  array<string, mixed>  $flight
+     * @return array<string, array{name_en: string, name_ar: string, name_fr: string, city_en: string, city_ar: string, city_fr: string}>
+     */
+    protected function buildAirportsMap(array $flight): array
+    {
+        $allSegments = $flight['segments'] ?? [$flight];
+
+        if ($isRoundTrip = isset($flight['round_trip'])) {
+            $allSegments = array_merge(
+                $flight['round_trip']['outbound_flight']['segments'] ?? [$flight['round_trip']['outbound_flight'] ?? []],
+                $flight['round_trip']['return_flight']['segments'] ?? [$flight['round_trip']['return_flight'] ?? []],
+            );
+        }
+
+        $iataCodes = collect($allSegments)
+            ->flatMap(fn ($s) => [
+                strtoupper((string) ($s['departure_airport'] ?? $s['origin'] ?? '')),
+                strtoupper((string) ($s['arrival_airport'] ?? $s['destination'] ?? '')),
+            ])
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
+        if (empty($iataCodes)) {
+            return [];
+        }
+
+        $airports = Airport::whereIn('iata_code', $iataCodes)->get()->keyBy('iata_code');
+
+        $alpha2Codes = $airports->map(fn ($a) => $this->resolveAirportCountry($a))->filter()->unique()->values()->all();
+
+        $countriesByAlpha2 = Country::whereIn('alpha2', array_map('strtolower', $alpha2Codes))
+            ->get(['alpha2', 'name_en', 'name_ar', 'name_fr'])
+            ->keyBy(fn ($c) => strtoupper($c->alpha2));
+
+        $map = [];
+        foreach ($iataCodes as $iata) {
+            $alpha2 = $this->resolveAirportCountry($airports->get($iata));
+            if (! $alpha2) {
+                continue;
+            }
+            $country = $countriesByAlpha2->get($alpha2);
+            if (! $country) {
+                continue;
+            }
+            $map[$iata] = [
+                'name_en' => $country->name_en,
+                'name_ar' => $country->name_ar,
+                'name_fr' => $country->name_fr,
+                'city_en' => $airports->get($iata)?->getTranslation('city', 'en') ?? '',
+                'city_ar' => $airports->get($iata)?->getTranslation('city', 'ar') ?? '',
+                'city_fr' => $airports->get($iata)?->getTranslation('city', 'fr') ?? '',
+            ];
+        }
+
+        return $map;
     }
 
     protected function shouldUseVidecomScraper(TenantProvider $providerConfig): bool

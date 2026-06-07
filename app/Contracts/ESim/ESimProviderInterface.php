@@ -34,4 +34,18 @@ interface ESimProviderInterface
      * @return array<string, mixed>
      */
     public function orderDetails(string $orderId): array;
+
+    /**
+     * Retrieve available networks for a given ISO country code.
+     *
+     * @return array<int, array{name: string, brandName: string, speed: string[]}>
+     */
+    public function networks(string $iso): array;
+
+    /**
+     * Retrieve the organisation details and available balance from the provider.
+     *
+     * @return array{firstName: string, lastName: string, email: string, title: string, mobileNo: string|null, balance: string}
+     */
+    public function organization(): array;
 }

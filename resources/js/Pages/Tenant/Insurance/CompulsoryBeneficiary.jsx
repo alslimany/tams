@@ -219,7 +219,7 @@ export default function CompulsoryBeneficiary({ quoteToken, quote, vehicleTypes 
         <TenantNavbarLayout>
             <Head title={t('common.compassionary_beneficiary')} />
 
-            <div className="mx-auto grid max-w-7xl grid-cols-1 gap-8 px-4 py-8 lg:grid-cols-3">
+            <div className="mx-auto grid max-w-7xl grid-cols-1 gap-8 py-8 lg:grid-cols-3">
                 <div className="space-y-8 lg:col-span-2">
                     <div>
                         <Link href={route('insurance.search')} className="mb-4 flex items-center text-sm font-bold text-muted-foreground hover:text-primary">

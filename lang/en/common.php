@@ -132,6 +132,7 @@ return [
     'adult_passenger' => 'Adult Passenger',
     'child_passenger' => 'Child Passenger',
     'infant_passenger' => 'Infant Passenger',
+    'primary_contact' => 'Primary Contact',
     'enter_email_phone_primary_contact' => 'Enter the email and phone number for the primary contact.',
     'email_address' => 'Email Address',
     'phone_number' => 'Phone Number',
@@ -177,7 +178,12 @@ return [
     'flight_itineraries' => 'Flight Itineraries',
     'base_flight_fare' => 'Base Flight Fare',
     'total_to_pay' => 'Total to Pay',
-    'booking_confirmation_message' => 'By continuing, you confirm the passenger names match the travel documents exactly and any ancillary request without an airline command code may need manual airline processing.',
+    'booking_confirmation_message' => 'Important: Passenger names must exactly match the travel documents (passport/ID). A name mismatch may result in denied boarding. Ancillary requests without an airline command code may require manual processing.',
+    'scan_passport' => 'Scan Passport',
+    'upload_passport_image' => 'Upload a clear photo of the passport data page',
+    'scanning' => 'Scanning…',
+    'scan_failed' => 'Failed to scan passport. Please try again with a clearer image.',
+    'click_to_change' => 'Click to change',
     'select_your_seats' => 'Select Your Seats',
     'select_seats_for_each_passenger' => 'Select seats for each passenger across all selected offers.',
     'loading_seat_map' => 'Loading interactive seat map from airline...',
@@ -186,9 +192,9 @@ return [
     'assign_passengers' => 'Assign Passengers',
     'seat' => 'Seat',
     'auto' => 'Auto',
-    'passengers_tab' => '1. Passengers',
-    'extras_tab' => '2. Extras',
-    'review_tab' => '3. Review & Confirm',
+    'passengers_tab' => 'Passengers',
+    'extras_tab' => 'Extras',
+    'review_tab' => 'Review & Confirm',
     'seat_label' => 'Seat: {seat}',
 
     // Insurance
@@ -202,6 +208,7 @@ return [
     'insurance_details' => 'Insurance Details',
     'vehicle_information' => 'Vehicle Information',
     'owner_and_vehicle_information' => 'Owner & Vehicle Information',
+    'page_expired' => 'The page expired, please try again.',
     'vehicle_owner_name' => 'Name of Vehicle Owner',
     'full_name' => 'Full name',
     'metal_plate_number' => 'Metal Plate Number',
@@ -402,6 +409,7 @@ return [
         'FQ' => 'Fly Crown',
     ],
     'hotels' => 'Hotels',
+    'esim' => 'eSIM',
     'insurance_search' => 'Insurance',
     'hotel_search' => 'Hotel Search',
     'hotels_by_3t' => 'Hotels by 3T',
@@ -537,4 +545,12 @@ return [
     'no_coordinates' => 'No map coordinates',
     'stars' => ':count Stars',
     'one_star' => '1 Star',
+
+    // Date selectors
+    'day' => 'Day',
+    'month' => 'Month',
+    'year' => 'Year',
+
+    // Validation
+    'invalid_email' => 'Invalid email address',
 ];

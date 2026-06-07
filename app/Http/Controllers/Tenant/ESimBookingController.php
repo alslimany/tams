@@ -9,6 +9,8 @@ use App\Exceptions\InsufficientWalletBalanceException;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Tenant\ESim\ESimBookRequest;
 use App\Http\Requests\Tenant\ESim\ESimSearchRequest;
+use App\Models\Airport;
+use App\Models\Country;
 use App\Models\Tenant\TenantEsimProvider;
 use App\Models\User;
 use App\Services\ESim\ESimApiException;
@@ -31,7 +33,19 @@ class ESimBookingController extends Controller
 
     public function index(): Response
     {
-        return Inertia::render('Tenant/ESim/Search');
+        $countries = Country::orderBy('name_en')
+            ->get(['alpha2', 'name_en', 'name_ar', 'name_fr'])
+            ->map(fn (Country $c): array => [
+                'alpha2' => $c->alpha2,
+                'name_en' => $c->name_en,
+                'name_ar' => $c->name_ar,
+                'name_fr' => $c->name_fr,
+            ])
+            ->values();
+
+        return Inertia::render('Tenant/ESim/Search', [
+            'countries' => $countries,
+        ]);
     }
 
     public function search(ESimSearchRequest $request): RedirectResponse
@@ -52,9 +66,16 @@ class ESimBookingController extends Controller
             return redirect()->route('esim.index')->with('error', 'eSIM search expired. Please search again.');
         }
 
+        $country = Country::where('alpha2', $search['country'] ?? '')->first(['name_en', 'name_ar', 'name_fr']);
+
         return Inertia::render('Tenant/ESim/Results', [
             'searchUuid' => $uuid,
             'search' => $search,
+            'countryNames' => $country ? [
+                'en' => $country->name_en,
+                'ar' => $country->name_ar,
+                'fr' => $country->name_fr,
+            ] : null,
         ]);
     }
 
@@ -69,8 +90,6 @@ class ESimBookingController extends Controller
         try {
             $filters = array_filter([
                 'country' => (string) ($search['country'] ?? ''),
-                'data_mb' => isset($search['data_mb']) ? (int) $search['data_mb'] : null,
-                'validity_days' => isset($search['validity_days']) ? (int) $search['validity_days'] : null,
             ], fn (mixed $v): bool => $v !== null && $v !== '');
 
             $packages = $this->providerManager->provider()->catalogue($filters);
@@ -85,6 +104,67 @@ class ESimBookingController extends Controller
             report($exception);
 
             return response()->json(['message' => $exception->getMessage() ?: 'Unable to load eSIM packages right now.'], 422);
+        }
+    }
+
+    public function networks(string $uuid): JsonResponse
+    {
+        $search = $this->pullSearch($uuid);
+
+        if ($search === null) {
+            return response()->json(['networks' => []]);
+        }
+
+        $iso = strtoupper((string) ($search['country'] ?? ''));
+
+        if ($iso === '') {
+            return response()->json(['networks' => []]);
+        }
+
+        try {
+            $networks = $this->providerManager->provider()->networks($iso);
+
+            return response()->json(['networks' => $networks]);
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return response()->json(['networks' => []]);
+        }
+    }
+
+    public function airportPackages(string $iata): JsonResponse
+    {
+        $airport = Airport::where('iata_code', strtoupper($iata))->first();
+
+        if ($airport === null) {
+            return response()->json(['packages' => []]);
+        }
+
+        $iso = strtoupper($airport->getTranslation('country', 'en'));
+
+        if ($iso === '') {
+            return response()->json(['packages' => []]);
+        }
+
+        try {
+            $packages = Cache::remember(
+                "esim_airport_packages_{$iso}",
+                now()->addMinutes(30),
+                fn (): array => $this->providerManager->provider()->catalogue(['country' => $iso])
+            );
+
+            $providerSource = $this->providerManager->activeProviderSource();
+
+            return response()->json([
+                'packages' => array_map(fn ($pkg): array => array_merge($pkg->toArray(), [
+                    'provider_source' => $providerSource,
+                ]), $packages),
+                'country_iso' => $iso,
+            ]);
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return response()->json(['packages' => [], 'country_iso' => $iso]);
         }
     }
 
@@ -212,8 +292,6 @@ class ESimBookingController extends Controller
     {
         $filters = array_filter([
             'country' => (string) ($search['country'] ?? ''),
-            'data_mb' => isset($search['data_mb']) ? (int) $search['data_mb'] : null,
-            'validity_days' => isset($search['validity_days']) ? (int) $search['validity_days'] : null,
         ], fn (mixed $v): bool => $v !== null && $v !== '');
 
         $packages = $this->providerManager->provider()->catalogue($filters);

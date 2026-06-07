@@ -5,6 +5,7 @@ import TenantNavbarLayout from '@/Layouts/TenantNavbarLayout';
 import { Button } from "@/Components/ui/Button";
 import { Card, CardContent } from "@/Components/ui/Card";
 import { Badge } from "@/Components/ui/Badge";
+   import { Sparkles, Flame, Percent } from "lucide-react"; // Import new accent icons
 import { Plane, Loader2, ChevronRight, Info, Clock, Briefcase, User, ReceiptText, ArrowRightLeft, ChevronDown, ChevronUp } from "lucide-react";
 import {
     Dialog,
@@ -40,6 +41,7 @@ export default function SearchResults({ providers, providerSources = {}, query, 
     const [loadingReturnOptions, setLoadingReturnOptions] = useState(false);
     const [selectedReturnFlight, setSelectedReturnFlight] = useState(null);
     const [selectedReturnProviderId, setSelectedReturnProviderId] = useState(null);
+    const [selectedReturnReservationType, setSelectedReturnReservationType] = useState('NN');
     const [selectedOneWayFlight, setSelectedOneWayFlight] = useState(null);
     const [selectedOneWayProviderId, setSelectedOneWayProviderId] = useState(null);
     const [selectedOneWayReservationType, setSelectedOneWayReservationType] = useState('NN');
@@ -328,6 +330,7 @@ export default function SearchResults({ providers, providerSources = {}, query, 
 
         setSelectedReturnFlight(flight);
         setSelectedReturnProviderId(providerId);
+        setSelectedReturnReservationType(reservationType);
     };
 
     const continueOneWay = () => {
@@ -359,6 +362,7 @@ export default function SearchResults({ providers, providerSources = {}, query, 
                 is_round_trip: true,
                 outbound_provider_id: selectedOutboundProviderId,
                 return_provider_id: selectedReturnProviderId,
+                return_reservation_type: selectedReturnReservationType,
             },
         );
     };
@@ -563,7 +567,7 @@ export default function SearchResults({ providers, providerSources = {}, query, 
                         </div>
                     </div>
 
-                    <div className="flex flex-wrap items-center gap-3">
+                    <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-2">
                         {renderFlightDetailsDialog(selectedOneWayFlight, 'Show Flight Details')}
                         {renderPriceDetailsDialog(selectedOneWayFlight, 'Show Price Details')}
                         <Button type="button" variant="outline" size="sm" onClick={resetOneWaySelection}>
@@ -575,70 +579,125 @@ export default function SearchResults({ providers, providerSources = {}, query, 
         );
     };
 
-    const renderOfferCard = (flight) => {
-        const provider = findProviderForFlight(flight);
-        const isSoldOut = Number(flight.available_seats || 0) <= 0;
-        const openReservationStatusKey = openReservationKey(flight, provider?.id);
-        const openReservationAllowed = Boolean(openReservationAvailability[openReservationStatusKey]);
-        const openReservationLoadingState = Boolean(openReservationAvailabilityLoading[openReservationStatusKey]);
 
-        return (
-            <Card key={flight.id} className="overflow-hidden hover:border-primary/50 transition-colors shadow-sm hover:shadow-md">
-                <CardContent className="p-0">
-                    <div className="flex flex-col md:flex-row">
-                        <div className="p-6 flex-1 flex flex-col md:flex-row md:items-center gap-6">
-                            <div className="flex gap-4 items-center min-w-37.5">
-                                <div className="bg-primary/5 p-1 rounded-sm shrink-0 flex items-center justify-center min-w-8 min-h-8">
-                                    {flight.airline_code ? (
-                                        <img src={route('api.airlines.logo', { code: flight.airline_code, variant: 'icon', radius: 4 })} alt={flight.airline_name} className="h-6 w-6 object-contain mix-blend-multiply dark:mix-blend-normal" onError={(e) => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'block'; }} />
-                                    ) : null}
-                                    <Plane className="h-5 w-5 text-primary" style={{ display: flight.airline_code ? 'none' : 'block' }} />
-                                </div>
-                                <div>
-                                    <p className="font-bold text-lg">{flight.airline_name}</p>
-                                    <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">{flight.airline_code}{flight.flight_number}</p>
-                                </div>
+
+const renderOfferCard = (flight) => {
+    const provider = findProviderForFlight(flight);
+    const availableSeats = Number(flight.available_seats || 0);
+    const isSoldOut = availableSeats <= 0;
+    const isLowStock = availableSeats > 0 && availableSeats <= 5;
+    
+    // Calculated anchor price to show markdown value
+    const originalPrice = flight?.pricing?.total ? flight.pricing.total * 1.15 : 0;
+
+    const openReservationStatusKey = openReservationKey(flight, provider?.id);
+    const openReservationAllowed = Boolean(openReservationAvailability[openReservationStatusKey]);
+    const openReservationLoadingState = Boolean(openReservationAvailabilityLoading[openReservationStatusKey]);
+
+    return (
+        <Card 
+            key={flight.id} 
+            className="overflow-hidden border-primary/30 bg-gradient-to-r from-primary/[0.02] to-transparent hover:border-primary transition-all duration-200 shadow-sm hover:shadow relative group"
+        >
+            {/* Ultra-thin Brand Accent Top Line */}
+            <div className="h-0.5 w-full bg-primary/40 group-hover:bg-primary transition-colors" />
+
+            {/* Badges Container - Compact sizing */}
+            <div className="absolute top-2 left-4 flex gap-1.5 z-10 text-[10px]">
+                <span className="bg-primary text-primary-foreground font-black px-2 py-0.5 rounded flex items-center gap-1 uppercase tracking-wider shadow-sm">
+                    <Sparkles className="h-2.5 w-2.5" />
+                    {t('common.best_offer', 'Best Offer')}
+                </span>
+                {isLowStock && (
+                    <span className="bg-destructive text-destructive-foreground font-bold px-1.5 py-0.5 rounded flex items-center gap-1 shadow-sm">
+                        <Flame className="h-2.5 w-2.5 fill-current" />
+                        {availableSeats} {t('common.left', 'Left')}
+                    </span>
+                )}
+            </div>
+
+            <CardContent className="p-0 pt-6 md:pt-0">
+                <div className="flex flex-col md:flex-row">
+                    
+                    {/* Main Flight Data: Tightened paddings and gap scales */}
+                    <div className="p-4 flex-1 flex flex-col md:flex-row md:items-center gap-4">
+                        
+                        {/* Airline Info */}
+                        <div className="flex gap-3 items-center min-w-36">
+                            <div className="bg-primary/10 p-1 rounded shrink-0 flex items-center justify-center min-w-7 min-h-7">
+                                {flight.airline_code ? (
+                                    <img 
+                                        src={route('api.airlines.logo', { code: flight.airline_code, variant: "icon-transparent",
+                                            radius: 8, })} 
+                                        alt={flight.airline_name} 
+                                          className="h-12 w-12 object-contain"
+                                        onError={(e) => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'block'; }} 
+                                    />
+                                ) : null}
+                                <Plane className="h-4 w-4 text-primary" style={{ display: flight.airline_code ? 'none' : 'block' }} />
                             </div>
-
-                            <div className="flex-1 grid grid-cols-2 gap-8 py-2">
-                                <div className="text-center md:text-left border-r pr-4">
-                                    <p className="text-2xl font-black">{flight.departure_time.split(' ')[1].substring(0, 5)}</p>
-                                    <p className="text-sm font-bold text-muted-foreground">{flight.departure_airport}</p>
-                                </div>
-                                <div className="text-center md:text-right">
-                                    <p className="text-2xl font-black">{flight.arrival_time.split(' ')[1].substring(0, 5)}</p>
-                                    <p className="text-sm font-bold text-muted-foreground">{flight.arrival_airport}</p>
-                                </div>
-                            </div>
-
-                            <div className="flex items-center gap-6 text-muted-foreground">
-                                {renderFlightDetailsDialog(flight, 'Flight Info')}
+                            <div>
+                                <p className="font-bold text-sm leading-tight">{flight.airline_name}</p>
+                                <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider">{flight.flight_number}</p>
                             </div>
                         </div>
 
-                        <div className="bg-muted/30 md:w-64 p-6 flex flex-col items-center justify-center border-t md:border-t-0 md:border-l space-y-3">
-                            <div className="text-center">
-                                <p className="text-xs text-muted-foreground font-semibold uppercase">{t('common.from')}</p>
-                                <p className="text-2xl font-black text-primary">
-                                    {formatMoneyValue(flight?.pricing?.total || 0)} <span className="text-sm">{flight?.pricing?.currency || 'LYD'}</span>
-                                </p>
-                                {renderPriceDetailsDialog(flight, 'View Price Details')}
+                        {/* Route Times: Compact grid layout */}
+                        <div className="flex-1 grid grid-cols-2 gap-4 py-1 max-w-xs">
+                            <div className="text-center md:text-left border-r pr-2">
+                                <p className="text-lg font-black tracking-tight">{flight.departure_time.split(' ')[1].substring(0, 5)}</p>
+                                <p className="text-xs font-semibold text-muted-foreground">{flight.departure_airport}</p>
                             </div>
-                            <Dialog
-                                open={openOfferSummaryKey === offerSummaryKey(flight, provider?.id)}
-                                onOpenChange={(open) => {
-                                    setOpenOfferSummaryKey(open ? offerSummaryKey(flight, provider?.id) : null);
+                            <div className="text-center md:text-right pl-2">
+                                <p className="text-lg font-black tracking-tight">{flight.arrival_time.split(' ')[1].substring(0, 5)}</p>
+                                <p className="text-xs font-semibold text-muted-foreground">{flight.arrival_airport}</p>
+                            </div>
+                        </div>
 
+                        {/* Extra Actions Info */}
+                        <div className="flex items-center text-xs text-muted-foreground justify-center md:justify-start">
+                            {renderFlightDetailsDialog(flight, 'Details')}
+                        </div>
+                    </div>
+
+                    {/* Right Side Pricing Block: Shrunk widths and font-scales */}
+                    <div className="bg-muted/20 md:w-48 p-4 flex flex-col items-center justify-center border-t md:border-t-0 md:border-l border-muted/50 space-y-2 relative overflow-hidden shrink-0">
+                        <Percent className="absolute -right-2 -bottom-2 h-16 w-16 text-primary/[0.03] -rotate-12 pointer-events-none" />
+
+                        <div className="text-center z-10">
+                            {originalPrice > 0 && (
+                                <p className="text-[11px] text-muted-foreground line-through font-medium leading-none mb-0.5">
+                                    {formatMoneyValue(originalPrice)} {flight?.pricing?.currency || 'LYD'}
+                                </p>
+                            )}
+                            <p className="text-xl font-black text-primary tracking-tight transition-transform group-hover:scale-105 duration-200">
+                                {formatMoneyValue(flight?.pricing?.total || 0)} 
+                                <span className="text-xs font-bold ml-0.5">{flight?.pricing?.currency || 'LYD'}</span>
+                            </p>
+                            <div className="text-[10px] mt-0.5">
+                                {renderPriceDetailsDialog(flight, 'Breakdown')}
+                            </div>
+                        </div>
+
+                        <Dialog
+                            open={openOfferSummaryKey === offerSummaryKey(flight, provider?.id)}
+                            onOpenChange={(open) => {
+                                setOpenOfferSummaryKey(open ? offerSummaryKey(flight, provider?.id) : null);
                                 if (open) {
                                     checkOpenReservationAvailability(flight, provider?.id);
                                 }
-                            }}>
-                                <DialogTrigger asChild>
-                                    <Button className="w-full font-bold shadow-sm" size="lg" disabled={isSoldOut}>
-                                        {isSoldOut ? 'Sold Out' : 'Select Flight'}
-                                        {!isSoldOut && <ChevronRight className="ml-2 h-4 w-4" />}
-                                    </Button>
-                                </DialogTrigger>
+                            }}
+                        >
+                            <DialogTrigger asChild>
+                                <Button 
+                                    className="w-full font-bold shadow-sm h-8 text-xs bg-primary text-primary-foreground hover:bg-primary/90" 
+                                    size="sm" 
+                                    disabled={isSoldOut}
+                                >
+                                    {isSoldOut ? 'Sold Out' : t('common.select', 'Select Offer')}
+                                    {!isSoldOut && <ChevronRight className="ml-1 h-3 w-3 group-hover:translate-x-0.5 transition-transform" />}
+                                </Button>
+                            </DialogTrigger>
                                 <DialogContent className="max-w-2xl sm:rounded-3xl p-0 overflow-hidden">
                                     <div className="bg-primary/5 p-6 border-b">
                                         <DialogTitle className="text-2xl font-black tracking-normal leading-tight">{t('common.offer_summary')}</DialogTitle>
@@ -873,6 +932,7 @@ export default function SearchResults({ providers, providerSources = {}, query, 
                                                 setSelectedOutboundReservationType('NN');
                                                 setSelectedReturnFlight(null);
                                                 setSelectedReturnProviderId(null);
+                                                setSelectedReturnReservationType('NN');
                                                 setReturnOptions([]);
                                                 setActiveReturnDate(initialReturnDate);
                                             }}
@@ -937,49 +997,42 @@ export default function SearchResults({ providers, providerSources = {}, query, 
 
                 {isRoundTripSearch && selectedOutboundFlight && selectedReturnFlight ? (
                     <div className="fixed inset-x-0 bottom-0 z-40 border-t bg-background/95 backdrop-blur supports-backdrop-filter:bg-background/85">
-                        <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-4">
-                            <div className="min-w-0">
-                                <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">{t('common.selected_itinerary')}</p>
-                                <p className="truncate text-sm font-semibold">
+                        <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-3">
+                            <div className="min-w-0 flex-1">
+                                <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">{t('common.selected_itinerary')}</p>
+                                <p className="truncate text-xs font-semibold">
                                     {selectedOutboundFlight.departure_airport} → {selectedOutboundFlight.arrival_airport} • {selectedReturnFlight.departure_airport} → {selectedReturnFlight.arrival_airport}
                                 </p>
-                            </div>
-                            <div className="flex items-center gap-4">
-                                <div className="text-right">
-                                    <p className="text-xs text-muted-foreground">{t('common.total')}</p>
-                                    <p className="text-xl font-black text-primary">{formatMoney(selectedRoundTripTotal, selectedRoundTripCurrency)}</p>
+                                <div className="mt-0.5 flex items-baseline gap-1">
+                                    <span className="text-2xl font-black leading-none text-primary">{formatMoney(selectedRoundTripTotal, selectedRoundTripCurrency).split(' ')[0]}</span>
+                                    <span className="text-sm font-bold text-primary">{selectedRoundTripCurrency}</span>
                                 </div>
-                                <Button type="button" size="lg" className="font-bold" onClick={continueRoundTrip}>
-                                    Continue to Passengers
-                                    <ChevronRight className="ml-2 h-4 w-4" />
-                                </Button>
                             </div>
+                            <Button type="button" size="lg" className="shrink-0 font-bold" onClick={continueRoundTrip}>
+                                {t('common.continue_to_passengers', 'Continue')}
+                                <ChevronRight className="ml-1 h-4 w-4" />
+                            </Button>
                         </div>
                     </div>
                 ) : null}
 
                 {!isRoundTripSearch && selectedOneWayFlight ? (
                     <div className="fixed inset-x-0 bottom-0 z-40 border-t bg-background/95 backdrop-blur supports-backdrop-filter:bg-background/85">
-                        <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-4">
-                            <div className="min-w-0">
-                                <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">{t('common.selected_itinerary')}</p>
-                                <p className="truncate text-sm font-semibold">
+                        <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-3">
+                            <div className="min-w-0 flex-1">
+                                <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">{t('common.selected_itinerary')}</p>
+                                <p className="truncate text-xs font-semibold">
                                     {selectedOneWayFlight.departure_airport} → {selectedOneWayFlight.arrival_airport} • {selectedOneWayFlight.airline_code}{selectedOneWayFlight.flight_number}
                                 </p>
-                            </div>
-                            <div className="flex items-center gap-4">
-                                <div className="text-right">
-                                    <p className="text-xs text-muted-foreground">{t('common.total')}</p>
-                                    <p className="text-xl font-black text-primary">{formatMoney(selectedOneWayTotal, selectedOneWayCurrency)}</p>
+                                <div className="mt-0.5 flex items-baseline gap-1">
+                                    <span className="text-2xl font-black leading-none text-primary">{formatMoney(selectedOneWayTotal, selectedOneWayCurrency).split(' ')[0]}</span>
+                                    <span className="text-sm font-bold text-primary">{selectedOneWayCurrency}</span>
                                 </div>
-                                <Button type="button" variant="outline" size="lg" className="font-bold" onClick={resetOneWaySelection}>
-                                    Change Offer
-                                </Button>
-                                <Button type="button" size="lg" className="font-bold" onClick={continueOneWay}>
-                                    Continue to Passengers
-                                    <ChevronRight className="ml-2 h-4 w-4" />
-                                </Button>
                             </div>
+                            <Button type="button" size="lg" className="shrink-0 font-bold" onClick={continueOneWay}>
+                                {t('common.continue_to_passengers', 'Continue')}
+                                <ChevronRight className="ml-1 h-4 w-4" />
+                            </Button>
                         </div>
                     </div>
                 ) : null}

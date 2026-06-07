@@ -182,7 +182,7 @@ export default function HotelDetails({ bookingUuid, search, selectedOffer, rateK
                 </div>
             </div>
 
-            <div className="mx-auto grid max-w-7xl grid-cols-1 gap-8 px-4 py-8 lg:grid-cols-3">
+            <div className="mx-auto grid max-w-7xl grid-cols-1 gap-8  py-8 lg:grid-cols-3">
                 <div className="space-y-8 lg:col-span-2">
                     <Tabs value={activeStep} className="w-full">
                         <TabsList className="mb-0 grid w-full grid-cols-2 rounded-2xl border bg-muted/30 p-1">

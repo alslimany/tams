@@ -167,4 +167,22 @@ return [
     'change_confirmation_title' => 'تم تغيير التذكرة بنجاح',
     'change_success' => 'تم تغيير تذكرتك بنجاح.',
     'changed_at' => 'تاريخ التغيير',
+
+    // Filters
+    'filter_order_number' => 'رقم الطلب',
+    'filter_order_number_placeholder' => 'البحث برقم الطلب…',
+    'filter_type' => 'نوع المنتج',
+    'filter_type_placeholder' => 'اختر النوع',
+    'filter_type_all' => 'جميع الأنواع',
+    'filter_type_insurance' => 'تأمين',
+    'filter_customer' => 'العميل',
+    'filter_customer_placeholder' => 'البحث باسم العميل…',
+    'filter_reference' => 'المرجع',
+    'filter_reference_placeholder' => 'البحث بالمرجع…',
+    'filter_date' => 'نطاق التاريخ',
+    'filter_user' => 'المستخدم',
+    'filter_user_placeholder' => 'اختر المستخدم',
+    'filter_user_all' => 'جميع المستخدمين',
+    'filter_apply' => 'تطبيق الفلاتر',
+    'filter_clear' => 'مسح',
 ];

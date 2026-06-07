@@ -49,7 +49,8 @@ export default function FlightGroupCard({
     checkOpenReservationAvailability,
     handleOfferSelection,
 }) {
-    const { t, getAirlineName, getCurrencyName, getCabinName } = useTranslation();
+    const { t, getAirlineName, getCurrencyName, getCabinName } =
+        useTranslation();
 
     const provider =
         providers.find(
@@ -100,19 +101,40 @@ export default function FlightGroupCard({
     });
     const currency = flightGroup.offers[0]?.pricing?.currency || "LYD";
 
-    const [fareRulesModal, setFareRulesModal] = useState({ open: false, loading: false, text: '', error: '' });
+    const [fareRulesModal, setFareRulesModal] = useState({
+        open: false,
+        loading: false,
+        text: "",
+        error: "",
+    });
 
     const fetchFareRules = (offer) => {
         const fareId = offer?.pricing?.fare_id;
         if (!fareId) return;
-        setFareRulesModal({ open: true, loading: true, text: '', error: '' });
+        setFareRulesModal({ open: true, loading: true, text: "", error: "" });
         axios
-            .post(route('flights.fare-rules'), {
+            .post(route("flights.fare-rules"), {
                 provider_id: flightGroup.provider_id,
                 fare_id: fareId,
             })
-            .then((res) => setFareRulesModal({ open: true, loading: false, text: res.data.rules || '', error: '' }))
-            .catch(() => setFareRulesModal({ open: true, loading: false, text: '', error: t('common.error_loading_fare_rules') || 'Failed to load fare rules.' }));
+            .then((res) =>
+                setFareRulesModal({
+                    open: true,
+                    loading: false,
+                    text: res.data.rules || "",
+                    error: "",
+                }),
+            )
+            .catch(() =>
+                setFareRulesModal({
+                    open: true,
+                    loading: false,
+                    text: "",
+                    error:
+                        t("common.error_loading_fare_rules") ||
+                        "Failed to load fare rules.",
+                }),
+            );
     };
 
     /**
@@ -120,26 +142,50 @@ export default function FlightGroupCard({
      * Fetches once when isOpen becomes true, then caches in local state.
      */
     const FareRulesSection = ({ fareId, providerId, isOpen }) => {
-        const [state, setState] = useState({ loaded: false, loading: false, text: '', error: '' });
+        const [state, setState] = useState({
+            loaded: false,
+            loading: false,
+            text: "",
+            error: "",
+        });
 
         React.useEffect(() => {
             if (!isOpen || state.loaded || state.loading) return;
             setState((s) => ({ ...s, loading: true }));
             axios
-                .post(route('flights.fare-rules'), { provider_id: providerId, fare_id: fareId })
-                .then((res) => setState({ loaded: true, loading: false, text: res.data.rules || '', error: '' }))
-                .catch(() => setState({ loaded: true, loading: false, text: '', error: t('common.error_loading_fare_rules') || 'Failed to load fare rules.' }));
+                .post(route("flights.fare-rules"), {
+                    provider_id: providerId,
+                    fare_id: fareId,
+                })
+                .then((res) =>
+                    setState({
+                        loaded: true,
+                        loading: false,
+                        text: res.data.rules || "",
+                        error: "",
+                    }),
+                )
+                .catch(() =>
+                    setState({
+                        loaded: true,
+                        loading: false,
+                        text: "",
+                        error:
+                            t("common.error_loading_fare_rules") ||
+                            "Failed to load fare rules.",
+                    }),
+                );
         }, [isOpen]);
 
         return (
             <div>
                 <p className="font-bold mb-3 tracking-widest text-xs text-muted-foreground">
-                    {t('common.fare_rules') || 'Fare Rules'}
+                    {t("common.fare_rules") || "Fare Rules"}
                 </p>
                 {state.loading && (
                     <div className="flex items-center gap-2 text-xs text-muted-foreground py-2">
                         <Loader2 className="h-4 w-4 animate-spin text-primary" />
-                        {t('common.loading') || 'Loading…'}
+                        {t("common.loading") || "Loading…"}
                     </div>
                 )}
                 {state.error && (
@@ -228,10 +274,12 @@ export default function FlightGroupCard({
                 <DialogContent className="max-w-2xl">
                     <DialogHeader>
                         <DialogTitle className="text-2xl font-black">
-                            {t('common.flight_information')}
+                            {t("common.flight_information")}
                         </DialogTitle>
                         <DialogDescription className="font-medium">
-                            {t('common.detailed_itinerary')} {getAirlineName(flight.airline_code) || flight.airline_name}{" "}
+                            {t("common.detailed_itinerary")}{" "}
+                            {getAirlineName(flight.airline_code) ||
+                                flight.airline_name}{" "}
                             {flight.airline_code}
                             {flight.flight_number}
                         </DialogDescription>
@@ -245,7 +293,7 @@ export default function FlightGroupCard({
                                 <div className="flex justify-between items-start mb-6">
                                     <div>
                                         <p className="text-xs font-bold  tracking-widest text-primary mb-1">
-                                            {t('common.carrier')}
+                                            {t("common.carrier")}
                                         </p>
                                         <p className="text-lg font-black">
                                             {flight.airline_name.split(" (")[0]}
@@ -253,7 +301,7 @@ export default function FlightGroupCard({
                                     </div>
                                     <div className="text-right">
                                         <p className="text-xs font-bold  tracking-widest text-primary mb-1">
-                                            {t('common.aircraft')}
+                                            {t("common.aircraft")}
                                         </p>
                                         <p className="text-lg font-black">
                                             {segment.aircraft || "Standard"}
@@ -263,7 +311,7 @@ export default function FlightGroupCard({
                                 <div className="grid grid-cols-3 items-center gap-4">
                                     <div className="text-left">
                                         <p className="text-sm font-bold text-muted-foreground mb-1">
-                                            {t('common.departure')}
+                                            {t("common.departure")}
                                         </p>
                                         <p className="text-2xl font-black">
                                             {segment.departure_airport}
@@ -288,7 +336,7 @@ export default function FlightGroupCard({
                                     </div>
                                     <div className="text-right">
                                         <p className="text-sm font-bold text-muted-foreground mb-1">
-                                            {t('common.arrival')}
+                                            {t("common.arrival")}
                                         </p>
                                         <p className="text-2xl font-black">
                                             {segment.arrival_airport}
@@ -308,7 +356,7 @@ export default function FlightGroupCard({
 
     const renderPriceDetailsDialog = (
         flight,
-        triggerLabel = t('common.price_details'),
+        triggerLabel = t("common.price_details"),
     ) => {
         if (!flight?.pricing) {
             return null;
@@ -329,12 +377,13 @@ export default function FlightGroupCard({
                 <DialogContent className="max-w-2xl">
                     <DialogHeader>
                         <DialogTitle className="text-2xl font-black">
-                            {t('common.offer_details')}
+                            {t("common.offer_details")}
                         </DialogTitle>
                         <DialogDescription className="font-medium">
-                            {t('common.pricing_breakdown')}{" "}
+                            {t("common.pricing_breakdown")}{" "}
                             <strong>
-                                {flight.pricing.brand_name || t('common.selected_fare')}
+                                {flight.pricing.brand_name ||
+                                    t("common.selected_fare")}
                             </strong>
                         </DialogDescription>
                     </DialogHeader>
@@ -345,7 +394,7 @@ export default function FlightGroupCard({
                                 <div className="flex items-center gap-3 mb-3">
                                     <Briefcase className="h-5 w-5 text-primary" />
                                     <p className="text-sm font-black  tracking-widest text-primary">
-                                        {t('common.fare_features')}
+                                        {t("common.fare_features")}
                                     </p>
                                 </div>
                                 <p className="text-sm font-medium leading-relaxed whitespace-pre-line text-muted-foreground">
@@ -358,7 +407,7 @@ export default function FlightGroupCard({
                             <div className="flex items-center gap-3 mb-6">
                                 <ReceiptText className="h-5 w-5 text-primary" />
                                 <p className="text-sm font-black  tracking-widest">
-                                    {t('common.passenger_breakdown')}
+                                    {t("common.passenger_breakdown")}
                                 </p>
                             </div>
                             <div className="border rounded-2xl overflow-hidden bg-muted/10 shadow-sm">
@@ -366,16 +415,16 @@ export default function FlightGroupCard({
                                     <TableHeader>
                                         <TableRow className="bg-muted/30">
                                             <TableHead className="font-bold text-foreground">
-                                                {t('common.type')}
+                                                {t("common.type")}
                                             </TableHead>
                                             <TableHead className="text-right font-bold text-foreground">
-                                                {t('common.fare')}
+                                                {t("common.fare")}
                                             </TableHead>
                                             <TableHead className="text-right font-bold text-foreground">
-                                                {t('common.tax')}
+                                                {t("common.tax")}
                                             </TableHead>
                                             <TableHead className="text-right font-bold text-foreground">
-                                                {t('common.total')}
+                                                {t("common.total")}
                                             </TableHead>
                                         </TableRow>
                                     </TableHeader>
@@ -418,7 +467,7 @@ export default function FlightGroupCard({
                                                 colSpan={3}
                                                 className="font-black text-lg py-4"
                                             >
-                                                {t('common.grand_total')}
+                                                {t("common.grand_total")}
                                             </TableCell>
                                             <TableCell className="text-right font-black text-2xl text-primary">
                                                 {formatMoney(
@@ -449,41 +498,41 @@ export default function FlightGroupCard({
             if (!match) return null;
             const num = parseInt(match[1], 10);
             if (num === 0) return null;
-            return `${num} ${t('common.kg') || 'kg'}`;
+            return `${num} ${t("common.kg") || "kg"}`;
         };
 
         // Fixed feature rows: Checked baggage, Cabin baggage, Refundable
         const featureRows = [
             {
-                key: 'checked_baggage',
-                label: t('common.checked_baggage') || 'Checked',
+                key: "checked_baggage",
+                label: t("common.checked_baggage") || "Checked",
                 extract: (features, offer) => {
                     const holdWt = offer?.pricing?.hold_weight;
                     if (holdWt) return formatWeight(holdWt);
                     // Fallback: brand_details text
                     const found = Object.keys(features).find(
                         (k) =>
-                            k.toLowerCase().includes('bag') ||
-                            k.toLowerCase().includes('weight') ||
-                            k.toLowerCase().includes('kg'),
+                            k.toLowerCase().includes("bag") ||
+                            k.toLowerCase().includes("weight") ||
+                            k.toLowerCase().includes("kg"),
                     );
                     return found ? features[found] : null;
                 },
             },
             {
-                key: 'hand_baggage',
-                label: t('common.hand_baggage') || 'Cabin',
+                key: "hand_baggage",
+                label: t("common.hand_baggage") || "Cabin",
                 extract: (_features, offer) => {
                     const handWt = offer?.pricing?.hand_weight;
                     return formatWeight(handWt);
                 },
             },
             {
-                key: 'refundable',
-                label: t('common.refundable') || 'Refundable',
+                key: "refundable",
+                label: t("common.refundable") || "Refundable",
                 extract: (features) => {
-                    const found = Object.keys(features).find(
-                        (k) => k.toLowerCase().includes('refund'),
+                    const found = Object.keys(features).find((k) =>
+                        k.toLowerCase().includes("refund"),
                     );
                     return found ? features[found] : null;
                 },
@@ -496,7 +545,7 @@ export default function FlightGroupCard({
                     <thead>
                         <tr className="border-b bg-muted/30">
                             <th className=" py-3 px-4 font-bold text-xs  tracking-wider text-muted-foreground min-w-[120px]">
-                                {t('common.feature')}
+                                {t("common.feature")}
                             </th>
                             {offers.map((offer) => (
                                 <th
@@ -504,23 +553,26 @@ export default function FlightGroupCard({
                                     className="text-center py-3 px-4 font-bold min-w-[140px]"
                                 >
                                     <div className="flex flex-col items-center gap-1">
-                                        <Badge
+                                        {/* <Badge
                                             variant="outline"
                                             className="text-[11px] font-bold px-2.5 py-0.5 bg-background shadow-sm"
                                         >
                                             {offer.pricing?.brand_details ||
-                                                `${t('common.class')} ${offer.pricing?.class_code || 'Y'}`}
-                                        </Badge>
+                                                `${t("common.class")} ${offer.pricing?.class_code || "Y"}`}
+                                        </Badge> */}
                                         <span className="text-[10px] text-muted-foreground font-semibold ">
-                                            ({offer.pricing?.brand_name || 'Y'})
+                                            ({offer.pricing?.brand_name || "Y"})
                                         </span>
                                         {offer.pricing?.fare_id && (
                                             <button
                                                 type="button"
-                                                onClick={() => fetchFareRules(offer)}
+                                                onClick={() =>
+                                                    fetchFareRules(offer)
+                                                }
                                                 className="text-[10px] text-primary underline underline-offset-2 hover:opacity-75 transition-opacity"
                                             >
-                                                {t('common.fare_rules') || 'Fare Rules'}
+                                                {t("common.fare_rules") ||
+                                                    "Fare Rules"}
                                             </button>
                                         )}
                                     </div>
@@ -532,13 +584,16 @@ export default function FlightGroupCard({
                         {featureRows.map((row, idx) => (
                             <tr
                                 key={row.key}
-                                className={`border-b ${idx % 2 === 0 ? 'bg-muted/5' : ''} hover:bg-muted/15 transition-colors`}
+                                className={`border-b ${idx % 2 === 0 ? "bg-muted/5" : ""} hover:bg-muted/15 transition-colors`}
                             >
                                 <td className="py-2.5 px-4 font-semibold text-xs text-muted-foreground whitespace-nowrap">
                                     {row.label}
                                 </td>
                                 {offersFeatures.map((features, i) => {
-                                    const value = row.extract(features, offers[i]);
+                                    const value = row.extract(
+                                        features,
+                                        offers[i],
+                                    );
                                     return (
                                         <td
                                             key={offers[i].id}
@@ -547,10 +602,15 @@ export default function FlightGroupCard({
                                             {value ? (
                                                 <span
                                                     className={
-                                                        value.toLowerCase() === 'no' ||
-                                                        value.toLowerCase().includes('not avail')
-                                                            ? 'text-destructive/70'
-                                                            : 'text-foreground'
+                                                        value.toLowerCase() ===
+                                                            "no" ||
+                                                        value
+                                                            .toLowerCase()
+                                                            .includes(
+                                                                "not avail",
+                                                            )
+                                                            ? "text-destructive/70"
+                                                            : "text-foreground"
                                                     }
                                                 >
                                                     {value}
@@ -568,7 +628,7 @@ export default function FlightGroupCard({
 
                         <tr className="border-b bg-muted/5">
                             <td className="py-2.5 px-4 font-bold text-xs  tracking-wider text-muted-foreground">
-                                {t('common.price')}
+                                {t("common.price")}
                             </td>
                             {offers.map((offer) => (
                                 <td
@@ -580,7 +640,9 @@ export default function FlightGroupCard({
                                             offer.pricing?.total || 0,
                                         )}{" "}
                                         <span className="text-[10px] font-bold text-muted-foreground">
-                                            {getCurrencyName(offer.pricing?.currency) || "LYD"}
+                                            {getCurrencyName(
+                                                offer.pricing?.currency,
+                                            ) || "LYD"}
                                         </span>
                                     </p>
                                 </td>
@@ -589,7 +651,7 @@ export default function FlightGroupCard({
 
                         <tr className="border-b bg-muted/5">
                             <td className="py-2.5 px-4 font-bold text-xs  tracking-wider text-muted-foreground">
-                                {t('common.seats')}
+                                {t("common.seats")}
                             </td>
                             {offers.map((offer) => (
                                 <td
@@ -597,15 +659,16 @@ export default function FlightGroupCard({
                                     className="py-2.5 px-4 text-center"
                                 >
                                     {isSoldOut(offer) ? (
-                                                        <Badge
-                                                            variant="destructive"
-                                                            className="text-[10px] font-bold text-white"
-                                                        >
-                                            {t('common.sold_out')}
+                                        <Badge
+                                            variant="destructive"
+                                            className="text-[10px] font-bold text-white"
+                                        >
+                                            {t("common.sold_out")}
                                         </Badge>
                                     ) : (
                                         <span className="text-xs font-semibold text-emerald-600">
-                                            {offer.available_seats} {t('common.left')}
+                                            {offer.available_seats}{" "}
+                                            {t("common.left")}
                                         </span>
                                     )}
                                 </td>
@@ -614,7 +677,7 @@ export default function FlightGroupCard({
 
                         <tr className="bg-primary/5">
                             <td className="py-3 px-4 font-bold text-xs  tracking-wider text-muted-foreground">
-                                {t('common.action')}
+                                {t("common.action")}
                             </td>
                             {offers.map((offer) => {
                                 const soldOut = isSoldOut(offer);
@@ -668,8 +731,8 @@ export default function FlightGroupCard({
                                                     disabled={soldOut}
                                                 >
                                                     {soldOut
-                                                        ? t('common.sold_out')
-                                                        : t('common.select')}
+                                                        ? t("common.sold_out")
+                                                        : t("common.select")}
                                                     {!soldOut && (
                                                         <ChevronRightIcon className="ml-1 h-3 w-3" />
                                                     )}
@@ -678,18 +741,27 @@ export default function FlightGroupCard({
                                             <DialogContent className="max-w-2xl sm:rounded-3xl p-0 overflow-hidden">
                                                 <div className="bg-primary/5 p-6 border-b">
                                                     <DialogTitle className="text-2xl font-black tracking-normal leading-tight">
-                                                        {t('common.offer_summary')}
+                                                        {t(
+                                                            "common.offer_summary",
+                                                        )}
                                                     </DialogTitle>
                                                     <DialogDescription className="text-muted-foreground font-medium text-sm mt-2">
-                                                        {t('common.review_selected')}
-                                                        {t('common.class')} {t('common.before_proceeding')}
+                                                        {t(
+                                                            "common.review_selected",
+                                                        )}
+                                                        {t("common.class")}{" "}
+                                                        {t(
+                                                            "common.before_proceeding",
+                                                        )}
                                                     </DialogDescription>
                                                 </div>
                                                 <div className="p-6 space-y-6 max-h-[60vh] overflow-y-auto">
                                                     <div className="flex justify-between items-center bg-card border rounded-2xl p-4 shadow-sm">
                                                         <div>
                                                             <p className="text-sm font-bold text-muted-foreground">
-                                                                {t('common.itinerary_fare')}
+                                                                {t(
+                                                                    "common.itinerary_fare",
+                                                                )}
                                                             </p>
                                                             <p className="text-xl font-black">
                                                                 {
@@ -703,8 +775,13 @@ export default function FlightGroupCard({
                                                             <p className="text-sm font-medium">
                                                                 {offer.pricing
                                                                     ?.brand_name ||
-                                                                    t('common.standard')}{" "}
-                                                                &bull; {t('common.class')}{" "}
+                                                                    t(
+                                                                        "common.standard",
+                                                                    )}{" "}
+                                                                &bull;{" "}
+                                                                {t(
+                                                                    "common.class",
+                                                                )}{" "}
                                                                 {
                                                                     offer
                                                                         .pricing
@@ -714,7 +791,9 @@ export default function FlightGroupCard({
                                                         </div>
                                                         <div className="text-right">
                                                             <p className="text-sm font-bold text-muted-foreground">
-                                                                {t('common.grand_total')}
+                                                                {t(
+                                                                    "common.grand_total",
+                                                                )}
                                                             </p>
                                                             <p className="text-2xl font-black text-primary">
                                                                 {formatMoneyValue(
@@ -735,7 +814,9 @@ export default function FlightGroupCard({
 
                                                     <div>
                                                         <p className="font-bold mb-3  tracking-widest text-xs text-muted-foreground">
-                                                            {t('common.flight_segments')}
+                                                            {t(
+                                                                "common.flight_segments",
+                                                            )}
                                                         </p>
                                                         <div className="space-y-3">
                                                             {segments.map(
@@ -760,6 +841,7 @@ export default function FlightGroupCard({
                                                                                             0,
                                                                                             5,
                                                                                         )}
+
                                                                                     )
                                                                                 </span>
                                                                                 <span>
@@ -775,19 +857,27 @@ export default function FlightGroupCard({
                                                                                             0,
                                                                                             5,
                                                                                         )}
+
                                                                                     )
                                                                                 </span>
                                                                             </div>
                                                                             <p className="text-xs text-muted-foreground font-medium mt-1">
-                                                                                {t('common.duration')}:{" "}
+                                                                                {t(
+                                                                                    "common.duration",
+                                                                                )}
+                                                                                :{" "}
                                                                                 {formatDuration(
                                                                                     seg.duration,
                                                                                 )}{" "}
                                                                                 &bull;{" "}
                                                                                 {seg.aircraft ||
-                                                                                    t('common.standard')}{" "}
+                                                                                    t(
+                                                                                        "common.standard",
+                                                                                    )}{" "}
                                                                                 &bull;
-                                                                                {t('common.class')}{" "}
+                                                                                {t(
+                                                                                    "common.class",
+                                                                                )}{" "}
                                                                                 {
                                                                                     offer
                                                                                         .pricing
@@ -804,9 +894,21 @@ export default function FlightGroupCard({
                                                     {/* Fare Rules */}
                                                     {offer.pricing?.fare_id && (
                                                         <FareRulesSection
-                                                            fareId={offer.pricing.fare_id}
-                                                            providerId={provider?.id ?? flightGroup.provider_id}
-                                                            isOpen={openOfferSummaryKey === offerSummaryKey(offer, provider?.id)}
+                                                            fareId={
+                                                                offer.pricing
+                                                                    .fare_id
+                                                            }
+                                                            providerId={
+                                                                provider?.id ??
+                                                                flightGroup.provider_id
+                                                            }
+                                                            isOpen={
+                                                                openOfferSummaryKey ===
+                                                                offerSummaryKey(
+                                                                    offer,
+                                                                    provider?.id,
+                                                                )
+                                                            }
                                                         />
                                                     )}
                                                 </div>
@@ -825,7 +927,9 @@ export default function FlightGroupCard({
                                                                     )
                                                                 }
                                                             >
-                                                                {t('common.open_reservation')}
+                                                                {t(
+                                                                    "common.open_reservation",
+                                                                )}
                                                             </Button>
                                                         </div>
                                                     ) : null}
@@ -836,7 +940,9 @@ export default function FlightGroupCard({
                                                             className="flex-1 font-bold shadow-sm rounded-full px-4 text-xs"
                                                             disabled
                                                         >
-                                                            {t('common.checking_open_reservation')}
+                                                            {t(
+                                                                "common.checking_open_reservation",
+                                                            )}
                                                         </Button>
                                                     ) : null}
                                                     <div className="flex-1">
@@ -851,7 +957,9 @@ export default function FlightGroupCard({
                                                                 )
                                                             }
                                                         >
-                                                            {t('common.confirmed_reservation')}
+                                                            {t(
+                                                                "common.confirmed_reservation",
+                                                            )}
                                                             <ChevronRightIcon className="ml-2 h-4 w-4" />
                                                         </Button>
                                                     </div>
@@ -878,9 +986,11 @@ export default function FlightGroupCard({
             {/* Row 1: Airline + Itinerary */}
             <div className="p-4 sm:p-6 bg-muted/5">
                 <div className="flex flex-col gap-4">
-                    <div className="flex items-center justify-between gap-1">
-                        <div className="flex items-center gap-1">
-                            <div className="bg-primary/5 p-1.5 rounded-lg shrink-0 flex items-center justify-center h-10 w-10 border border-primary/10">
+                    {/* Changed from 'flex justify-around' to a strict CSS Grid layout on tablet/desktop */}
+                    <div className="grid grid-cols-1 sm:grid-cols-[1.5fr_4fr_1.5fr] gap-4 sm:gap-6 items-center w-full">
+                        {/* Column 1: Airline Info (Fixed baseline footprint) */}
+                        <div className="flex items-center gap-2 min-w-0">
+                            <div className="bg-primary/5 rounded-lg shrink-0 flex items-center justify-center h-12 w-12 border border-primary/10">
                                 {flightGroup.airline_code ? (
                                     <img
                                         src={route("api.airlines.logo", {
@@ -889,7 +999,7 @@ export default function FlightGroupCard({
                                             radius: 8,
                                         })}
                                         alt={flightGroup.airline_name}
-                                        className="h-7 w-7 object-contain"
+                                        className="h-12 w-12 object-contain"
                                         onError={(e) => {
                                             e.target.style.display = "none";
                                             e.target.nextSibling.style.display =
@@ -906,29 +1016,35 @@ export default function FlightGroupCard({
                                     }}
                                 />
                             </div>
-                            <div>
-                                <p className="font-bold text-sm sm:text-lg">
-                                    {getAirlineName(flightGroup.airline_code) || flightGroup.airline_name?.split(" (")[0]}
+                            <div className="min-w-0">
+                                <p className="font-bold text-sm sm:text-base truncate">
+                                    {getAirlineName(flightGroup.airline_code) ||
+                                        flightGroup.airline_name?.split(
+                                            " (",
+                                        )[0]}
                                 </p>
-                                <p className="text-[11px] text-muted-foreground font-semibold  tracking-widest">
+                                <p className="text-[11px] text-muted-foreground font-semibold tracking-widest">
                                     {flightGroup.flight_number}
                                 </p>
                             </div>
                         </div>
-                        {/*  */}
-                        <div className="relative flex flex-1 mx-4 items-center gap-2 sm:gap-6 py-1">
-                            <div className="text-left min-w-[70px] sm:min-w-[90px]">
-                                <p className="text-xl sm:text-3xl font-black tabular-nums">
+
+                        {/* Column 2: Departure, Progress Track & Arrival Time */}
+                        <div className="relative flex items-center gap-4 sm:gap-6 py-1 w-full justify-between">
+                            {/* Departure Terminal Stack */}
+                            <div className="text-left min-w-[65px] sm:min-w-[80px] shrink-0">
+                                <p className="text-xl sm:text-2xl font-black tabular-nums">
                                     {flightGroup.departure_time
                                         ?.split(" ")[1]
                                         ?.substring(0, 5)}
                                 </p>
-                                <p className="text-xs sm:text-sm font-bold text-muted-foreground">
+                                <p className="text-xs font-bold text-muted-foreground">
                                     {flightGroup.departure_airport}
                                 </p>
                             </div>
 
-                            <div className="flex-1 flex flex-col items-center gap-1 min-w-0 px-1">
+                            {/* Timeline Vector */}
+                            <div className="flex-1 flex flex-col items-center gap-1 min-w-0 px-2">
                                 <p className="text-[10px] sm:text-xs font-bold text-muted-foreground">
                                     {formatDuration(totalDuration)}
                                 </p>
@@ -942,30 +1058,35 @@ export default function FlightGroupCard({
                                     <div className="h-2 w-2 rounded-full border-2 border-primary shrink-0" />
                                 </div>
                                 {segments.length <= 1 ? (
-                                        <p className="text-[10px] font-semibold text-primary ">
-                                            {t('common.non_stop')}
-                                        </p>
+                                    <p className="text-[10px] font-semibold text-primary ">
+                                        {t("common.non_stop")}
+                                    </p>
                                 ) : (
                                     <p className="text-[10px] font-semibold text-amber-600 ">
-                                        {segments.length - 1} {segments.length - 1 === 1 ? t('common.stop') : t('common.stops')}
+                                        {segments.length - 1}{" "}
+                                        {segments.length - 1 === 1
+                                            ? t("common.stop")
+                                            : t("common.stops")}
                                     </p>
                                 )}
                             </div>
 
-                            <div className="text-right min-w-[70px] sm:min-w-[90px]">
-                                <p className="text-xl sm:text-3xl font-black tabular-nums">
+                            {/* Arrival Terminal Stack */}
+                            <div className="text-right min-w-[65px] sm:min-w-[80px] shrink-0">
+                                <p className="text-xl sm:text-2xl font-black tabular-nums">
                                     {flightGroup.arrival_time
                                         ?.split(" ")[1]
                                         ?.substring(0, 5)}
                                 </p>
-                                <p className="text-xs sm:text-sm font-bold text-muted-foreground">
+                                <p className="text-xs font-bold text-muted-foreground">
                                     {flightGroup.arrival_airport}
                                 </p>
                             </div>
                         </div>
-                        {/*  */}
-                        <div className="flex flex-col items-center gap-2 pt-2 border-t border-dashed border-muted/50">
-                           
+
+                        {/* Column 3: Pricing Action Blocks */}
+                        {/* Removed top border and changed layout alignment to items-end so buttons rest flush right */}
+                        <div className="flex flex-col items-stretch sm:items-end gap-2 w-full">
                             {cabinKeys.map((cabin) => {
                                 const isExpanded = expandedCabin === cabin;
                                 const isAvailable = cabins[cabin].some(
@@ -981,36 +1102,29 @@ export default function FlightGroupCard({
                                             )
                                         }
                                         className={`
-                                        inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs sm:text-sm font-bold  tracking-wider
-                                        transition-all duration-200 border
-                                        ${
-                                            isExpanded
-                                                ? "bg-primary text-primary-foreground border-primary shadow-md scale-105"
-                                                : isAvailable
-                                                  ? "bg-background text-foreground border-primary/30 hover:border-primary hover:bg-primary/5"
-                                                  : "bg-muted text-muted-foreground border-muted cursor-not-allowed"
-                                        }
-                                    `}
+                            inline-flex items-center justify-between sm:justify-end gap-2 px-4 py-2 rounded-lg text-xs font-bold tracking-wider
+                            transition-all duration-200 border w-full sm:max-w-[200px]
+                            ${
+                                isExpanded
+                                    ? "bg-primary text-primary-foreground border-primary shadow-md scale-105"
+                                    : isAvailable
+                                      ? "bg-background text-foreground border-primary/30 hover:border-primary hover:bg-primary/5"
+                                      : "bg-muted text-muted-foreground border-muted cursor-not-allowed"
+                            }
+                        `}
                                     >
-                                        
-                                        <span className="text-[10px] sm:text-xs font-black opacity-80">
-                                            {getCabinName(cabin)} {t('common.cabin_from')} {formatMoneyValue(
+                                        <span className="text-[10px] sm:text-xs font-black opacity-80 text-left sm:text-right w-full">
+                                            {getCabinName(cabin)}{" "}
+                                            {t("common.cabin_from")}{" "}
+                                            {formatMoneyValue(
                                                 lowestPriceByCabin[cabin],
-                                            )} {getCurrencyName(currency)}
+                                            )}{" "}
+                                            {getCurrencyName(currency)}
                                         </span>
-                                        {/* {isExpanded ? (
-                                            <ChevronUpIcon className="h-3 w-3 sm:h-4 sm:w-4" />
-                                        ) : (
-                                            <ChevronDownIcon className="h-3 w-3 sm:h-4 sm:w-4" />
-                                        )} */}
                                     </button>
                                 );
                             })}
                         </div>
-                        {/*  */}
-                        {/* <div className="flex items-center gap-1">
-                            {renderFlightDetailsDialog(flightGroup, 'Details')}
-                        </div> */}
                     </div>
                 </div>
             </div>
@@ -1020,34 +1134,53 @@ export default function FlightGroupCard({
                 <div className="bg-muted/5 p-4 sm:p-6 animate-in slide-in-from-top-2 duration-200">
                     {/* hide using if statement */}
                     {false && (
-                    <p className="text-xs font-bold  tracking-widest text-muted-foreground mb-4">
-                        {getCabinName(expandedCabin)} {t('common.class_comparison')} &mdash; {cabins[expandedCabin].length} {t('common.offer')}{cabins[expandedCabin].length !== 1 ? t('common.plural_suffix') : ''}
-                    </p>
+                        <p className="text-xs font-bold  tracking-widest text-muted-foreground mb-4">
+                            {getCabinName(expandedCabin)}{" "}
+                            {t("common.class_comparison")} &mdash;{" "}
+                            {cabins[expandedCabin].length} {t("common.offer")}
+                            {cabins[expandedCabin].length !== 1
+                                ? t("common.plural_suffix")
+                                : ""}
+                        </p>
                     )}
                     {renderComparisonTable(cabins[expandedCabin])}
                 </div>
             )}
 
             {/* Fare Rules Modal */}
-            <Dialog open={fareRulesModal.open} onOpenChange={(open) => setFareRulesModal((s) => ({ ...s, open }))}>
-                <DialogContent className="max-w-lg" aria-describedby={undefined}>
+            <Dialog
+                open={fareRulesModal.open}
+                onOpenChange={(open) =>
+                    setFareRulesModal((s) => ({ ...s, open }))
+                }
+            >
+                <DialogContent
+                    className="max-w-lg"
+                    aria-describedby={undefined}
+                >
                     <DialogHeader>
-                        <DialogTitle>{t('common.fare_rules') || 'Fare Rules'}</DialogTitle>
+                        <DialogTitle>
+                            {t("common.fare_rules") || "Fare Rules"}
+                        </DialogTitle>
                     </DialogHeader>
                     {fareRulesModal.loading && (
                         <div className="flex items-center justify-center py-8 text-muted-foreground text-sm gap-2">
                             <Loader2 className="h-5 w-5 animate-spin text-primary" />
-                            {t('common.loading') || 'Loading…'}
+                            {t("common.loading") || "Loading…"}
                         </div>
                     )}
                     {fareRulesModal.error && (
-                        <p className="text-destructive text-sm">{fareRulesModal.error}</p>
+                        <p className="text-destructive text-sm">
+                            {fareRulesModal.error}
+                        </p>
                     )}
-                    {!fareRulesModal.loading && !fareRulesModal.error && fareRulesModal.text && (
-                        <pre className="whitespace-pre-wrap text-sm leading-relaxed font-sans text-foreground max-h-[60vh] overflow-y-auto">
-                            {fareRulesModal.text}
-                        </pre>
-                    )}
+                    {!fareRulesModal.loading &&
+                        !fareRulesModal.error &&
+                        fareRulesModal.text && (
+                            <pre className="whitespace-pre-wrap text-sm leading-relaxed font-sans text-foreground max-h-[60vh] overflow-y-auto">
+                                {fareRulesModal.text}
+                            </pre>
+                        )}
                 </DialogContent>
             </Dialog>
         </Card>

@@ -167,4 +167,22 @@ return [
     'change_confirmation_title' => 'Billet modifié avec succès',
     'change_success' => 'Votre billet a été modifié avec succès.',
     'changed_at' => 'Modifié le',
+
+    // Filters
+    'filter_order_number' => 'Numéro de commande',
+    'filter_order_number_placeholder' => 'Rechercher par numéro de commande…',
+    'filter_type' => 'Type de produit',
+    'filter_type_placeholder' => 'Sélectionner un type',
+    'filter_type_all' => 'Tous les types',
+    'filter_type_insurance' => 'Assurance',
+    'filter_customer' => 'Client',
+    'filter_customer_placeholder' => 'Rechercher par nom du client…',
+    'filter_reference' => 'Référence',
+    'filter_reference_placeholder' => 'Rechercher par référence…',
+    'filter_date' => 'Plage de dates',
+    'filter_user' => 'Utilisateur',
+    'filter_user_placeholder' => 'Sélectionner un utilisateur',
+    'filter_user_all' => 'Tous les utilisateurs',
+    'filter_apply' => 'Appliquer les filtres',
+    'filter_clear' => 'Effacer',
 ];

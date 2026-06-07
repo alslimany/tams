@@ -4,11 +4,13 @@ namespace App\Http\Controllers\Tenant;
 
 use App\Http\Controllers\Controller;
 use App\Models\Tenant\TenantEsimProvider;
+use App\Services\ESim\ESimProviderFactory;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Inertia\Response;
+use Throwable;
 
 class ESimConfigController extends Controller
 {
@@ -24,6 +26,16 @@ class ESimConfigController extends Controller
                 $configured = $configuredProviders->get($provider['provider_type']);
                 $currency = strtoupper((string) ($configured?->currency ?? $provider['default_currency']));
 
+                $providerOrg = null;
+
+                if ($configured instanceof TenantEsimProvider) {
+                    try {
+                        $providerOrg = ESimProviderFactory::make($configured)->organization();
+                    } catch (Throwable) {
+                        // Silently ignore — settings page must not break if API is unreachable
+                    }
+                }
+
                 return [
                     'name' => $provider['name'],
                     'provider_type' => $provider['provider_type'],
@@ -38,6 +50,7 @@ class ESimConfigController extends Controller
                     'remaining_balance' => round((float) ($configured?->getBalance($currency) ?? 0), 2),
                     'requires_initial_balance' => $configured !== null && (float) $configured->getBalance($currency) <= 0,
                     'status' => $configured ? 'configured' : 'not_configured',
+                    'provider_org' => $providerOrg,
                 ];
             })
             ->values();

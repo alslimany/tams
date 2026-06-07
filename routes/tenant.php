@@ -68,6 +68,7 @@ Route::prefix(config('tenancy.tenant_path_prefix', 'agency').'/{tenant}')->group
             Route::post('flights/fare-rules', [BookingController::class, 'fareRules'])->name('flights.fare-rules');
             Route::post('flights/select', [BookingController::class, 'select'])->name('flights.select');
             Route::get('flights/passengers/{uuid}', [BookingController::class, 'passengers'])->name('flights.passengers');
+            Route::post('flights/passengers/scan-passport', [BookingController::class, 'scanPassport'])->name('flights.scan-passport');
             Route::post('flights', [BookingController::class, 'store'])->middleware('wallet.balance')->name('flights.store');
             Route::get('flights/{booking}', [BookingController::class, 'show'])->name('flights.show');
             Route::get('flights/{booking}/completed', [TicketController::class, 'completed'])->name('tickets.completed');
@@ -99,6 +100,8 @@ Route::prefix(config('tenancy.tenant_path_prefix', 'agency').'/{tenant}')->group
                 Route::post('esim/search', [ESimBookingController::class, 'search'])->name('esim.search');
                 Route::get('esim/results/{uuid}', [ESimBookingController::class, 'results'])->name('esim.results');
                 Route::get('esim/results/{uuid}/packages', [ESimBookingController::class, 'packages'])->name('esim.packages');
+                Route::get('esim/results/{uuid}/networks', [ESimBookingController::class, 'networks'])->name('esim.networks');
+                Route::get('esim/airport/{iata}/packages', [ESimBookingController::class, 'airportPackages'])->name('esim.airport.packages');
                 Route::post('esim/select/{uuid}', [ESimBookingController::class, 'select'])->name('esim.select');
                 Route::get('esim/checkout/{uuid}', [ESimBookingController::class, 'checkout'])->name('esim.checkout');
                 Route::post('esim/book', [ESimBookingController::class, 'book'])->name('esim.book');

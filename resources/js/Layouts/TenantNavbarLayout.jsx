@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link, usePage } from '@inertiajs/react';
-import { ChevronDown, MenuIcon, Package2, Plane, ShieldCheck } from 'lucide-react';
+import { ChevronDown, MenuIcon, Package2, Plane, ShieldCheck, SmartphoneNfc } from 'lucide-react';
 import { useTranslation } from "@/hooks/useTranslation";
 import { cn } from '@/lib/utils';
 import { Button } from '@/Components/ui/Button';
@@ -46,8 +46,12 @@ const Navbar = ({ children }) => {
             href: route('hotels.index'),
             active: route().current('hotels.*'),
         },
-
-         {
+        {
+            title: t('common.esim'),
+            href: route('esim.index'),
+            active: route().current('esim.*'),
+        },
+        {
             title: t('common.my_orders'),
             href: route('orders.index'),
             active: route().current('orders.*'),

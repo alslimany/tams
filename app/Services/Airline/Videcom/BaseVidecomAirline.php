@@ -448,6 +448,9 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
     {
         $paxEntry = $this->buildPaxPricingEntry($passengers);
 
+        // Infants are lap-only and do not occupy a seat.
+        $paxCount = max(1, count(array_filter($passengers, fn ($p) => strtolower($p['type'] ?? 'adult') !== 'infant')));
+
         $flightEntries = [];
         foreach ($itinerary as $segment) {
             $fltNo = $this->normalizeFlightNumber((string) ($segment['flt_no'] ?? ''));
@@ -673,7 +676,7 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
 
         $commandString = $this->previewBookingCommand($params);
 
-        $response = $this->client->runCommand($commandString);
+        $response = $this->client->runTransactionalCommand($commandString);
 
         return $this->parseXml($response);
     }
@@ -744,7 +747,7 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
     public function issueTicket(string $rloc, array $paymentInfo)
     {
         $command = "*{$rloc}^MM^EZT*R^EZRE^*R~x";
-        $response = $this->client->runCommand($command);
+        $response = $this->client->runTransactionalCommand($command);
         $xml = $this->parseXml($response);
 
         if (! $xml instanceof SimpleXMLElement) {
@@ -1370,8 +1373,10 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
             $date = $this->normalizeDateToken($segment['date'] ?? now());
             $origin = $this->normalizeAirportCode((string) ($segment['origin'] ?? ''), 'TIP');
             $dest = $this->normalizeAirportCode((string) ($segment['dest'] ?? ''), 'BEN');
+            // Per-segment reservation_type overrides the global $status when present.
+            $segStatus = strtoupper((string) ($segment['reservation_type'] ?? $status));
 
-            $entries[] = "0{$this->getIataCode()}{$fltNo}{$class}{$date}{$origin}{$dest}{$status}{$qty}";
+            $entries[] = "0{$this->getIataCode()}{$fltNo}{$class}{$date}{$origin}{$dest}{$segStatus}{$qty}";
         }
 
         return implode('^', $entries);

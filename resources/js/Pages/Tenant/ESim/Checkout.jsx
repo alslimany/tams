@@ -25,15 +25,17 @@ function OrderSummary({ pkg, t }) {
     const currency = pkg?.currency ?? "USD";
 
     return (
-        <Card className="sticky top-6">
-            <CardHeader className="pb-3">
+        <Card className="sticky top-6 overflow-hidden border-2 shadow-sm">
+            <CardHeader className="border-b bg-primary/5 pb-4">
                 <CardTitle className="text-base flex items-center gap-2">
-                    <SmartphoneNfc className="w-4 h-4 text-violet-500" />
+                    <div className="rounded-full bg-primary/10 p-2">
+                        <SmartphoneNfc className="w-4 h-4 text-primary" />
+                    </div>
                     {t("esim.checkout.summary_title")}
                 </CardTitle>
                 <CardDescription>{t("esim.checkout.summary_subtitle")}</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-3 text-sm">
+            <CardContent className="space-y-3 text-sm pt-4">
                 <div className="flex justify-between">
                     <span className="text-muted-foreground">{t("esim.checkout.summary_package")}</span>
                     <span className="font-medium text-end">{pkg?.name ?? "—"}</span>
@@ -60,7 +62,7 @@ function OrderSummary({ pkg, t }) {
                 </div>
                 <div className="border-t pt-3 flex justify-between font-semibold text-base">
                     <span>{t("esim.checkout.summary_total")}</span>
-                    <span className="text-violet-600">{currency} {price}</span>
+                    <span className="text-primary">{currency} {price}</span>
                 </div>
             </CardContent>
         </Card>
@@ -103,29 +105,29 @@ export default function ESimCheckout({ bookingUuid, package: pkg, search }) {
             <Head title={t("esim.checkout.title")} />
 
             {/* Hero */}
-            <div className="bg-gradient-to-br from-violet-600 to-purple-700 text-white px-6 py-10">
+            <div className="bg-primary text-primary-foreground px-6 py-10">
                 <div className="max-w-5xl mx-auto">
                     <a
                         href={searchUuid ? route("esim.results", searchUuid) : route("esim.index")}
-                        className="inline-flex items-center gap-1 text-violet-200 hover:text-white text-sm mb-4 transition-colors"
+                        className="inline-flex items-center gap-1 text-primary-foreground/70 hover:text-primary-foreground text-sm mb-4 transition-colors"
                     >
                         <ChevronLeft className="w-4 h-4" />
                         {t("esim.checkout.back_to_results")}
                     </a>
                     <h1 className="text-2xl font-bold">{t("esim.checkout.heading")}</h1>
-                    <p className="text-violet-200 mt-1 text-sm">{t("esim.checkout.subheading")}</p>
+                    <p className="text-primary-foreground/70 mt-1 text-sm">{t("esim.checkout.subheading")}</p>
 
                     {/* Step indicator */}
                     <div className="flex items-center gap-3 mt-6">
-                        <div className={`flex items-center gap-2 text-sm font-medium ${step === "customer" ? "text-white" : "text-violet-300"}`}>
-                            <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold border-2 ${step === "customer" ? "bg-white text-violet-700 border-white" : "border-violet-300 text-violet-300"}`}>
+                        <div className={`flex items-center gap-2 text-sm font-medium ${step === "customer" ? "text-primary-foreground" : "text-primary-foreground/50"}`}>
+                            <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold border-2 ${step === "customer" ? "bg-primary-foreground text-primary border-primary-foreground" : "border-primary-foreground/50 text-primary-foreground/50"}`}>
                                 {step === "review" ? <CheckCircle2 className="w-3.5 h-3.5" /> : "1"}
                             </span>
                             {t("esim.checkout.step_customer")}
                         </div>
-                        <div className="h-px w-8 bg-violet-400" />
-                        <div className={`flex items-center gap-2 text-sm font-medium ${step === "review" ? "text-white" : "text-violet-400"}`}>
-                            <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold border-2 ${step === "review" ? "bg-white text-violet-700 border-white" : "border-violet-400 text-violet-400"}`}>
+                        <div className="h-px w-8 bg-primary-foreground/30" />
+                        <div className={`flex items-center gap-2 text-sm font-medium ${step === "review" ? "text-primary-foreground" : "text-primary-foreground/50"}`}>
+                            <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold border-2 ${step === "review" ? "bg-primary-foreground text-primary border-primary-foreground" : "border-primary-foreground/50 text-primary-foreground/50"}`}>
                                 2
                             </span>
                             {t("esim.checkout.step_confirm")}
@@ -145,11 +147,16 @@ export default function ESimCheckout({ bookingUuid, package: pkg, search }) {
                     {/* Main form */}
                     <div className="lg:col-span-2">
                         {step === "customer" && (
-                            <Card>
-                                <CardHeader>
-                                    <CardTitle className="text-base">{t("esim.checkout.customer_section")}</CardTitle>
+                            <Card className="overflow-hidden border-2 shadow-sm">
+                                <CardHeader className="border-b bg-primary/5 pb-4">
+                                    <CardTitle className="flex items-center gap-2">
+                                        <div className="rounded-full bg-primary/10 p-2">
+                                            <User className="h-5 w-5 text-primary" />
+                                        </div>
+                                        {t("esim.checkout.customer_section")}
+                                    </CardTitle>
                                 </CardHeader>
-                                <CardContent>
+                                <CardContent className="pt-6">
                                     <form onSubmit={handleContinue} className="space-y-5">
                                         <div className="space-y-1.5">
                                             <Label htmlFor="customer_name">
@@ -193,7 +200,7 @@ export default function ESimCheckout({ bookingUuid, package: pkg, search }) {
                                         </div>
 
                                         <div className="flex justify-end pt-2">
-                                            <Button type="submit" className="bg-violet-600 hover:bg-violet-700 text-white">
+                                            <Button type="submit">
                                                 {t("esim.checkout.continue")}
                                             </Button>
                                         </div>
@@ -203,11 +210,16 @@ export default function ESimCheckout({ bookingUuid, package: pkg, search }) {
                         )}
 
                         {step === "review" && (
-                            <Card>
-                                <CardHeader>
-                                    <CardTitle className="text-base">{t("esim.checkout.review_heading")}</CardTitle>
+                            <Card className="overflow-hidden border-2 shadow-sm">
+                                <CardHeader className="border-b bg-primary/5 pb-4">
+                                    <CardTitle className="flex items-center gap-2">
+                                        <div className="rounded-full bg-primary/10 p-2">
+                                            <SmartphoneNfc className="h-5 w-5 text-primary" />
+                                        </div>
+                                        {t("esim.checkout.review_heading")}
+                                    </CardTitle>
                                 </CardHeader>
-                                <CardContent>
+                                <CardContent className="pt-6">
                                     <div className="space-y-3 text-sm mb-6">
                                         <div className="flex justify-between py-2 border-b">
                                             <span className="text-muted-foreground">{t("esim.checkout.review_customer")}</span>
@@ -253,7 +265,6 @@ export default function ESimCheckout({ bookingUuid, package: pkg, search }) {
                                             <Button
                                                 type="submit"
                                                 disabled={form.processing}
-                                                className="bg-violet-600 hover:bg-violet-700 text-white"
                                             >
                                                 {form.processing
                                                     ? t("esim.checkout.purchasing")

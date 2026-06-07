@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "ec1e6cb91f7e7e7bde07fcdc77cf9eb3",
+    "content-hash": "392890a00164958756df2db36f6e384b",
     "packages": [
         {
             "name": "abivia/hydration",
@@ -956,6 +956,46 @@
                 }
             ],
             "time": "2025-12-03T09:33:47+00:00"
+        },
+        {
+            "name": "g4t/id-scanner",
+            "version": "2.0.1",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/hussein4alaa/identity-scanner-laravel.git",
+                "reference": "11c01e9b96f292fd3e752be65d085c6190b24062"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/hussein4alaa/identity-scanner-laravel/zipball/11c01e9b96f292fd3e752be65d085c6190b24062",
+                "reference": "11c01e9b96f292fd3e752be65d085c6190b24062",
+                "shasum": ""
+            },
+            "require": {
+                "guzzlehttp/guzzle": "^7.8"
+            },
+            "type": "library",
+            "autoload": {
+                "psr-4": {
+                    "g4t\\IDScanner\\": "src/"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "HusseinAlaa",
+                    "email": "hussein4alaa@gmail.com"
+                }
+            ],
+            "description": "scanner",
+            "support": {
+                "issues": "https://github.com/hussein4alaa/identity-scanner-laravel/issues",
+                "source": "https://github.com/hussein4alaa/identity-scanner-laravel/tree/2.0.1"
+            },
+            "time": "2024-03-26T09:31:10+00:00"
         },
         {
             "name": "graham-campbell/result-type",

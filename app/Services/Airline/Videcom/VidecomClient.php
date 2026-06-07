@@ -52,6 +52,29 @@ class VidecomClient
     }
 
     /**
+     * Execute a transactional command (booking, issuing) in a fresh, isolated session.
+     *
+     * Always creates a new login — never reuses the cached session — so that any
+     * dirty PNR state from previous availability / pricing commands cannot bleed
+     * into the booking. The fresh session is intentionally never cached; it will
+     * expire naturally on Videcom's side after the request completes.
+     *
+     * SOAP mode is already stateless, so it falls through to the normal path.
+     *
+     * @throws Exception
+     */
+    public function runTransactionalCommand(string $command): string
+    {
+        if (! isset($this->mode) || $this->mode !== self::MODE_SESSION) {
+            return $this->runCommand($command);
+        }
+
+        $session = $this->login(); // fresh session — NOT from cache, NOT stored to cache
+
+        return $this->sendCommandWithSession($command, $session);
+    }
+
+    /**
      * Run command using Expert Logon session.
      */
     protected function runSessionCommand(string $command): string

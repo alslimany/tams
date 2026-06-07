@@ -12,6 +12,7 @@
         "php": "^8.2",
         "abivia/ledger": "^1.11",
         "bavix/laravel-wallet": "^11.5",
+        "g4t/id-scanner": "^2.0",
         "inertiajs/inertia-laravel": "*",
         "laravel/fortify": "^1.30",
         "laravel/framework": "^12.0",

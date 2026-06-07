@@ -167,4 +167,22 @@ return [
     'change_confirmation_title' => 'Ticket Changed Successfully',
     'change_success' => 'Your ticket has been changed successfully.',
     'changed_at' => 'Changed At',
+
+    // Filters
+    'filter_order_number' => 'Order Number',
+    'filter_order_number_placeholder' => 'Search by order number…',
+    'filter_type' => 'Product Type',
+    'filter_type_placeholder' => 'Select type',
+    'filter_type_all' => 'All types',
+    'filter_type_insurance' => 'Insurance',
+    'filter_customer' => 'Customer',
+    'filter_customer_placeholder' => 'Search by customer name…',
+    'filter_reference' => 'Reference',
+    'filter_reference_placeholder' => 'Search by reference…',
+    'filter_date' => 'Date Range',
+    'filter_user' => 'User',
+    'filter_user_placeholder' => 'Select user',
+    'filter_user_all' => 'All users',
+    'filter_apply' => 'Apply Filters',
+    'filter_clear' => 'Clear',
 ];

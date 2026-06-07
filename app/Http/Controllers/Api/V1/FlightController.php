@@ -10,6 +10,7 @@ use App\Actions\Finance\ProcessProviderWalletTransactions;
 use App\Actions\Finance\ProcessWalletTransactions;
 use App\Exceptions\InsufficientWalletBalanceException;
 use App\Http\Controllers\Api\Controller;
+use App\Http\Controllers\Concerns\ExtractsPnrLocator;
 use App\Models\Tenant\Order;
 use App\Models\User;
 use App\Services\Airline\AgencyProviderResolver;
@@ -29,6 +30,8 @@ use Throwable;
 
 class FlightController extends Controller
 {
+    use ExtractsPnrLocator;
+
     public function __construct(
         protected AgencyProviderResolver $providerResolver,
         protected RouteAvailabilityService $routeAvailabilityService,
@@ -293,7 +296,7 @@ class FlightController extends Controller
                 return $this->error('Booking failed with the airline. Please try again.', 422);
             }
 
-            $pnr = $this->extractPnr($bookingResponse);
+            $pnr = $this->extractPnrLocator($bookingResponse);
 
             if (! $pnr) {
                 return $this->error('Airline did not return a valid booking reference.', 502);
@@ -331,6 +334,8 @@ class FlightController extends Controller
                 'item_details' => [
                     'pnr' => $pnr,
                     'airline_code' => $providerConfig->airline_code,
+                    'outbound_provider_id' => $cachedOffer['outbound_provider_id'] ?? null,
+                    'return_provider_id' => $cachedOffer['return_provider_id'] ?? null,
                     'segments' => $flight['segments'] ?? [$flight],
                     'passengers' => $passengers,
                     'customer' => $customer,
@@ -362,6 +367,16 @@ class FlightController extends Controller
             ->pluck('item_details.financial_source')
             ->filter(fn ($value): bool => is_string($value) && $value !== '')
             ->unique();
+
+        $resolvedPaymentMethod = match (true) {
+            $financialSources->contains('master_agency_supply') && $financialSources->count() === 1 => 'default_agency_supply',
+            $financialSources->contains('master_agency_supply') && $financialSources->contains('own_credentials') => 'mixed_supply',
+            $financialSources->contains('own_credentials') && $financialSources->count() === 1 => 'own_credentials',
+            default => (string) ($order->payment_method ?? 'airline_token'),
+        };
+
+        $order->update(['payment_method' => $resolvedPaymentMethod]);
+        $order->load('items');
 
         if ($financialSources->contains('master_agency_supply')) {
             app(ProcessWalletTransactions::class)->execute($order, $issuer);
@@ -400,15 +415,6 @@ class FlightController extends Controller
         }
 
         return (bool) $response;
-    }
-
-    protected function extractPnr(mixed $response): ?string
-    {
-        if (is_array($response)) {
-            return $response['pnr'] ?? $response['booking_reference'] ?? $response['rloc'] ?? null;
-        }
-
-        return null;
     }
 
     protected function formatOrder(Order $order): array

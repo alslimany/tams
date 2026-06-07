@@ -159,7 +159,7 @@ Canonical examples:
 Required layout:
 
 ```jsx
-<div className="mx-auto grid max-w-7xl grid-cols-1 gap-8 px-4 py-8 lg:grid-cols-3">
+<div className="mx-auto grid max-w-7xl grid-cols-1 gap-8 py-8 lg:grid-cols-3">
     <div className="space-y-8 lg:col-span-2">
         {/* form card + steps */}
     </div>
