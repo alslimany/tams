@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Input } from '@/Components/ui/Input';
 import { Label } from '@/Components/ui/Label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/Components/ui/Tabs';
-import { Armchair, Briefcase, CheckCircle2, ChevronLeft, ChevronRight, Loader2, Plane, ScanLine, Settings2, Smartphone, Upload, Users } from 'lucide-react';
+import { Armchair, Briefcase, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Loader2, Plane, Plus, ScanLine, Settings2, Smartphone, Upload, Users } from 'lucide-react';
 
 /** Dial codes map: alpha2 (lowercase) → E.164 prefix */
 const DIAL_CODES = {
@@ -58,25 +58,18 @@ const flagEmoji = (alpha2) => {
     );
 };
 
-/** Module-level: passport scan modal (must NOT be nested inside PassengerInfo). */
-function PassportScanModal({ open, onOpenChange, onSuccess, t }) {
-    const [file, setFile] = useState(null);
+/**
+ * Module-level: generic document scan modal.
+ * Auto-scans immediately when the user picks a file — no manual scan button.
+ * Used for both passport and visa scanning.
+ */
+function DocumentScanModal({ open, onOpenChange, onSuccess, title, description, t }) {
     const [preview, setPreview] = useState(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
     const inputRef = useRef(null);
 
-    const handleFile = (selected) => {
-        if (!selected) return;
-        setFile(selected);
-        setError(null);
-        const reader = new FileReader();
-        reader.onload = (e) => setPreview(e.target.result);
-        reader.readAsDataURL(selected);
-    };
-
-    const handleScan = async () => {
-        if (!file) return;
+    const handleScanFile = async (file) => {
         setLoading(true);
         setError(null);
         try {
@@ -87,7 +80,6 @@ function PassportScanModal({ open, onOpenChange, onSuccess, t }) {
             });
             onSuccess(data);
             onOpenChange(false);
-            setFile(null);
             setPreview(null);
         } catch (err) {
             setError(err?.response?.data?.message || t('common.scan_failed'));
@@ -96,10 +88,20 @@ function PassportScanModal({ open, onOpenChange, onSuccess, t }) {
         }
     };
 
+    const handleFile = (selected) => {
+        if (!selected || loading) return;
+        setError(null);
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            setPreview(e.target.result);
+            handleScanFile(selected);
+        };
+        reader.readAsDataURL(selected);
+    };
+
     const handleClose = () => {
         if (loading) return;
         onOpenChange(false);
-        setFile(null);
         setPreview(null);
         setError(null);
     };
@@ -110,24 +112,31 @@ function PassportScanModal({ open, onOpenChange, onSuccess, t }) {
                 <DialogHeader>
                     <DialogTitle className="flex items-center gap-2">
                         <ScanLine className="h-5 w-5 text-primary" />
-                        {t('common.scan_passport')}
+                        {title}
                     </DialogTitle>
-                    <DialogDescription>{t('common.upload_passport_image')}</DialogDescription>
+                    <DialogDescription>{description}</DialogDescription>
                 </DialogHeader>
 
                 <div
-                    className="mt-2 cursor-pointer rounded-xl border-2 border-dashed border-input bg-muted/30 p-6 text-center transition hover:border-primary hover:bg-primary/5"
-                    onClick={() => inputRef.current?.click()}
+                    className={`mt-2 rounded-xl border-2 border-dashed border-input bg-muted/30 p-6 text-center transition ${!loading ? 'cursor-pointer hover:border-primary hover:bg-primary/5' : 'cursor-not-allowed opacity-70'}`}
+                    onClick={() => !loading && inputRef.current?.click()}
                 >
                     {preview ? (
-                        <div className="space-y-2">
-                            <img src={preview} alt="passport" className="mx-auto max-h-48 rounded-lg object-contain" />
-                            <p className="text-xs text-muted-foreground">{t('common.click_to_change')}</p>
+                        <div className="relative space-y-2">
+                            <img src={preview} alt="document" className={`mx-auto max-h-48 rounded-lg object-contain ${loading ? 'opacity-50' : ''}`} />
+                            {loading ? (
+                                <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 rounded-lg bg-background/50">
+                                    <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                                    <p className="text-xs font-medium text-primary">{t('common.scanning')}</p>
+                                </div>
+                            ) : (
+                                <p className="text-xs text-muted-foreground">{t('common.click_to_change')}</p>
+                            )}
                         </div>
                     ) : (
                         <div className="flex flex-col items-center gap-2 text-muted-foreground">
                             <Upload className="h-8 w-8" />
-                            <p className="text-sm">{t('common.upload_passport_image')}</p>
+                            <p className="text-sm">{description}</p>
                         </div>
                     )}
                     <input
@@ -139,33 +148,152 @@ function PassportScanModal({ open, onOpenChange, onSuccess, t }) {
                     />
                 </div>
 
-                {error && <p className="text-sm text-destructive">{error}</p>}
-
-                <div className="mt-2 flex justify-end gap-2">
-                    <Button type="button" variant="outline" onClick={handleClose} disabled={loading}>
-                        {t('common.cancel')}
-                    </Button>
-                    <Button type="button" onClick={handleScan} disabled={!file || loading}>
-                        {loading ? (
-                            <>
-                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                {t('common.scanning')}
-                            </>
-                        ) : (
-                            <>
-                                <ScanLine className="mr-2 h-4 w-4" />
-                                {t('common.scan_passport')}
-                            </>
-                        )}
-                    </Button>
-                </div>
+                {error && (
+                    <div className="space-y-1">
+                        <p className="text-sm text-destructive">{error}</p>
+                        <button
+                            type="button"
+                            className="text-xs text-primary underline"
+                            onClick={() => { setError(null); inputRef.current?.click(); }}
+                        >
+                            {t('common.click_to_change')}
+                        </button>
+                    </div>
+                )}
             </DialogContent>
         </Dialog>
     );
 }
 
 /**
- * Module-level day/month/year date select.
+ * Module-level: single searchable segment used inside DateSelect (day / month / year).
+ * Fixed-position dropdown with type-to-filter. Flush/joined: no internal border-radius,
+ * outer container provides the rounded border.
+ */
+function DateSegmentCombobox({ value, onChange, options, placeholder, position }) {
+    const [query, setQuery] = useState('');
+    const [open, setOpen] = useState(false);
+    const [dropdownStyle, setDropdownStyle] = useState({});
+    const [highlightedIndex, setHighlightedIndex] = useState(-1);
+    const inputRef = useRef(null);
+    const containerRef = useRef(null);
+    const listRef = useRef(null);
+
+    const selectedOption = options.find((opt) => opt.value === value);
+    const displayValue = open ? query : (selectedOption?.label ?? '');
+
+    const filtered = useMemo(() => {
+        if (!query) return options;
+        const q = query.toLowerCase();
+        return options.filter((opt) => opt.label.toLowerCase().includes(q) || opt.value.toLowerCase().includes(q));
+    }, [query, options]);
+
+    // Reset highlight when filtered list changes
+    useEffect(() => {
+        setHighlightedIndex(-1);
+    }, [filtered]);
+
+    // Scroll highlighted item into view
+    useEffect(() => {
+        if (highlightedIndex < 0 || !listRef.current) return;
+        const item = listRef.current.children[highlightedIndex];
+        item?.scrollIntoView({ block: 'nearest' });
+    }, [highlightedIndex]);
+
+    const updateDropdownPosition = () => {
+        if (!inputRef.current) return;
+        const rect = inputRef.current.getBoundingClientRect();
+        setDropdownStyle({
+            position: 'fixed',
+            top: rect.bottom + 4,
+            left: rect.left,
+            width: Math.max(rect.width, 120),
+            zIndex: 9999,
+        });
+    };
+
+    const closeDropdown = () => {
+        setOpen(false);
+        setQuery('');
+        setHighlightedIndex(-1);
+    };
+
+    useEffect(() => {
+        const handler = (e) => {
+            if (containerRef.current && !containerRef.current.contains(e.target)) {
+                closeDropdown();
+            }
+        };
+        document.addEventListener('mousedown', handler);
+        return () => document.removeEventListener('mousedown', handler);
+    }, []);
+
+    const handleKeyDown = (e) => {
+        if (!open) return;
+        if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            setHighlightedIndex((i) => Math.min(i + 1, filtered.length - 1));
+        } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            setHighlightedIndex((i) => Math.max(i - 1, 0));
+        } else if (e.key === 'Enter') {
+            e.preventDefault();
+            if (highlightedIndex >= 0 && filtered[highlightedIndex]) {
+                onChange(filtered[highlightedIndex].value);
+                closeDropdown();
+            }
+        } else if (e.key === 'Escape') {
+            e.preventDefault();
+            closeDropdown();
+        }
+    };
+
+    return (
+        <div ref={containerRef} className={`relative min-w-0 flex-1${position !== 'last' ? ' border-r border-input' : ''}`}>
+            <input
+                ref={inputRef}
+                className="h-full w-full bg-transparent px-2 text-sm outline-none placeholder:text-muted-foreground/60"
+                placeholder={placeholder}
+                value={displayValue}
+                onFocus={() => {
+                    updateDropdownPosition();
+                    setOpen(true);
+                    setQuery('');
+                }}
+                onChange={(e) => {
+                    setQuery(e.target.value);
+                    updateDropdownPosition();
+                }}
+                onKeyDown={handleKeyDown}
+                autoComplete="off"
+            />
+            {open && (
+                <ul ref={listRef} style={dropdownStyle} className="max-h-44 overflow-y-auto rounded-md border bg-popover text-sm shadow-md">
+                    {filtered.length === 0 ? (
+                        <li className="px-3 py-2 text-muted-foreground">—</li>
+                    ) : (
+                        filtered.map((opt, idx) => (
+                            <li
+                                key={opt.value}
+                                className={`cursor-pointer px-3 py-2 hover:bg-accent hover:text-accent-foreground${value === opt.value ? ' bg-accent font-semibold' : ''}${idx === highlightedIndex ? ' bg-accent text-accent-foreground' : ''}`}
+                                onMouseDown={(e) => {
+                                    e.preventDefault();
+                                    onChange(opt.value);
+                                    closeDropdown();
+                                }}
+                            >
+                                {opt.label}
+                            </li>
+                        ))
+                    )}
+                </ul>
+            )}
+        </div>
+    );
+}
+
+/**
+ * Module-level day/month/year date select with searchable combobox segments.
  * Must NOT be nested inside PassengerInfo — nesting causes React to remount it on
  * every parent re-render, wiping partial selection state mid-entry.
  *
@@ -179,7 +307,7 @@ function PassportScanModal({ open, onOpenChange, onSuccess, t }) {
  *   locale        – 'en' | 'ar' | 'fr'
  *   t             – translation function
  */
-function DateSelect({ type, passengerType, value, onChange, departureDate, returnDate, required, locale, t }) {
+function DateSelect({ type, passengerType, value, onChange, departureDate, returnDate, required, locale, t, error }) {
     const parseValue = (v) => {
         if (!v) return { day: '', month: '', year: '' };
         const parts = v.split('-');
@@ -200,7 +328,7 @@ function DateSelect({ type, passengerType, value, onChange, departureDate, retur
         setYear(parsed.year);
     }, [value]);
 
-    // Emit combined value when all three selects are filled
+    // Emit combined value when all three segments are filled
     useEffect(() => {
         if (day && month && year) {
             onChange(`${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`);
@@ -237,49 +365,48 @@ function DateSelect({ type, passengerType, value, onChange, departureDate, retur
     const years = [];
     if (type === 'dob') {
         for (let y = maxYear; y >= minYear; y--) {
-            years.push(y);
+            years.push({ value: String(y), label: String(y) });
         }
     } else {
         for (let y = minYear; y <= maxYear; y++) {
-            years.push(y);
+            years.push({ value: String(y), label: String(y) });
         }
     }
 
-    const months = Array.from({ length: 12 }, (_, i) => {
-        const d = new Date(2000, i, 1);
-        const localeTag = locale === 'ar' ? 'ar-LY' : locale === 'fr' ? 'fr-FR' : 'en-US';
-        return {
-            value: String(i + 1).padStart(2, '0'),
-            label: d.toLocaleString(localeTag, { month: 'short' }),
-        };
-    });
+    const months = Array.from({ length: 12 }, (_, i) => ({
+        value: String(i + 1).padStart(2, '0'),
+        label: String(i + 1).padStart(2, '0'),
+    }));
 
     const daysInMonth = month && year ? new Date(parseInt(year), parseInt(month), 0).getDate() : 31;
-    const days = Array.from({ length: daysInMonth }, (_, i) => String(i + 1).padStart(2, '0'));
-
-    const selectClass =
-        'flex h-10 w-full rounded-md border border-input bg-background px-2 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring';
+    const days = Array.from({ length: daysInMonth }, (_, i) => ({
+        value: String(i + 1).padStart(2, '0'),
+        label: String(i + 1).padStart(2, '0'),
+    }));
 
     return (
-        <div className="grid grid-cols-3 gap-2">
-            <select required={required} className={selectClass} value={day} onChange={(e) => setDay(e.target.value)}>
-                <option value="">{t('common.day')}</option>
-                {days.map((d) => (
-                    <option key={d} value={d}>{d}</option>
-                ))}
-            </select>
-            <select required={required} className={selectClass} value={month} onChange={(e) => setMonth(e.target.value)}>
-                <option value="">{t('common.month')}</option>
-                {months.map((m) => (
-                    <option key={m.value} value={m.value}>{m.label}</option>
-                ))}
-            </select>
-            <select required={required} className={selectClass} value={year} onChange={(e) => setYear(e.target.value)}>
-                <option value="">{t('common.year')}</option>
-                {years.map((y) => (
-                    <option key={y} value={y}>{y}</option>
-                ))}
-            </select>
+        <div className={`flex h-9 rounded-md border ${error ? 'border-destructive' : 'border-input'}`}>
+            <DateSegmentCombobox
+                value={day}
+                onChange={setDay}
+                options={days}
+                placeholder={t('common.day')}
+                position="first"
+            />
+            <DateSegmentCombobox
+                value={month}
+                onChange={setMonth}
+                options={months}
+                placeholder={t('common.month')}
+                position="middle"
+            />
+            <DateSegmentCombobox
+                value={year}
+                onChange={setYear}
+                options={years}
+                placeholder={t('common.year')}
+                position="last"
+            />
         </div>
     );
 }
@@ -295,12 +422,14 @@ const getCountryLabel = (c, locale) => {
  * Module-level: searchable country select — stores the alpha3 code.
  * Must NOT be nested inside PassengerInfo (causes remount / focus loss on every render).
  */
-const CountrySelect = ({ value, onChange, required, placeholder, countries, locale, t }) => {
+const CountrySelect = ({ value, onChange, required, placeholder, countries, locale, t, error }) => {
     const [query, setQuery] = useState('');
     const [open, setOpen] = useState(false);
     const [dropdownStyle, setDropdownStyle] = useState({});
+    const [highlightedIndex, setHighlightedIndex] = useState(-1);
     const inputRef = useRef(null);
     const containerRef = useRef(null);
+    const listRef = useRef(null);
 
     const selected = countries.find((c) => c.alpha3 === value?.toLowerCase());
     const selectedPrefix = selected?.alpha2 ? `${flagEmoji(selected.alpha2)} ${selected.alpha3?.toUpperCase()}` : '';
@@ -319,6 +448,18 @@ const CountrySelect = ({ value, onChange, required, placeholder, countries, loca
         );
     }, [query, countries]);
 
+    // Reset highlight when filtered list changes
+    useEffect(() => {
+        setHighlightedIndex(-1);
+    }, [filtered]);
+
+    // Scroll highlighted item into view
+    useEffect(() => {
+        if (highlightedIndex < 0 || !listRef.current) return;
+        const item = listRef.current.children[highlightedIndex];
+        item?.scrollIntoView({ block: 'nearest' });
+    }, [highlightedIndex]);
+
     const updateDropdownPosition = () => {
         if (!inputRef.current) return;
         const rect = inputRef.current.getBoundingClientRect();
@@ -331,16 +472,41 @@ const CountrySelect = ({ value, onChange, required, placeholder, countries, loca
         });
     };
 
+    const closeDropdown = () => {
+        setOpen(false);
+        setQuery('');
+        setHighlightedIndex(-1);
+    };
+
     useEffect(() => {
         const handler = (e) => {
             if (containerRef.current && !containerRef.current.contains(e.target)) {
-                setOpen(false);
-                setQuery('');
+                closeDropdown();
             }
         };
         document.addEventListener('mousedown', handler);
         return () => document.removeEventListener('mousedown', handler);
     }, []);
+
+    const handleKeyDown = (e) => {
+        if (!open) return;
+        if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            setHighlightedIndex((i) => Math.min(i + 1, filtered.length - 1));
+        } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            setHighlightedIndex((i) => Math.max(i - 1, 0));
+        } else if (e.key === 'Enter') {
+            e.preventDefault();
+            if (highlightedIndex >= 0 && filtered[highlightedIndex]) {
+                onChange(filtered[highlightedIndex].alpha3.toUpperCase());
+                closeDropdown();
+            }
+        } else if (e.key === 'Escape') {
+            e.preventDefault();
+            closeDropdown();
+        }
+    };
 
     return (
         <div ref={containerRef} className="relative">
@@ -349,6 +515,7 @@ const CountrySelect = ({ value, onChange, required, placeholder, countries, loca
                 required={required}
                 placeholder={placeholder || t('common.search') + ' ' + t('common.country') + '…'}
                 value={open ? query : displayValue}
+                className={error ? 'border-destructive' : ''}
                 onFocus={() => {
                     updateDropdownPosition();
                     setOpen(true);
@@ -358,22 +525,22 @@ const CountrySelect = ({ value, onChange, required, placeholder, countries, loca
                     setQuery(e.target.value);
                     updateDropdownPosition();
                 }}
+                onKeyDown={handleKeyDown}
                 autoComplete="off"
             />
             {open && (
-                <ul style={dropdownStyle} className="max-h-52 overflow-y-auto rounded-md border bg-popover shadow-md text-sm">
+                <ul ref={listRef} style={dropdownStyle} className="max-h-52 overflow-y-auto rounded-md border bg-popover shadow-md text-sm">
                     {filtered.length === 0 && (
                         <li className="px-3 py-2 text-muted-foreground">{t('common.no_results') || 'No results'}</li>
                     )}
-                    {filtered.map((c) => (
+                    {filtered.map((c, idx) => (
                         <li
                             key={c.alpha3}
-                            className={`cursor-pointer px-3 py-2 hover:bg-accent hover:text-accent-foreground flex items-center gap-2 ${value?.toLowerCase() === c.alpha3 ? 'bg-accent font-semibold' : ''}`}
+                            className={`cursor-pointer px-3 py-2 hover:bg-accent hover:text-accent-foreground flex items-center gap-2 ${value?.toLowerCase() === c.alpha3 ? 'bg-accent font-semibold' : ''}${idx === highlightedIndex ? ' bg-accent text-accent-foreground' : ''}`}
                             onMouseDown={(e) => {
                                 e.preventDefault();
                                 onChange(c.alpha3.toUpperCase());
-                                setOpen(false);
-                                setQuery('');
+                                closeDropdown();
                             }}
                         >
                             <span className="text-base leading-none">{flagEmoji(c.alpha2)}</span>
@@ -388,10 +555,36 @@ const CountrySelect = ({ value, onChange, required, placeholder, countries, loca
 };
 
 /**
+ * Normalise a raw local phone string: strips country prefix, leading zeros,
+ * formatting chars (spaces, dashes) and returns clean local digits only.
+ *
+ * Handles:
+ *   "+218911388788"  → "911388788"   (full E.164 with matching prefix)
+ *   "218911388788"   → "911388788"   (prefix without +)
+ *   "00218911388788" → "911388788"   (00-prefix)
+ *   "0911388788"     → "911388788"   (leading 0)
+ *   "91-138 8788"    → "911388788"   (formatting chars)
+ */
+const normalizeLocalNumber = (dialCode, raw) => {
+    if (!raw) return '';
+    // Strip all non-digit chars first
+    let digits = raw.replace(/[^\d]/g, '');
+    // Strip the numeric part of dialCode from the front
+    const codeDigits = dialCode.replace(/[^\d]/g, '');
+    if (digits.startsWith(codeDigits)) {
+        digits = digits.slice(codeDigits.length);
+    }
+    // Strip leading zeros (local number shouldn't start with 0 after prefix removed)
+    digits = digits.replace(/^0+/, '');
+    return digits;
+};
+
+/**
  * Module-level: phone input with searchable dial-code dropdown.
+ * Rendered as a single visually joined h-9 input: [flag+code button | number field].
  * Must NOT be nested inside PassengerInfo (causes remount / focus loss on every render).
  */
-const PhoneInput = ({ value, onChange, required, countries, locale, t }) => {
+const PhoneInput = ({ value, onChange, required, countries, locale, t, error }) => {
     const parseValue = (v) => {
         if (!v) return { dialCode: '+218', number: '' };
         const sorted = Object.entries(DIAL_CODES).sort((a, b) => b[1].length - a[1].length);
@@ -472,17 +665,28 @@ const PhoneInput = ({ value, onChange, required, countries, locale, t }) => {
     };
 
     const handleNumber = (v) => {
-        setNumber(v);
-        onChange(v ? dialCode + v : '');
+        const cleaned = v.replace(/[^\d\s\-]/g, '');
+        setNumber(cleaned);
+        onChange(cleaned ? dialCode + cleaned : '');
+    };
+
+    const handleNumberBlur = () => {
+        const normalized = normalizeLocalNumber(dialCode, number);
+        if (normalized !== number) {
+            setNumber(normalized);
+            onChange(normalized ? dialCode + normalized : '');
+        }
     };
 
     return (
-        <div ref={containerRef} dir="ltr" className="flex gap-2">
-            <div className="relative shrink-0">
+        <div ref={containerRef} dir="ltr" className="relative">
+            {/* Single joined wrapper — same h-9 height as other inputs */}
+            <div className={`flex h-9 rounded-md border ${error ? 'border-destructive' : 'border-input'} bg-background overflow-hidden`}>
+                {/* Dial-code button */}
                 <button
                     ref={triggerRef}
                     type="button"
-                    className="flex h-10 items-center gap-1.5 rounded-md border border-input bg-background px-3 text-sm hover:bg-accent transition-colors focus:outline-none focus:ring-2 focus:ring-ring"
+                    className="flex h-full shrink-0 items-center gap-1 border-r border-input bg-muted/40 px-2.5 text-sm hover:bg-accent transition-colors focus:outline-none"
                     onClick={() => {
                         updateDropdownPosition();
                         setOpen((o) => !o);
@@ -492,48 +696,51 @@ const PhoneInput = ({ value, onChange, required, countries, locale, t }) => {
                     <span className="text-base leading-none">{selectedCountry ? flagEmoji(selectedCountry.alpha2) : '🌐'}</span>
                     <span className="font-mono text-xs font-semibold">{dialCode}</span>
                 </button>
-                {open && (
-                    <div style={dropdownStyle} className="rounded-md border bg-popover shadow-md">
-                        <div className="p-2 border-b">
-                            <input
-                                autoFocus
-                                className="w-full rounded border border-input bg-background px-2 py-1.5 text-sm outline-none"
-                                placeholder={`${t('common.search')}…`}
-                                value={query}
-                                onChange={(e) => setQuery(e.target.value)}
-                            />
-                        </div>
-                        <ul className="max-h-48 overflow-y-auto text-sm">
-                            {filteredDial.length === 0 && (
-                                <li className="px-3 py-2 text-muted-foreground">{t('common.no_results')}</li>
-                            )}
-                            {filteredDial.map((c) => (
-                                <li
-                                    key={c.alpha2}
-                                    className={`cursor-pointer px-3 py-2 flex items-center gap-2 hover:bg-accent hover:text-accent-foreground ${dialCode === c.dialCode && selectedCountry?.alpha2 === c.alpha2 ? 'bg-accent font-semibold' : ''}`}
-                                    onMouseDown={(e) => {
-                                        e.preventDefault();
-                                        selectDial(c.dialCode);
-                                    }}
-                                >
-                                    <span className="text-base leading-none">{flagEmoji(c.alpha2)}</span>
-                                    <span className="font-mono text-xs text-muted-foreground w-10 shrink-0">{c.dialCode}</span>
-                                    <span className="truncate">{getCountryLabel(c, locale)}</span>
-                                </li>
-                            ))}
-                        </ul>
-                    </div>
-                )}
+                {/* Local number input */}
+                <input
+                    required={required}
+                    type="tel"
+                    className="h-full min-w-0 flex-1 bg-transparent px-2.5 text-sm outline-none placeholder:text-muted-foreground/60"
+                    placeholder="912345678"
+                    value={number}
+                    onChange={(e) => handleNumber(e.target.value)}
+                    onBlur={handleNumberBlur}
+                    autoComplete="tel-national"
+                />
             </div>
-            <Input
-                required={required}
-                type="tel"
-                className="flex-1"
-                placeholder="912345678"
-                value={number}
-                onChange={(e) => handleNumber(e.target.value.replace(/[^\d\s\-]/g, ''))}
-                autoComplete="tel-national"
-            />
+            {/* Dial-code dropdown */}
+            {open && (
+                <div style={dropdownStyle} className="rounded-md border bg-popover shadow-md">
+                    <div className="p-2 border-b">
+                        <input
+                            autoFocus
+                            className="w-full rounded border border-input bg-background px-2 py-1.5 text-sm outline-none"
+                            placeholder={`${t('common.search')}…`}
+                            value={query}
+                            onChange={(e) => setQuery(e.target.value)}
+                        />
+                    </div>
+                    <ul className="max-h-48 overflow-y-auto text-sm">
+                        {filteredDial.length === 0 && (
+                            <li className="px-3 py-2 text-muted-foreground">{t('common.no_results')}</li>
+                        )}
+                        {filteredDial.map((c) => (
+                            <li
+                                key={c.alpha2}
+                                className={`cursor-pointer px-3 py-2 flex items-center gap-2 hover:bg-accent hover:text-accent-foreground ${dialCode === c.dialCode && selectedCountry?.alpha2 === c.alpha2 ? 'bg-accent font-semibold' : ''}`}
+                                onMouseDown={(e) => {
+                                    e.preventDefault();
+                                    selectDial(c.dialCode);
+                                }}
+                            >
+                                <span className="text-base leading-none">{flagEmoji(c.alpha2)}</span>
+                                <span className="font-mono text-xs text-muted-foreground w-10 shrink-0">{c.dialCode}</span>
+                                <span className="truncate">{getCountryLabel(c, locale)}</span>
+                            </li>
+                        ))}
+                    </ul>
+                </div>
+            )}
         </div>
     );
 };
@@ -566,6 +773,10 @@ export default function PassengerInfo({ uuid, provider_id, flight, reservation_t
                     passport_expiry: '',
                     passport_issue_country: 'LBY',
                     nationality: 'LBY',
+                    visa_number: '',
+                    visa_type: '',
+                    visa_expiry: '',
+                    visa_issue_country: '',
                 });
             }
         });
@@ -580,6 +791,7 @@ export default function PassengerInfo({ uuid, provider_id, flight, reservation_t
         is_round_trip,
         outbound_provider_id,
         return_provider_id,
+        ticketing_mode: 'final',
         customer: {
             first_name: '',
             last_name: '',
@@ -616,6 +828,13 @@ export default function PassengerInfo({ uuid, provider_id, flight, reservation_t
     const [esimModalOpen, setEsimModalOpen] = useState(false);
     const [scanPassportOpen, setScanPassportOpen] = useState(false);
     const [scanPassengerIndex, setScanPassengerIndex] = useState(null);
+    const [scanVisaOpen, setScanVisaOpen] = useState(false);
+    const [scanVisaPassengerIndex, setScanVisaPassengerIndex] = useState(null);
+    const [expandedPassengerIndex, setExpandedPassengerIndex] = useState(0);
+    const [visaOpenIndexes, setVisaOpenIndexes] = useState(new Set());
+    const [serviceModalOpen, setServiceModalOpen] = useState(false);
+    const [serviceModalCode, setServiceModalCode] = useState(null);
+    const [serviceModalOfferKey, setServiceModalOfferKey] = useState('oneway');
 
     const offerContexts = useMemo(() => {
         if (is_round_trip && flight?.round_trip) {
@@ -718,17 +937,24 @@ export default function PassengerInfo({ uuid, provider_id, flight, reservation_t
         const errors = {};
         if (step === 'passengers') {
             data.passengers.forEach((p, i) => {
-                if (!p.first_name) errors[`passengers.${i}.first_name`] = t('common.required');
-                if (!p.last_name) errors[`passengers.${i}.last_name`] = t('common.required');
-                if (!p.dob) errors[`passengers.${i}.dob`] = t('common.required');
-                if (!p.gender) errors[`passengers.${i}.gender`] = t('common.required');
-
-                if (p.first_name && !/^[A-Za-z]+$/.test(p.first_name)) {
-                    errors[`passengers.${i}.first_name`] = t('common.letters_only');
+                // Name: single combined error when either field is empty
+                if (!p.first_name || !p.last_name) {
+                    errors[`passengers.${i}.name`] = t('common.passenger_name_required');
+                } else {
+                    if (!/^[A-Za-z]+$/.test(p.first_name)) {
+                        errors[`passengers.${i}.first_name`] = `${t('common.first_name')}: ${t('common.letters_only')}`;
+                    }
+                    if (!/^[A-Za-z]+$/.test(p.last_name)) {
+                        errors[`passengers.${i}.last_name`] = `${t('common.last_name')}: ${t('common.letters_only')}`;
+                    }
                 }
 
-                if (p.last_name && !/^[A-Za-z]+$/.test(p.last_name)) {
-                    errors[`passengers.${i}.last_name`] = t('common.letters_only');
+                if (!p.dob) {
+                    errors[`passengers.${i}.dob`] = t('common.dob_required');
+                }
+
+                if (!p.gender) {
+                    errors[`passengers.${i}.gender`] = t('common.gender_required');
                 }
 
                 const passportValues = passportFields.map((field) => (p[field] ?? '').toString().trim());
@@ -736,21 +962,36 @@ export default function PassengerInfo({ uuid, provider_id, flight, reservation_t
                 const needsPassportDetails = passportRequired || hasAnyPassportDetail;
 
                 if (needsPassportDetails) {
-                    const passportMessage = passportRequired
-                        ? t('common.required_for_international_flights')
-                        : t('common.complete_all_passport_fields_or_clear_all');
-
-                    if (!p.passport_number) errors[`passengers.${i}.passport_number`] = passportMessage;
-                    if (!p.passport_expiry) errors[`passengers.${i}.passport_expiry`] = passportMessage;
-                    if (!p.nationality) errors[`passengers.${i}.nationality`] = passportMessage;
-                    if (!p.passport_issue_country) errors[`passengers.${i}.passport_issue_country`] = passportMessage;
+                    if (!p.passport_number) errors[`passengers.${i}.passport_number`] = t('common.passport_number_required');
+                    if (!p.passport_expiry) errors[`passengers.${i}.passport_expiry`] = t('common.passport_expiry_required');
+                    if (!p.nationality) errors[`passengers.${i}.nationality`] = t('common.nationality_required');
+                    if (!p.passport_issue_country) errors[`passengers.${i}.passport_issue_country`] = t('common.passport_issue_country_required');
                 }
             });
-            if (!data.customer.email) errors['customer.email'] = t('common.required');
-            if (data.customer.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.customer.email)) {
+
+            if (!data.customer.email) {
+                errors['customer.email'] = t('common.email_required');
+            } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.customer.email)) {
                 errors['customer.email'] = t('common.invalid_email');
             }
-            if (!data.customer.phone) errors['customer.phone'] = t('common.required');
+
+            if (!data.customer.phone) {
+                errors['customer.phone'] = t('common.phone_required');
+            } else {
+                // Extract local digits from stored value (dialCode + localNumber)
+                const sorted = Object.entries(DIAL_CODES).sort((a, b) => b[1].length - a[1].length);
+                let localDigits = data.customer.phone;
+                for (const [, code] of sorted) {
+                    if (localDigits.startsWith(code)) {
+                        localDigits = localDigits.slice(code.length);
+                        break;
+                    }
+                }
+                localDigits = localDigits.replace(/[^\d]/g, '');
+                if (localDigits.length < 7 || localDigits.length > 15) {
+                    errors['customer.phone'] = t('common.phone_invalid');
+                }
+            }
         }
         setLocalErrors(errors);
         return Object.keys(errors).length === 0;
@@ -815,7 +1056,7 @@ export default function PassengerInfo({ uuid, provider_id, flight, reservation_t
 
             return {
                 ...currentService,
-                quantity: service.pricing_mode === 'per_booking' ? Number(passengers.size > 0) : currentService.quantity || 1,
+                quantity: passengers.size > 0 ? (currentService.quantity || 1) : 0,
                 passengers: [...passengers],
             };
         });
@@ -910,6 +1151,27 @@ export default function PassengerInfo({ uuid, provider_id, flight, reservation_t
     }, [ancillaryCatalogByOfferMap, data.extras.selected_services, data.passengers.length, offerContexts]);
 
     const ancillaryTotal = ancillaryLines.reduce((total, line) => total + line.total, 0);
+
+    const uniqueServices = useMemo(() => {
+        const seen = new Set();
+        const result = [];
+
+        for (const offer of offerContexts) {
+            for (const service of (ancillaryCatalogByOfferMap[offer.key] ?? [])) {
+                if (!seen.has(service.code)) {
+                    seen.add(service.code);
+                    result.push(service);
+                }
+            }
+        }
+
+        return result;
+    }, [ancillaryCatalogByOfferMap, offerContexts]);
+
+    const activeModalService = useMemo(
+        () => uniqueServices.find((s) => s.code === serviceModalCode) ?? null,
+        [uniqueServices, serviceModalCode],
+    );
 
     const fetchSeatMap = async () => {
         setIsSeatMapOpen(true);
@@ -1075,6 +1337,41 @@ export default function PassengerInfo({ uuid, provider_id, flight, reservation_t
             return { ...p, ...filled };
         });
         setData('passengers', updatedPassengers);
+        setExpandedPassengerIndex(scanPassengerIndex);
+    };
+
+    /** Fill a passenger's visa fields from a visa scan result. */
+    const handleFillFromVisaScan = (scanData) => {
+        if (scanVisaPassengerIndex === null) return;
+        const updatedPassengers = data.passengers.map((p, i) => {
+            if (i !== scanVisaPassengerIndex) return p;
+            return {
+                ...p,
+                visa_number: scanData.passport_number || p.visa_number,
+                visa_expiry: scanData.passport_expiry || p.visa_expiry,
+                visa_issue_country: scanData.passport_issue_country || p.visa_issue_country,
+            };
+        });
+        setData('passengers', updatedPassengers);
+        setExpandedPassengerIndex(scanVisaPassengerIndex);
+        setVisaOpenIndexes((prev) => new Set([...prev, scanVisaPassengerIndex]));
+    };
+
+    /** Returns true if the given passenger index has any local validation errors. */
+    const hasPassengerLocalErrors = (index) =>
+        Object.keys(localErrors).some((key) => key.startsWith(`passengers.${index}.`));
+
+    /** Toggle visa section open/closed for a given passenger index. */
+    const toggleVisaSection = (index) => {
+        setVisaOpenIndexes((prev) => {
+            const next = new Set(prev);
+            if (next.has(index)) {
+                next.delete(index);
+            } else {
+                next.add(index);
+            }
+            return next;
+        });
     };
 
     const submitBooking = (event) => {
@@ -1140,24 +1437,82 @@ export default function PassengerInfo({ uuid, provider_id, flight, reservation_t
         });
     };
 
-    /** Resolve a localised country name for an IATA code via the airports_map prop. Falls back to the raw code. */
-    const iataCountryName = (iata) => {
-        if (!iata) return '--';
-        const code = iata.toUpperCase();
-        const entry = airports_map[code];
-        if (!entry) return code;
-        const country = locale === 'ar' ? entry.name_ar : locale === 'fr' ? entry.name_fr : entry.name_en;
-        const city = locale === 'ar' ? entry.city_ar : locale === 'fr' ? entry.city_fr : entry.city_en;
-        const parts = [country];
-        if (city) parts.push(city);
-        return `${parts.join(', ')} (${code})`;
-    };
-
     const firstSegment = offerContexts[0]?.segments?.[0] || null;
-    const outboundSegments = offerContexts[0]?.segments || [];
-    const outboundLastSegment = outboundSegments[outboundSegments.length - 1] || null;
     const lastOffer = offerContexts[offerContexts.length - 1] || null;
     const lastSegment = lastOffer?.segments?.[lastOffer.segments.length - 1] || null;
+
+    const renderServiceOfferControls = (offer, service) => {
+        const selection = getSelectedService(offer.key, service.code);
+        const quantity = Number(selection?.quantity ?? service.default_quantity ?? 0);
+        const selectedPassengers = new Set((selection?.passengers ?? []).map((v) => Number(v)));
+        const isQuantityService = service.type === 'baggage_increment' || service.pricing_mode === 'per_kg';
+        const isBookingService = service.pricing_mode === 'per_booking';
+
+        return (
+            <div className="space-y-4">
+                {isQuantityService && (
+                    <div className="flex items-center justify-between rounded-xl border bg-muted/20 px-4 py-3">
+                        <span className="font-semibold">{service.unit_label || t('common.unit_quantity')}</span>
+                        <div className="flex items-center gap-3">
+                            <Button type="button" variant="outline" size="sm" onClick={() => setQuantityService(offer.key, service, quantity - 1)} disabled={quantity <= (service.min_quantity || 0)}>-</Button>
+                            <span className="min-w-12 text-center text-lg font-black">{quantity}</span>
+                            <Button type="button" variant="outline" size="sm" onClick={() => setQuantityService(offer.key, service, quantity + 1)} disabled={service.max_quantity > 0 && quantity >= service.max_quantity}>+</Button>
+                        </div>
+                    </div>
+                )}
+
+                {isBookingService && !isQuantityService && (
+                    <Button
+                        type="button"
+                        variant={quantity > 0 ? 'default' : 'outline'}
+                        className="w-full rounded-full"
+                        onClick={() => toggleBookingService(offer.key, service)}
+                    >
+                        {quantity > 0 ? t('common.selected_for_this_offer') : t('common.add_to_this_offer')}
+                    </Button>
+                )}
+
+                {!isQuantityService && !isBookingService && (
+                    <div className="space-y-2">
+                        <p className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">{t('common.select_passengers')}</p>
+                        <div className="flex flex-wrap gap-2">
+                            {data.passengers.map((passenger, passengerIndex) => {
+                                const isSelected = selectedPassengers.has(passengerIndex);
+
+                                return (
+                                    <Button
+                                        key={`svc-modal-${offer.key}-${service.code}-${passengerIndex}`}
+                                        type="button"
+                                        variant={isSelected ? 'default' : 'outline'}
+                                        className="rounded-full"
+                                        onClick={() => togglePassengerService(offer.key, service, passengerIndex)}
+                                    >
+                                        {t('common.pax')} {passengerIndex + 1}
+                                    </Button>
+                                );
+                            })}
+                        </div>
+                    </div>
+                )}
+
+                {isRoundTripBooking && (
+                    <Button
+                        type="button"
+                        variant="ghost"
+                        className="h-8 px-0 text-xs font-bold text-primary"
+                        onClick={() => applyServiceToAllOffers(offer.key, service)}
+                    >
+                        {t('common.apply_to_all_offers')}
+                    </Button>
+                )}
+
+                <div className="rounded-xl border bg-muted/30 px-4 py-3">
+                    <p className="text-2xl font-black text-primary">{Number(service.unit_price || 0).toFixed(2)} {currency}</p>
+                    <p className="text-xs capitalize text-muted-foreground">{(service.pricing_mode ?? '').replace(/_/g, ' ')}</p>
+                </div>
+            </div>
+        );
+    };
 
     return (
         <TenantNavbarLayout>
@@ -1252,110 +1607,239 @@ export default function PassengerInfo({ uuid, provider_id, flight, reservation_t
                                     </CardContent>
                                 </Card> */}
 
-                                {data.passengers.map((passenger, index) => (
-                                    <Card key={index} className="overflow-hidden border-2 shadow-sm">
-                                        <CardHeader className="border-b bg-primary/5 pb-4">
-                                            <CardTitle className="flex items-center justify-between text-lg">
-                                                <div className="flex items-center gap-2">
-                                                    <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-xs text-primary-foreground">{index + 1}</span>
-                                                    {t(`common.${passenger.type}_passenger`)}
+                                {data.passengers.map((passenger, index) => {
+                                    const isExpanded = expandedPassengerIndex === index;
+                                    const hasErrors = hasPassengerLocalErrors(index);
+                                    const nameError = localErrors[`passengers.${index}.name`] || localErrors[`passengers.${index}.first_name`] || localErrors[`passengers.${index}.last_name`] || errors[`passengers.${index}.first_name`] || errors[`passengers.${index}.last_name`];
+                                    const isVisaOpen = visaOpenIndexes.has(index);
+
+                                    return (
+                                        <Card key={index} className="overflow-hidden border-2 shadow-sm">
+                                            {/* Collapsible header row */}
+                                            <div
+                                                role="button"
+                                                tabIndex={0}
+                                                className="flex w-full cursor-pointer select-none items-center justify-between border-b bg-primary/5 px-4 py-4 transition-colors hover:bg-primary/8"
+                                                onClick={() => setExpandedPassengerIndex(isExpanded ? null : index)}
+                                                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setExpandedPassengerIndex(isExpanded ? null : index); } }}
+                                            >
+                                                <div className="flex items-center gap-2 overflow-hidden">
+                                                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary text-xs text-primary-foreground">{index + 1}</span>
+                                                    <span className="font-semibold">{t(`common.${passenger.type}_passenger`)}</span>
+                                                    {!isExpanded && (passenger.first_name || passenger.last_name) && (
+                                                        <span className="truncate text-sm text-muted-foreground">
+                                                            · {[passenger.first_name, passenger.last_name].filter(Boolean).join(' ')}
+                                                        </span>
+                                                    )}
                                                 </div>
-                                                <button
-                                                    type="button"
-                                                    title={t('common.scan_passport')}
-                                                    className="flex items-center gap-1.5 rounded-lg border border-primary/30 bg-primary/5 px-3 py-1.5 text-xs font-semibold text-primary hover:bg-primary/10 transition-colors"
-                                                    onClick={() => { setScanPassengerIndex(index); setScanPassportOpen(true); }}
-                                                >
-                                                    <ScanLine className="h-3.5 w-3.5" />
-                                                    {t('common.scan_passport')}
-                                                </button>
-                                            </CardTitle>
-                                        </CardHeader>
-                                        <CardContent className="grid grid-cols-1 gap-6 pt-6 md:grid-cols-3">
-                                            <div className="space-y-2">
-                                                <Label>{t('common.first_name')}</Label>
-                                                <Input required value={passenger.first_name} onChange={(event) => handlePassengerChange(index, 'first_name', event.target.value)} />
-                                                {(localErrors[`passengers.${index}.first_name`] || errors[`passengers.${index}.first_name`]) && <p className="text-xs text-destructive">{localErrors[`passengers.${index}.first_name`] || errors[`passengers.${index}.first_name`]}</p>}
+                                                <div className="flex shrink-0 items-center gap-2">
+                                                    {!isExpanded && hasErrors && (
+                                                        <span className="text-xs font-medium text-destructive">{t('common.incomplete')}</span>
+                                                    )}
+                                                    {isExpanded && (
+                                                        <button
+                                                            type="button"
+                                                            title={t('common.scan_passport')}
+                                                            className="flex items-center gap-1.5 rounded-lg border border-primary/30 bg-primary/5 px-3 py-1.5 text-xs font-semibold text-primary transition-colors hover:bg-primary/10"
+                                                            onClick={(e) => { e.stopPropagation(); setScanPassengerIndex(index); setScanPassportOpen(true); }}
+                                                        >
+                                                            <ScanLine className="h-3.5 w-3.5" />
+                                                            {t('common.scan_passport')}
+                                                        </button>
+                                                    )}
+                                                    {isExpanded
+                                                        ? <ChevronUp className="h-4 w-4 text-muted-foreground" />
+                                                        : <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                                                    }
+                                                </div>
                                             </div>
-                                            <div className="space-y-2">
-                                                <Label>{t('common.last_name')}</Label>
-                                                <Input required value={passenger.last_name} onChange={(event) => handlePassengerChange(index, 'last_name', event.target.value)} />
-                                                {(localErrors[`passengers.${index}.last_name`] || errors[`passengers.${index}.last_name`]) && <p className="text-xs text-destructive">{localErrors[`passengers.${index}.last_name`] || errors[`passengers.${index}.last_name`]}</p>}
-                                            </div>
-                                            <div className="space-y-2">
-                                                <Label>{t('common.gender')}</Label>
-                                                <select
-                                                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background"
-                                                    value={passenger.gender}
-                                                    onChange={(event) => handlePassengerChange(index, 'gender', event.target.value)}
-                                                >
-                                                    <option value="M">{t('common.male')}</option>
-                                                    <option value="F">{t('common.female')}</option>
-                                                </select>
-                                                {localErrors[`passengers.${index}.gender`] && <p className="text-xs text-destructive">{localErrors[`passengers.${index}.gender`]}</p>}
-                                            </div>
-                                            <div className="space-y-2">
-                                                <Label>{t('common.date_of_birth')}</Label>
-                                                <DateSelect
-                                                    required
-                                                    type="dob"
-                                                    passengerType={passenger.type}
-                                                    value={passenger.dob}
-                                                    onChange={(val) => handlePassengerChange(index, 'dob', val)}
-                                                    departureDate={firstSegment?.departure_time || firstSegment?.date}
-                                                    returnDate={lastSegment?.departure_time || lastSegment?.date}
-                                                    locale={locale}
-                                                    t={t}
-                                                />
-                                                {localErrors[`passengers.${index}.dob`] && <p className="text-xs text-destructive">{localErrors[`passengers.${index}.dob`]}</p>}
-                                            </div>
-                                            <div className="space-y-2">
-                                                <Label>{t('common.passport_number')}</Label>
-                                                <Input required={passportRequired} value={passenger.passport_number} onChange={(event) => handlePassengerChange(index, 'passport_number', event.target.value)} />
-                                                {localErrors[`passengers.${index}.passport_number`] && <p className="text-xs text-destructive">{localErrors[`passengers.${index}.passport_number`]}</p>}
-                                            </div>
-                                            <div className="space-y-2">
-                                                <Label>{t('common.passport_expiry')}</Label>
-                                                <DateSelect
-                                                    required={passportRequired}
-                                                    type="passport_expiry"
-                                                    passengerType={passenger.type}
-                                                    value={passenger.passport_expiry}
-                                                    onChange={(val) => handlePassengerChange(index, 'passport_expiry', val)}
-                                                    departureDate={firstSegment?.departure_time || firstSegment?.date}
-                                                    returnDate={lastSegment?.departure_time || lastSegment?.date}
-                                                    locale={locale}
-                                                    t={t}
-                                                />
-                                                {localErrors[`passengers.${index}.passport_expiry`] && <p className="text-xs text-destructive">{localErrors[`passengers.${index}.passport_expiry`]}</p>}
-                                            </div>
-                                            <div className="space-y-2">
-                                                <Label>{t('common.nationality')}</Label>
-                                                <CountrySelect
-                                                    required={passportRequired}
-                                                    value={passenger.nationality}
-                                                    onChange={(val) => handlePassengerChange(index, 'nationality', val)}
-                                                    countries={countries}
-                                                    locale={locale}
-                                                    t={t}
-                                                />
-                                                {(localErrors[`passengers.${index}.nationality`] || errors[`passengers.${index}.nationality`]) && <p className="text-xs text-destructive">{localErrors[`passengers.${index}.nationality`] || errors[`passengers.${index}.nationality`]}</p>}
-                                            </div>
-                                            <div className="space-y-2">
-                                                <Label>{t('common.passport_issue_country')}</Label>
-                                                <CountrySelect
-                                                    required={passportRequired}
-                                                    value={passenger.passport_issue_country}
-                                                    onChange={(val) => handlePassengerChange(index, 'passport_issue_country', val)}
-                                                    countries={countries}
-                                                    locale={locale}
-                                                    t={t}
-                                                />
-                                                {(localErrors[`passengers.${index}.passport_issue_country`] || errors[`passengers.${index}.passport_issue_country`]) && <p className="text-xs text-destructive">{localErrors[`passengers.${index}.passport_issue_country`] || errors[`passengers.${index}.passport_issue_country`]}</p>}
-                                            </div>
-                                        </CardContent>
-                                    </Card>
-                                ))}
+
+                                            {/* Expanded body */}
+                                            {isExpanded && (
+                                                <CardContent className="space-y-4 pt-6">
+                                                    {/* Row 1: Gender + Full Name (joined flush inputs) */}
+                                                    <div className="grid grid-cols-1 gap-4 md:grid-cols-[auto_1fr]">
+                                                        <div className="space-y-2">
+                                                            <Label>{t('common.gender')}</Label>
+                                                            <select
+                                                                className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background"
+                                                                value={passenger.gender}
+                                                                onChange={(event) => handlePassengerChange(index, 'gender', event.target.value)}
+                                                            >
+                                                                <option value="M">{t('common.male')}</option>
+                                                                <option value="F">{t('common.female')}</option>
+                                                            </select>
+                                                            {localErrors[`passengers.${index}.gender`] && <p className="text-xs text-destructive">{localErrors[`passengers.${index}.gender`]}</p>}
+                                                        </div>
+                                                        <div className="space-y-2">
+                                                            <Label>{t('common.full_name_english')}</Label>
+                                                            <div className={`flex h-9 rounded-md border ${nameError ? 'border-destructive' : 'border-input'}`}>
+                                                                <input
+                                                                    required
+                                                                    placeholder={t('common.first_name')}
+                                                                    value={passenger.first_name}
+                                                                    onChange={(event) => handlePassengerChange(index, 'first_name', event.target.value)}
+                                                                    className="h-full min-w-0 flex-1 bg-transparent px-2.5 text-sm outline-none placeholder:text-muted-foreground/60 border-r border-input"
+                                                                />
+                                                                <input
+                                                                    required
+                                                                    placeholder={t('common.last_name')}
+                                                                    value={passenger.last_name}
+                                                                    onChange={(event) => handlePassengerChange(index, 'last_name', event.target.value)}
+                                                                    className="h-full min-w-0 flex-1 bg-transparent px-2.5 text-sm outline-none placeholder:text-muted-foreground/60"
+                                                                />
+                                                            </div>
+                                                            {nameError && <p className="mt-1 text-xs text-destructive">{nameError}</p>}
+                                                        </div>
+                                                    </div>
+
+                                                    {/* Row 2: Date of Birth + Nationality */}
+                                                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                                                        <div className="space-y-2">
+                                                            <Label>{t('common.date_of_birth')}</Label>
+                                                            <DateSelect
+                                                                required
+                                                                type="dob"
+                                                                passengerType={passenger.type}
+                                                                value={passenger.dob}
+                                                                onChange={(val) => handlePassengerChange(index, 'dob', val)}
+                                                                departureDate={firstSegment?.departure_time || firstSegment?.date}
+                                                                returnDate={lastSegment?.departure_time || lastSegment?.date}
+                                                                locale={locale}
+                                                                t={t}
+                                                                error={!!localErrors[`passengers.${index}.dob`]}
+                                                            />
+                                                            {localErrors[`passengers.${index}.dob`] && <p className="text-xs text-destructive">{localErrors[`passengers.${index}.dob`]}</p>}
+                                                        </div>
+                                                        <div className="space-y-2">
+                                                            <Label>{t('common.nationality')}</Label>
+                                                            <CountrySelect
+                                                                required={passportRequired}
+                                                                value={passenger.nationality}
+                                                                onChange={(val) => handlePassengerChange(index, 'nationality', val)}
+                                                                countries={countries}
+                                                                locale={locale}
+                                                                t={t}
+                                                                error={!!(localErrors[`passengers.${index}.nationality`] || errors[`passengers.${index}.nationality`])}
+                                                            />
+                                                            {(localErrors[`passengers.${index}.nationality`] || errors[`passengers.${index}.nationality`]) && <p className="text-xs text-destructive">{localErrors[`passengers.${index}.nationality`] || errors[`passengers.${index}.nationality`]}</p>}
+                                                        </div>
+                                                    </div>
+
+                                                    {/* Row 3: Passport Number + Issue Country + Expiry */}
+                                                    <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                                                        <div className="space-y-2">
+                                                            <Label>{t('common.passport_number')}</Label>
+                                                            <Input required={passportRequired} value={passenger.passport_number} className={localErrors[`passengers.${index}.passport_number`] ? 'border-destructive' : ''} onChange={(event) => handlePassengerChange(index, 'passport_number', event.target.value)} />
+                                                            {localErrors[`passengers.${index}.passport_number`] && <p className="text-xs text-destructive">{localErrors[`passengers.${index}.passport_number`]}</p>}
+                                                        </div>
+                                                        <div className="space-y-2">
+                                                            <Label>{t('common.passport_issue_country')}</Label>
+                                                            <CountrySelect
+                                                                required={passportRequired}
+                                                                value={passenger.passport_issue_country}
+                                                                onChange={(val) => handlePassengerChange(index, 'passport_issue_country', val)}
+                                                                countries={countries}
+                                                                locale={locale}
+                                                                t={t}
+                                                                error={!!(localErrors[`passengers.${index}.passport_issue_country`] || errors[`passengers.${index}.passport_issue_country`])}
+                                                            />
+                                                            {(localErrors[`passengers.${index}.passport_issue_country`] || errors[`passengers.${index}.passport_issue_country`]) && <p className="text-xs text-destructive">{localErrors[`passengers.${index}.passport_issue_country`] || errors[`passengers.${index}.passport_issue_country`]}</p>}
+                                                        </div>
+                                                        <div className="space-y-2">
+                                                            <Label>{t('common.passport_expiry')}</Label>
+                                                            <DateSelect
+                                                                required={passportRequired}
+                                                                type="passport_expiry"
+                                                                passengerType={passenger.type}
+                                                                value={passenger.passport_expiry}
+                                                                onChange={(val) => handlePassengerChange(index, 'passport_expiry', val)}
+                                                                departureDate={firstSegment?.departure_time || firstSegment?.date}
+                                                                returnDate={lastSegment?.departure_time || lastSegment?.date}
+                                                                locale={locale}
+                                                                t={t}
+                                                                error={!!localErrors[`passengers.${index}.passport_expiry`]}
+                                                            />
+                                                            {localErrors[`passengers.${index}.passport_expiry`] && <p className="text-xs text-destructive">{localErrors[`passengers.${index}.passport_expiry`]}</p>}
+                                                        </div>
+                                                    </div>
+
+                                                    {/* Optional visa section */}
+                                                    <div className="border-t pt-4">
+                                                        <button
+                                                            type="button"
+                                                            className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+                                                            onClick={() => toggleVisaSection(index)}
+                                                        >
+                                                            {isVisaOpen
+                                                                ? <ChevronUp className="h-4 w-4" />
+                                                                : <Plus className="h-4 w-4" />
+                                                            }
+                                                            {isVisaOpen ? t('common.remove_visa_details') : t('common.add_visa_details')}
+                                                        </button>
+
+                                                        {isVisaOpen && (
+                                                            <div className="mt-4 space-y-4 rounded-lg border border-dashed border-input bg-muted/20 p-4">
+                                                                <div className="flex items-center justify-between">
+                                                                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{t('common.visa_information')}</p>
+                                                                    <button
+                                                                        type="button"
+                                                                        className="flex items-center gap-1.5 rounded-lg border border-primary/30 bg-primary/5 px-3 py-1.5 text-xs font-semibold text-primary transition-colors hover:bg-primary/10"
+                                                                        onClick={() => { setScanVisaPassengerIndex(index); setScanVisaOpen(true); }}
+                                                                    >
+                                                                        <ScanLine className="h-3.5 w-3.5" />
+                                                                        {t('common.scan_visa')}
+                                                                    </button>
+                                                                </div>
+                                                                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                                                                    <div className="space-y-2">
+                                                                        <Label>{t('common.visa_number')}</Label>
+                                                                        <Input
+                                                                            value={passenger.visa_number || ''}
+                                                                            onChange={(e) => handlePassengerChange(index, 'visa_number', e.target.value)}
+                                                                        />
+                                                                    </div>
+                                                                    <div className="space-y-2">
+                                                                        <Label>{t('common.visa_type')}</Label>
+                                                                        <Input
+                                                                            value={passenger.visa_type || ''}
+                                                                            onChange={(e) => handlePassengerChange(index, 'visa_type', e.target.value)}
+                                                                        />
+                                                                    </div>
+                                                                </div>
+                                                                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                                                                    <div className="space-y-2">
+                                                                        <Label>{t('common.visa_issue_country')}</Label>
+                                                                        <CountrySelect
+                                                                            value={passenger.visa_issue_country || ''}
+                                                                            onChange={(val) => handlePassengerChange(index, 'visa_issue_country', val)}
+                                                                            countries={countries}
+                                                                            locale={locale}
+                                                                            t={t}
+                                                                        />
+                                                                    </div>
+                                                                    <div className="space-y-2">
+                                                                        <Label>{t('common.visa_expiry')}</Label>
+                                                                        <DateSelect
+                                                                            type="passport_expiry"
+                                                                            passengerType={passenger.type}
+                                                                            value={passenger.visa_expiry || ''}
+                                                                            onChange={(val) => handlePassengerChange(index, 'visa_expiry', val)}
+                                                                            departureDate={firstSegment?.departure_time || firstSegment?.date}
+                                                                            returnDate={lastSegment?.departure_time || lastSegment?.date}
+                                                                            locale={locale}
+                                                                            t={t}
+                                                                        />
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </CardContent>
+                                            )}
+                                        </Card>
+                                    );
+                                })}
 
                                 <Card className="border-2 shadow-sm">
                                     <CardHeader className="border-b bg-muted/10 pb-4">
@@ -1368,10 +1852,11 @@ export default function PassengerInfo({ uuid, provider_id, flight, reservation_t
                                     <CardContent className="grid grid-cols-1 gap-6 pt-6 md:grid-cols-2">
                                         <div className="space-y-2">
                                             <Label>{t('common.email_address')}</Label>
-                                            <Input
+                                             <Input
                                                 required
                                                 type="email"
                                                 value={data.customer.email}
+                                                className={localErrors['customer.email'] ? 'border-destructive' : ''}
                                                 onChange={(event) => handleCustomerChange('email', event.target.value)}
                                                 onBlur={(event) => {
                                                     if (event.target.value && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(event.target.value)) {
@@ -1385,13 +1870,14 @@ export default function PassengerInfo({ uuid, provider_id, flight, reservation_t
                                         </div>
                                         <div className="space-y-2">
                                             <Label>{t('common.phone_number')}</Label>
-                                            <PhoneInput
+                                             <PhoneInput
                                                 required
                                                 value={data.customer.phone}
                                                 onChange={(val) => handleCustomerChange('phone', val)}
                                                 countries={countries}
                                                 locale={locale}
                                                 t={t}
+                                                error={!!(localErrors['customer.phone'] || errors['customer.phone'])}
                                             />
                                             {(localErrors['customer.phone'] || errors['customer.phone']) && <p className="text-xs text-destructive">{localErrors['customer.phone'] || errors['customer.phone']}</p>}
                                         </div>
@@ -1406,121 +1892,71 @@ export default function PassengerInfo({ uuid, provider_id, flight, reservation_t
                             </TabsContent>
 
                             <TabsContent value="extras" className="space-y-6">
-                                <div className="space-y-6">
-                                    <div>
-                                        <h3 className="text-lg font-bold">{t('common.airline_services')}</h3>
-                                        <p className="text-sm text-muted-foreground">{t('common.select_services_per_offer_or_apply_all')}</p>
-                                    </div>
+                                 <div className="space-y-6">
+                                     <div>
+                                         <h3 className="text-lg font-bold">{t('common.airline_services')}</h3>
+                                         <p className="text-sm text-muted-foreground">{t('common.select_services_per_offer_or_apply_all')}</p>
+                                     </div>
 
-                                    {offerContexts.map((offer) => {
-                                        const offerServices = ancillaryCatalogByOfferMap[offer.key] ?? [];
-                                        const offerAirline = offer.flight?.airline_name || 'Airline';
+                                     {uniqueServices.length === 0 ? (
+                                         <Card className="border-dashed">
+                                             <CardContent className="py-8 text-center text-sm text-muted-foreground">
+                                                 {t('common.no_airline_services_available')}
+                                             </CardContent>
+                                         </Card>
+                                     ) : (
+                                         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+                                             {uniqueServices.map((service) => {
+                                                 const isQuantityService = service.type === 'baggage_increment' || service.pricing_mode === 'per_kg';
+                                                 const selectedOffersCount = offerContexts.filter((offer) => {
+                                                     const sel = getSelectedService(offer.key, service.code);
 
-                                        return (
-                                            <div key={offer.key} className="space-y-4 rounded-2xl border bg-muted/5 p-4">
-                                                <div className="flex items-center justify-between gap-3">
-                                                    <div>
-                                                        <p className="text-xs font-black uppercase tracking-widest text-primary">{offer.label}</p>
-                                                        <h4 className="text-base font-bold">{offerAirline}</h4>
-                                                    </div>
-                                                    <p className="text-xs font-semibold text-muted-foreground">{t('common.provider_extras')}</p>
-                                                </div>
+                                                     return sel && (Number(sel.quantity ?? 0) > 0 || (sel.passengers ?? []).length > 0);
+                                                 }).length;
+                                                 const isAnySelected = selectedOffersCount > 0;
 
-                                                {offerServices.length === 0 ? (
-                                                    <Card className="border-dashed">
-                                                        <CardContent className="py-8 text-center text-sm text-muted-foreground">
-                                                            {t('common.no_airline_services_for_offer')}
-                                                        </CardContent>
-                                                    </Card>
-                                                ) : (
-                                                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-                                                        {offerServices.map((service) => {
-                                                            const selection = getSelectedService(offer.key, service.code);
-                                                            const quantity = Number(selection?.quantity ?? service.default_quantity ?? 0);
-                                                            const selectedPassengers = new Set((selection?.passengers ?? []).map((value) => Number(value)));
-                                                            const isQuantityService = service.type === 'baggage_increment' || service.pricing_mode === 'per_kg';
-                                                            const isBookingService = service.pricing_mode === 'per_booking';
+                                                 return (
+                                                     <button
+                                                         key={service.code}
+                                                         type="button"
+                                                         onClick={() => {
+                                                             setServiceModalCode(service.code);
+                                                             setServiceModalOfferKey(offerContexts[0]?.key ?? 'oneway');
+                                                             setServiceModalOpen(true);
+                                                         }}
+                                                         className={`group relative rounded-2xl border-2 bg-card p-5 text-left shadow-sm transition-all hover:border-primary/50 hover:shadow-md ${isAnySelected ? 'border-primary bg-primary/5' : 'border-border'}`}
+                                                     >
+                                                         <div className="flex items-start gap-3">
+                                                             <div className={`rounded-full p-3 ${isAnySelected ? 'bg-primary/15' : 'bg-muted'}`}>
+                                                                 {isQuantityService ? (
+                                                                     <Briefcase className={`h-5 w-5 ${isAnySelected ? 'text-primary' : 'text-muted-foreground'}`} />
+                                                                 ) : (
+                                                                     <Settings2 className={`h-5 w-5 ${isAnySelected ? 'text-primary' : 'text-muted-foreground'}`} />
+                                                                 )}
+                                                             </div>
+                                                             <div className="min-w-0 flex-1">
+                                                                 <h4 className="text-base font-bold leading-tight">{service.label}</h4>
+                                                                 <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{service.description}</p>
+                                                                 <p className="mt-2 text-lg font-black text-primary">{Number(service.unit_price || 0).toFixed(2)} {currency}</p>
+                                                             </div>
+                                                         </div>
 
-                                                            return (
-                                                                <Card key={`${offer.key}-${service.code}`} className="border-2 shadow-sm">
-                                                                    <CardContent className="space-y-4 p-5">
-                                                                        <div className="flex items-start gap-3">
-                                                                            <div className="rounded-full bg-primary/10 p-3">
-                                                                                {isQuantityService ? <Briefcase className="h-5 w-5 text-primary" /> : <Settings2 className="h-5 w-5 text-primary" />}
-                                                                            </div>
-                                                                            <div className="min-w-0 flex-1">
-                                                                                <h4 className="text-base font-bold leading-tight">{service.label}</h4>
-                                                                                <p className="mt-1 text-xs text-muted-foreground">{service.description}</p>
-                                                                                <p className="mt-2 text-xs font-semibold text-muted-foreground">Unit price</p>
-                                                                                <p className="text-lg font-black text-primary">{Number(service.unit_price || 0).toFixed(2)} {currency}</p>
-                                                                            </div>
-                                                                        </div>
-
-                                                                        {isQuantityService && (
-                                                                            <div className="flex items-center justify-between rounded-xl border bg-muted/20 px-3 py-2">
-                                                                                <span className="text-sm font-semibold">{service.unit_label || t('common.unit_quantity')}</span>
-                                                                                <div className="flex items-center gap-2">
-                                                                                    <Button type="button" variant="outline" onClick={() => setQuantityService(offer.key, service, quantity - 1)} disabled={quantity <= (service.min_quantity || 0)}>-</Button>
-                                                                                    <span className="min-w-16 text-center text-sm font-black">{quantity}</span>
-                                                                                    <Button type="button" variant="outline" onClick={() => setQuantityService(offer.key, service, quantity + 1)} disabled={service.max_quantity > 0 && quantity >= service.max_quantity}>+</Button>
-                                                                                </div>
-                                                                            </div>
-                                                                        )}
-
-                                                                        {isBookingService && !isQuantityService && (
-                                                                            <Button
-                                                                                type="button"
-                                                                                variant={quantity > 0 ? 'default' : 'outline'}
-                                                                                className="w-full rounded-full"
-                                                                                onClick={() => toggleBookingService(offer.key, service)}
-                                                                            >
-                                                                                {quantity > 0 ? t('common.selected_for_this_offer') : t('common.add_to_this_offer')}
-                                                                            </Button>
-                                                                        )}
-
-                                                                        {!isQuantityService && !isBookingService && (
-                                                                            <div className="space-y-2">
-                                                                                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{t('common.select_passengers')}</p>
-                                                                                <div className="flex flex-wrap gap-2">
-                                                                                    {data.passengers.map((passenger, passengerIndex) => {
-                                                                                        const isSelected = selectedPassengers.has(passengerIndex);
-
-                                                                                        return (
-                                                                                            <Button
-                                                                                                key={`${offer.key}-${service.code}-${passengerIndex}`}
-                                                                                                type="button"
-                                                                                                variant={isSelected ? 'default' : 'outline'}
-                                                                                                className="rounded-full"
-                                                                                                onClick={() => togglePassengerService(offer.key, service, passengerIndex)}
-                                                                                        >
-                                                                                            {t('common.pax')} {passengerIndex + 1}
-                                                                                        </Button>
-                                                                                        );
-                                                                                    })}
-                                                                                </div>
-                                                                            </div>
-                                                                        )}
-
-                                                                        {isRoundTripBooking && (
-                                                                            <Button
-                                                                                type="button"
-                                                                                variant="ghost"
-                                                                                className="h-8 px-0 text-xs font-bold text-primary"
-                                                                                onClick={() => applyServiceToAllOffers(offer.key, service)}
-                                                                            >
-                                                                                {t('common.apply_to_all_offers')}
-                                                                            </Button>
-                                                                        )}
-                                                                    </CardContent>
-                                                                </Card>
-                                                            );
-                                                        })}
-                                                    </div>
-                                                )}
-                                            </div>
-                                        );
-                                    })}
-                                </div>
+                                                         {isAnySelected ? (
+                                                             <div className="mt-3 flex items-center gap-2">
+                                                                 <CheckCircle2 className="h-4 w-4 text-primary" />
+                                                                 <span className="text-xs font-bold text-primary">{t('common.added')}</span>
+                                                             </div>
+                                                         ) : (
+                                                             <div className="mt-3">
+                                                                 <span className="text-xs font-semibold text-muted-foreground">{t('common.click_to_configure')}</span>
+                                                             </div>
+                                                         )}
+                                                     </button>
+                                                 );
+                                             })}
+                                         </div>
+                                     )}
+                                 </div>
 
                                 <Card onClick={fetchSeatMap} className="relative cursor-pointer overflow-hidden border-2 transition-all hover:border-primary/50">
                                     <CardContent className="flex items-start gap-4 p-6">
@@ -1670,14 +2106,53 @@ export default function PassengerInfo({ uuid, provider_id, flight, reservation_t
                                     </CardContent>
                                 </Card>
 
-                                <div className="mt-8 flex items-center justify-between border-t pt-8">
+                                <div className="mt-8 border-t pt-8 space-y-6">
+                                    <div>
+                                        <p className="text-xs font-black uppercase tracking-widest text-primary mb-3">{t('common.select_ticketing_mode')}</p>
+                                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                                            <button
+                                                type="button"
+                                                onClick={() => setData('ticketing_mode', 'final')}
+                                                className={`flex items-start gap-3 rounded-xl border-2 p-4 text-start transition-all ${data.ticketing_mode === 'final' ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/40'}`}
+                                            >
+                                                <div className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 transition-all ${data.ticketing_mode === 'final' ? 'border-primary' : 'border-muted-foreground/50'}`}>
+                                                    {data.ticketing_mode === 'final' && <div className="h-2 w-2 rounded-full bg-primary" />}
+                                                </div>
+                                                <div>
+                                                    <p className={`font-black ${data.ticketing_mode === 'final' ? 'text-primary' : ''}`}>{t('common.final_issue')}</p>
+                                                    <p className="mt-0.5 text-sm text-muted-foreground">{t('common.final_issue_description')}</p>
+                                                </div>
+                                            </button>
+
+                                            <button
+                                                type="button"
+                                                onClick={() => setData('ticketing_mode', 'draft')}
+                                                className={`flex items-start gap-3 rounded-xl border-2 p-4 text-start transition-all ${data.ticketing_mode === 'draft' ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/40'}`}
+                                            >
+                                                <div className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 transition-all ${data.ticketing_mode === 'draft' ? 'border-primary' : 'border-muted-foreground/50'}`}>
+                                                    {data.ticketing_mode === 'draft' && <div className="h-2 w-2 rounded-full bg-primary" />}
+                                                </div>
+                                                <div>
+                                                    <p className={`font-black ${data.ticketing_mode === 'draft' ? 'text-primary' : ''}`}>{t('common.draft_issue')}</p>
+                                                    <p className="mt-0.5 text-sm text-muted-foreground">{t('common.draft_issue_description')}</p>
+                                                </div>
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <div className="flex items-center justify-between">
                                         <Button type="button" variant="ghost" className="font-bold" onClick={() => prevStep('extras')}>
                                             <ChevronLeft className="mr-2 h-4 w-4" /> {t('common.back_to_extras')}
                                         </Button>
-
-                                    <Button type="submit" size="lg" className="rounded-full bg-emerald-600 px-12 text-lg font-black text-white shadow-xl hover:bg-emerald-700" disabled={processing}>
-                                        {processing ? t('common.processing') : t('common.confirm_pay_issue_ticket')}
-                                    </Button>
+                                        <Button type="submit" size="lg" className="rounded-full px-12 text-lg font-black shadow-xl" disabled={processing}>
+                                            {processing
+                                                ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> {t('common.processing')}</>
+                                                : data.ticketing_mode === 'draft'
+                                                    ? t('common.confirm_save')
+                                                    : t('common.confirm_issue')
+                                            }
+                                        </Button>
+                                    </div>
                                 </div>
                             </TabsContent>
                         </Tabs>
@@ -1686,21 +2161,12 @@ export default function PassengerInfo({ uuid, provider_id, flight, reservation_t
 
                 <div className="hidden lg:block">
                     <div className="sticky top-8">
-                        <Card className="overflow-hidden border-2 shadow-lg">
+                        <Card className="overflow-hidden border-2 shadow-lg mt-2">
                             <div className="bg-primary p-6 text-primary-foreground">
-                                <h3 className="mb-1 text-xl font-black">{t('common.trip_summary')}</h3>
-                                 <p className="text-sm font-medium text-primary-foreground/80">
-                                    {iataCountryName(firstSegment?.departure_airport || firstSegment?.origin)} <ChevronRight className="inline h-3 w-3" /> {iataCountryName(outboundLastSegment?.arrival_airport || outboundLastSegment?.destination)}
-                                 </p>
+                                <h3 className="text-xl font-black">{t('common.trip_summary')}</h3>
                             </div>
                             <CardContent className="p-0">
                                 <div className="space-y-4 border-b bg-muted/10 p-6">
-                                    <div className="flex items-center justify-between text-sm font-bold">
-                                        <span className="text-muted-foreground">{t('common.booking_type')}</span>
-                                        <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-black uppercase tracking-wider text-primary">
-                                            {isRoundTripBooking ? t('common.round_trip') : t('common.one_way')}
-                                        </span>
-                                    </div>
                                     <div className="mt-2 flex justify-between text-sm font-bold">
                                         <span className="text-muted-foreground">{t('common.passengers')}</span>
                                         <span className="text-right">
@@ -1714,12 +2180,7 @@ export default function PassengerInfo({ uuid, provider_id, flight, reservation_t
                                         <p className="text-xs font-black uppercase tracking-widest text-primary">{t('common.flight_itineraries')}</p>
                                         {offerContexts.map((offer) => (
                                             <div key={offer.key} className="rounded-xl border bg-background/80 p-3">
-                                                <div className="flex items-center justify-between mb-1">
-                                                    <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">{offer.label || offer.flight?.airline_name || t('common.airline')}</p>
-                                                    <span className={`rounded-full px-2.5 py-0.5 text-[9px] font-black uppercase tracking-widest ${offer.reservation_type === 'NN' ? 'bg-emerald-100 text-emerald-700 ring-1 ring-emerald-600/20' : 'bg-amber-100 text-amber-700 ring-1 ring-amber-600/20'}`}>
-                                                        {offer.reservation_type === 'NN' ? t('common.confirmed') : t('common.open')}
-                                                    </span>
-                                                </div>
+                                                <p className="mb-1 text-xs font-bold uppercase tracking-wide text-muted-foreground">{offer.label || offer.flight?.airline_name || t('common.airline')}</p>
                                                 <div className="space-y-1 mt-1">
                                                     {offer.segments.map((segment, index) => {
                                                         const airlineCode = (segment.airline_code || offer.flight?.airline_code || '').toUpperCase();
@@ -1747,6 +2208,14 @@ export default function PassengerInfo({ uuid, provider_id, flight, reservation_t
                                                         );
                                                     })}
                                                 </div>
+                                                {Number(offer.flight?.pricing?.total) > 0 && (
+                                                    <div className="mt-2 flex items-center justify-between border-t border-border/40 pt-2">
+                                                        <span className="text-xs text-muted-foreground">{t('common.fare')}</span>
+                                                        <span className="text-xs font-black text-primary">
+                                                            {Number(offer.flight.pricing.total).toFixed(2)} {getCurrencyName(offer.flight.pricing.currency) || currency}
+                                                        </span>
+                                                    </div>
+                                                )}
                                             </div>
                                         ))}
                                     </div>
@@ -1793,10 +2262,21 @@ export default function PassengerInfo({ uuid, provider_id, flight, reservation_t
                 </div>
             </div>
 
-            <PassportScanModal
+            <DocumentScanModal
                 open={scanPassportOpen}
                 onOpenChange={setScanPassportOpen}
                 onSuccess={handleFillFromScan}
+                title={t('common.scan_passport')}
+                description={t('common.upload_passport_image')}
+                t={t}
+            />
+
+            <DocumentScanModal
+                open={scanVisaOpen}
+                onOpenChange={setScanVisaOpen}
+                onSuccess={handleFillFromVisaScan}
+                title={t('common.scan_visa')}
+                description={t('common.upload_visa_image')}
                 t={t}
             />
 
@@ -1926,6 +2406,37 @@ export default function PassengerInfo({ uuid, provider_id, flight, reservation_t
                                 </TabsContent>
                             ))}
                         </Tabs>
+                    )}
+                </DialogContent>
+            </Dialog>
+
+            <Dialog open={serviceModalOpen} onOpenChange={setServiceModalOpen}>
+                <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
+                    <DialogHeader>
+                        <DialogTitle>{activeModalService?.label}</DialogTitle>
+                        <DialogDescription>{activeModalService?.description}</DialogDescription>
+                    </DialogHeader>
+
+                    {activeModalService && (
+                        <div className="mt-4">
+                            {offerContexts.length > 1 ? (
+                                <Tabs value={serviceModalOfferKey} onValueChange={setServiceModalOfferKey} className="w-full">
+                                    <TabsList className={`grid w-full grid-cols-${offerContexts.length}`}>
+                                        {offerContexts.map((offer) => (
+                                            <TabsTrigger key={offer.key} value={offer.key}>{offer.label}</TabsTrigger>
+                                        ))}
+                                    </TabsList>
+
+                                    {offerContexts.map((offer) => (
+                                        <TabsContent key={offer.key} value={offer.key} className="mt-4">
+                                            {renderServiceOfferControls(offer, activeModalService)}
+                                        </TabsContent>
+                                    ))}
+                                </Tabs>
+                            ) : offerContexts.length === 1 ? (
+                                renderServiceOfferControls(offerContexts[0], activeModalService)
+                            ) : null}
+                        </div>
                     )}
                 </DialogContent>
             </Dialog>

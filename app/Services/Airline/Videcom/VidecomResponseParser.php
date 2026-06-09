@@ -148,6 +148,13 @@ class VidecomResponseParser
 
             foreach ($journey->Legs->BookFlightSegmentType as $segment) {
                 $fltno = (string) ($segment->FlightNumber ?? '');
+                // Some providers embed the 2-char IATA airline code in FlightNumber
+                // (e.g. "5S0754", "YI1234"). Detect any letter+digit, digit+letter, or
+                // two-letter prefix followed by digits and strip the first two characters
+                // so downstream code always receives the bare numeric flight number.
+                if (preg_match('/^([A-Z]\d|\d[A-Z]|[A-Z]{2})(\d+)$/i', $fltno, $m)) {
+                    $fltno = $m[2];
+                }
                 $dep = (string) ($segment->DepartureAirport['LocationCode'] ?? '');
                 $arr = (string) ($segment->ArrivalAirport['LocationCode'] ?? '');
                 $departureTime = str_replace('T', ' ', (string) ($segment->XSDDepartureDateTime ?? $segment['DepartureDateTime'] ?? ''));

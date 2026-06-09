@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import axios from "axios";
 import { route } from "ziggy-js";
 import { useTranslation } from "@/hooks/useTranslation";
@@ -21,11 +21,18 @@ import {
     Clock,
     Briefcase,
     User,
+    Users,
     ReceiptText,
     ArrowRightLeft,
     ChevronDownIcon,
     ChevronUpIcon,
     Loader2,
+    Package,
+    ShoppingBag,
+    BriefcaseConveyorBelt,
+    Luggage,
+    RotateCcw,
+    Banknote,
 } from "lucide-react";
 
 import {
@@ -48,6 +55,8 @@ export default function FlightGroupCard({
     setOpenOfferSummaryKey,
     checkOpenReservationAvailability,
     handleOfferSelection,
+    activeExpandedKey = null,
+    onExpandedChange = () => {},
 }) {
     const { t, getAirlineName, getCurrencyName, getCabinName } =
         useTranslation();
@@ -65,7 +74,24 @@ export default function FlightGroupCard({
         (acc, s) => acc + (s.duration || 0),
         0,
     );
-    const [expandedCabin, setExpandedCabin] = useState(null);
+    const offerId = `${flightGroup.airline_code}-${flightGroup.flight_number}`;
+    const expandedCabin = activeExpandedKey?.startsWith(`${offerId}:`)
+        ? activeExpandedKey.slice(offerId.length + 1)
+        : null;
+    const setExpandedCabin = (cabin) =>
+        onExpandedChange(cabin ? `${offerId}:${cabin}` : null);
+    const panelRef = useRef(null);
+    useEffect(() => {
+        if (expandedCabin && panelRef.current) {
+            setTimeout(() => {
+                panelRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+            }, 150);
+        }
+    }, [expandedCabin]);
+    const [showFlightDetails, setShowFlightDetails] = useState(false);
+    const [carouselIndex, setCarouselIndex] = useState(0);
+    const [carouselDir, setCarouselDir] = useState("right");
+    const [carouselAnimKey, setCarouselAnimKey] = useState(0);
 
     // No default expansion - user must click to expand
     const isSoldOut = (offer) => Number(offer.available_seats || 0) <= 0;
@@ -487,7 +513,11 @@ export default function FlightGroupCard({
     };
 
     const renderComparisonTable = (offers) => {
-        const offersFeatures = offers.map((offer) =>
+        const displayOffers = offers.slice(0, 4);
+        const emptyColumns = 4 - displayOffers.length;
+        const totalRows = 6; // featureRows(3) + price + seats + action
+
+        const offersFeatures = displayOffers.map((offer) =>
             parseBrandDetails(offer.pricing?.brand_details),
         );
 
@@ -506,6 +536,7 @@ export default function FlightGroupCard({
             {
                 key: "checked_baggage",
                 label: t("common.checked_baggage") || "Checked",
+                icon: ShoppingBag,
                 extract: (features, offer) => {
                     const holdWt = offer?.pricing?.hold_weight;
                     if (holdWt) return formatWeight(holdWt);
@@ -522,6 +553,7 @@ export default function FlightGroupCard({
             {
                 key: "hand_baggage",
                 label: t("common.hand_baggage") || "Cabin",
+                icon: Package,
                 extract: (_features, offer) => {
                     const handWt = offer?.pricing?.hand_weight;
                     return formatWeight(handWt);
@@ -530,6 +562,7 @@ export default function FlightGroupCard({
             {
                 key: "refundable",
                 label: t("common.refundable") || "Refundable",
+                icon: RotateCcw,
                 extract: (features) => {
                     const found = Object.keys(features).find((k) =>
                         k.toLowerCase().includes("refund"),
@@ -539,27 +572,288 @@ export default function FlightGroupCard({
             },
         ];
 
+        const safeIdx = Math.min(carouselIndex, displayOffers.length - 1);
+        const currentOffer = displayOffers[safeIdx];
+        const currentFeatures = offersFeatures[safeIdx] || {};
+
         return (
-            <div className="overflow-x-auto rounded-xl border bg-muted/10">
-                <table className="w-full text-sm">
+            <>
+                {/* ── Mobile carousel (3 columns: feature | offer | ad) ── */}
+                <div className="block sm:hidden rounded-xl border bg-muted/10 overflow-hidden">
+                    {/* Offer navigator */}
+                    <div className="flex items-center justify-between px-3 py-2 border-b bg-muted/30">
+                        <button
+                            type="button"
+                            onClick={() => {
+                                    setCarouselDir("left");
+                                    setCarouselAnimKey((k) => k + 1);
+                                    setCarouselIndex((i) => Math.max(0, i - 1));
+                                }}
+                            disabled={safeIdx === 0}
+                            className="rounded-full p-1 hover:bg-muted/50 disabled:opacity-30 transition-opacity"
+                            aria-label="Previous class"
+                        >
+                            <ChevronLeftIcon className="h-4 w-4" />
+                        </button>
+                        <div className="text-center">
+                            <span className="text-xs font-bold">
+                                {currentOffer?.pricing?.brand_name || "Y"}
+                            </span>
+                            {currentOffer?.pricing?.fare_id && (
+                                <button
+                                    type="button"
+                                    onClick={() => fetchFareRules(currentOffer)}
+                                    className="block text-[10px] text-primary underline underline-offset-2 mx-auto"
+                                >
+                                    {t("common.fare_rules") || "Fare Rules"}
+                                </button>
+                            )}
+                            <span className="text-[10px] text-muted-foreground">
+                                {safeIdx + 1} / {displayOffers.length}
+                            </span>
+                        </div>
+                        <button
+                            type="button"
+                            onClick={() => {
+                                    setCarouselDir("right");
+                                    setCarouselAnimKey((k) => k + 1);
+                                    setCarouselIndex((i) => Math.min(displayOffers.length - 1, i + 1));
+                                }}
+                            disabled={safeIdx === displayOffers.length - 1}
+                            className="rounded-full p-1 hover:bg-muted/50 disabled:opacity-30 transition-opacity"
+                            aria-label="Next class"
+                        >
+                            <ChevronRightIcon className="h-4 w-4" />
+                        </button>
+                    </div>
+
+                    <div
+                        key={carouselAnimKey}
+                        className={`animate-in fade-in duration-200 ${
+                            carouselDir === "right"
+                                ? "slide-in-from-right-4"
+                                : "slide-in-from-left-4"
+                        }`}
+                    >
+                    <table className="w-full text-xs table-fixed">
+                        <colgroup>
+                            <col style={{ width: "33.333%" }} />
+                            <col style={{ width: "33.333%" }} />
+                            <col style={{ width: "33.333%" }} />
+                        </colgroup>
+                        <tbody>
+                            {featureRows.map((row, idx) => {
+                                const value = row.extract(currentFeatures, currentOffer);
+                                return (
+                                    <tr
+                                        key={row.key}
+                                        className={`border-b ${idx % 2 === 0 ? "bg-muted/5" : ""}`}
+                                    >
+                                        <td className="py-2 px-3 font-semibold text-muted-foreground whitespace-nowrap">
+                                            <div className="flex items-center gap-1">
+                                                {row.icon && <row.icon className="h-3 w-3 shrink-0" />}
+                                                {row.label}
+                                            </div>
+                                        </td>
+                                        <td className="py-2 px-3 text-center font-medium">
+                                            {value ? (
+                                                <span className={
+                                                    value.toLowerCase() === "no" || value.toLowerCase().includes("not avail")
+                                                        ? "text-destructive/70"
+                                                        : "text-foreground"
+                                                }>
+                                                    {value}
+                                                </span>
+                                            ) : (
+                                                <span className="text-muted-foreground/40">&mdash;</span>
+                                            )}
+                                        </td>
+                                        {idx === 0 && (
+                                             <td
+                                                rowSpan={totalRows}
+                                                className="p-0 align-top text-center border-s overflow-hidden"
+                                            >
+                                                <img
+                                                    src="https://i.postimg.cc/WpCMKhn0/Whats-App-Image-2025-07-16-at-11-13-00.jpg"
+                                                    alt={t("common.advertisement") || "Ad"}
+                                                    className="w-full h-full object-cover rounded-none"
+                                                    style={{ minHeight: "160px" }}
+                                                />
+                                            </td>
+                                        )}
+                                    </tr>
+                                );
+                            })}
+
+                            {/* Price */}
+                            <tr className="border-b bg-muted/5">
+                                <td className="py-2 px-3 font-bold text-muted-foreground">
+                                    <div className="flex items-center gap-1">
+                                        <Banknote className="h-3 w-3 shrink-0" />
+                                        {t("common.price")}
+                                    </div>
+                                </td>
+                                <td className="py-2 px-3 text-center">
+                                    <p className="font-black text-primary">
+                                        {formatMoneyValue(currentOffer?.pricing?.total || 0)}{" "}
+                                        <span className="text-[10px] font-bold text-muted-foreground">
+                                            {getCurrencyName(currentOffer?.pricing?.currency) || "LYD"}
+                                        </span>
+                                    </p>
+                                </td>
+                            </tr>
+
+                            {/* Seats */}
+                            <tr className="border-b bg-muted/5">
+                                <td className="py-2 px-3 font-bold text-muted-foreground">
+                                    <div className="flex items-center gap-1">
+                                        <Users className="h-3 w-3 shrink-0" />
+                                        {t("common.seats")}
+                                    </div>
+                                </td>
+                                <td className="py-2 px-3 text-center">
+                                    {(() => {
+                                        const seats = Number(currentOffer?.available_seats || 0);
+                                        if (seats === 0) return <span className="font-semibold text-destructive">{t("common.no_seats_left") || "No seats left"}</span>;
+                                        if (seats === 1) return <span className="font-semibold text-destructive">{t("common.last_seat")}</span>;
+                                        if (seats <= 5) return <span className="font-semibold text-amber-600">{seats} {t("common.left")}</span>;
+                                        if (seats <= 9) return <span className="font-semibold text-emerald-600">{seats} {t("common.left")}</span>;
+                                        return <span className="font-semibold text-emerald-600">9 {t("common.left")}</span>;
+                                    })()}
+                                </td>
+                            </tr>
+
+                            {/* Action */}
+                            <tr className="bg-primary/5">
+                                <td className="py-3 px-3 font-bold text-muted-foreground">
+                                    {t("common.action")}
+                                </td>
+                                <td className="py-3 px-3 text-center">
+                                    {(() => {
+                                        const offer = currentOffer;
+                                        const soldOut = isSoldOut(offer);
+                                        const openReservationStatusKey = openReservationKey(offer, provider?.id);
+                                        const openReservationAllowed = Boolean(openReservationAvailability[openReservationStatusKey]);
+                                        const openReservationChecked = openReservationAvailability[openReservationStatusKey] !== undefined;
+                                        const openReservationLoadingState = Boolean(openReservationAvailabilityLoading[openReservationStatusKey]);
+                                        return (
+                                            <Dialog
+                                                open={openOfferSummaryKey === offerSummaryKey(offer, provider?.id)}
+                                                onOpenChange={(open) => {
+                                                    setOpenOfferSummaryKey(open ? offerSummaryKey(offer, provider?.id) : null);
+                                                    if (open) checkOpenReservationAvailability(offer, provider?.id);
+                                                }}
+                                            >
+                                                <DialogTrigger asChild>
+                                                    <Button size="sm" className="font-bold shadow-sm px-3 text-xs">
+                                                        {t("common.select")}
+                                                        <ChevronRightIcon className="ms-1 h-3 w-3" />
+                                                    </Button>
+                                                </DialogTrigger>
+                                                <DialogContent className="max-w-2xl sm:rounded-3xl p-0 overflow-hidden">
+                                                    <div className="bg-primary/5 p-6 border-b">
+                                                        <DialogTitle className="text-2xl font-black tracking-normal leading-tight">
+                                                            {t("common.offer_summary")}
+                                                        </DialogTitle>
+                                                        <DialogDescription className="text-muted-foreground font-medium text-sm mt-2">
+                                                            {t("common.review_selected")}
+                                                        </DialogDescription>
+                                                    </div>
+                                                    <div className="p-6 space-y-6 max-h-[60vh] overflow-y-auto">
+                                                        <div className="flex justify-between items-center bg-card border rounded-2xl p-4 shadow-sm">
+                                                            <div>
+                                                                <p className="text-sm font-bold text-muted-foreground">{t("common.itinerary_fare")}</p>
+                                                                <p className="text-xl font-black">{flightGroup.departure_airport} <ArrowRightLeft className="inline shrink-0 h-4 w-4 mx-1" /> {flightGroup.arrival_airport}</p>
+                                                                <p className="text-sm font-medium">{offer.pricing?.brand_name || t("common.standard")} &bull; {t("common.class")} {offer.pricing?.class_code}</p>
+                                                            </div>
+                                                            <div className="text-right">
+                                                                <p className="text-sm font-bold text-muted-foreground">{t("common.grand_total")}</p>
+                                                                <p className="text-2xl font-black text-primary">{formatMoneyValue(offer.pricing?.total || 0)} <span className="text-sm">{offer.pricing?.currency || "LYD"}</span></p>
+                                                            </div>
+                                                        </div>
+                                                        <div>
+                                                            <p className="font-bold mb-3 tracking-widest text-xs text-muted-foreground">{t("common.flight_segments")}</p>
+                                                            <div className="space-y-3">
+                                                                {segments.map((seg, i) => (
+                                                                    <div key={i} className="flex gap-4 p-4 border rounded-xl bg-muted/10 items-center">
+                                                                        <Plane className="h-5 w-5 text-primary" />
+                                                                        <div className="flex-1">
+                                                                            <div className="flex justify-between font-black text-sm">
+                                                                                <span>{seg.departure_airport} ({seg.departure_time?.split(" ")[1]?.substring(0, 5)})</span>
+                                                                                <span>{seg.arrival_airport} ({seg.arrival_time?.split(" ")[1]?.substring(0, 5)})</span>
+                                                                            </div>
+                                                                            <p className="text-xs text-muted-foreground font-medium mt-1">
+                                                                                {t("common.duration")}: {formatDuration(seg.duration)} &bull; {seg.aircraft || t("common.standard")} &bull; {t("common.class")} {offer.pricing?.class_code}
+                                                                            </p>
+                                                                        </div>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+                                                        {offer.pricing?.fare_id && (
+                                                            <FareRulesSection
+                                                                fareId={offer.pricing.fare_id}
+                                                                providerId={provider?.id ?? flightGroup.provider_id}
+                                                                isOpen={openOfferSummaryKey === offerSummaryKey(offer, provider?.id)}
+                                                            />
+                                                        )}
+                                                    </div>
+                                                    <div className="p-6 border-t bg-muted/30 flex flex-col sm:flex-row gap-3">
+                                                        {openReservationLoadingState ? (
+                                                            <Button variant="outline" size="lg" className="flex-1 font-bold shadow-sm rounded-full px-4 text-xs" disabled>
+                                                                <Loader2 className="h-3.5 w-3.5 animate-spin me-1.5" />
+                                                                {t("common.checking_open_reservation")}
+                                                            </Button>
+                                                        ) : openReservationAllowed ? (
+                                                            <div className="flex-1">
+                                                                <Button variant="outline" size="lg" className="w-full font-bold shadow-sm rounded-full px-4 text-xs" onClick={() => handleOfferSelection(offer, provider?.id, "QQ")}>
+                                                                    {t("common.open_reservation")}
+                                                                </Button>
+                                                            </div>
+                                                        ) : openReservationChecked ? (
+                                                            <Button variant="outline" size="lg" className="flex-1 font-bold shadow-sm rounded-full px-4 text-xs opacity-50" disabled>
+                                                                {t("common.open_reservation_unavailable")}
+                                                            </Button>
+                                                        ) : null}
+                                                        {!soldOut && (
+                                                            <div className="flex-1">
+                                                                <Button size="lg" className="w-full font-bold shadow-md rounded-full px-4 text-xs" onClick={() => handleOfferSelection(offer, provider?.id, "NN")}>
+                                                                    {t("common.confirmed_reservation")}
+                                                                    <ChevronRightIcon className="ml-2 h-4 w-4" />
+                                                                </Button>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </DialogContent>
+                                            </Dialog>
+                                        );
+                                    })()}
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    </div>
+                </div>
+
+                {/* ── Desktop full table (hidden on mobile) ── */}
+                <div className="hidden sm:block overflow-x-auto rounded-xl border bg-muted/10">
+                <table className="w-full text-sm table-fixed">
+                    <colgroup>
+                        {[0, 1, 2, 3, 4, 5].map((i) => (
+                            <col key={i} style={{ width: "16.667%" }} />
+                        ))}
+                    </colgroup>
                     <thead>
                         <tr className="border-b bg-muted/30">
                             <th className=" py-3 px-4 font-bold text-xs  tracking-wider text-muted-foreground min-w-[120px]">
                                 {t("common.feature")}
                             </th>
-                            {offers.map((offer) => (
+                            {displayOffers.map((offer) => (
                                 <th
                                     key={offer.id}
                                     className="text-center py-3 px-4 font-bold min-w-[140px]"
                                 >
                                     <div className="flex flex-col items-center gap-1">
-                                        {/* <Badge
-                                            variant="outline"
-                                            className="text-[11px] font-bold px-2.5 py-0.5 bg-background shadow-sm"
-                                        >
-                                            {offer.pricing?.brand_details ||
-                                                `${t("common.class")} ${offer.pricing?.class_code || "Y"}`}
-                                        </Badge> */}
                                         <span className="text-[10px] text-muted-foreground font-semibold ">
                                             ({offer.pricing?.brand_name || "Y"})
                                         </span>
@@ -578,6 +872,12 @@ export default function FlightGroupCard({
                                     </div>
                                 </th>
                             ))}
+                            {Array.from({ length: emptyColumns }).map((_, i) => (
+                                <th key={`empty-h-${i}`} />
+                            ))}
+                            <th className="text-center py-3 px-4 font-bold text-xs tracking-wider text-muted-foreground">
+                                {t("common.advertisement") || "Ad"}
+                            </th>
                         </tr>
                     </thead>
                     <tbody>
@@ -587,16 +887,19 @@ export default function FlightGroupCard({
                                 className={`border-b ${idx % 2 === 0 ? "bg-muted/5" : ""} hover:bg-muted/15 transition-colors`}
                             >
                                 <td className="py-2.5 px-4 font-semibold text-xs text-muted-foreground whitespace-nowrap">
-                                    {row.label}
+                                    <div className="flex items-center gap-1.5">
+                                        {row.icon && <row.icon className="h-3 w-3 shrink-0" />}
+                                        {row.label}
+                                    </div>
                                 </td>
                                 {offersFeatures.map((features, i) => {
                                     const value = row.extract(
                                         features,
-                                        offers[i],
+                                        displayOffers[i],
                                     );
                                     return (
                                         <td
-                                            key={offers[i].id}
+                                            key={displayOffers[i].id}
                                             className="py-2.5 px-4 text-center text-xs font-medium"
                                         >
                                             {value ? (
@@ -623,14 +926,33 @@ export default function FlightGroupCard({
                                         </td>
                                     );
                                 })}
+                                {Array.from({ length: emptyColumns }).map((_, i) => (
+                                    <td key={`empty-f-${idx}-${i}`} />
+                                ))}
+                                {idx === 0 && (
+                                    <td
+                                        rowSpan={totalRows}
+                                        className="p-0 align-middle text-center border-s overflow-hidden"
+                                    >
+                                        <img
+                                            src="https://i.postimg.cc/WpCMKhn0/Whats-App-Image-2025-07-16-at-11-13-00.jpg"
+                                            alt={t("common.advertisement") || "Ad"}
+                                            className="w-full h-full object-cover"
+                                            style={{ minHeight: "200px" }}
+                                        />
+                                    </td>
+                                )}
                             </tr>
                         ))}
 
                         <tr className="border-b bg-muted/5">
                             <td className="py-2.5 px-4 font-bold text-xs  tracking-wider text-muted-foreground">
-                                {t("common.price")}
+                                <div className="flex items-center gap-1.5">
+                                    <Banknote className="h-3 w-3 shrink-0" />
+                                    {t("common.price")}
+                                </div>
                             </td>
-                            {offers.map((offer) => (
+                            {displayOffers.map((offer) => (
                                 <td
                                     key={offer.id}
                                     className="py-2.5 px-4 text-center"
@@ -647,31 +969,63 @@ export default function FlightGroupCard({
                                     </p>
                                 </td>
                             ))}
+                            {Array.from({ length: emptyColumns }).map((_, i) => (
+                                <td key={`empty-p-${i}`} />
+                            ))}
                         </tr>
 
                         <tr className="border-b bg-muted/5">
                             <td className="py-2.5 px-4 font-bold text-xs  tracking-wider text-muted-foreground">
-                                {t("common.seats")}
+                                <div className="flex items-center gap-1.5">
+                                    <Users className="h-3 w-3 shrink-0" />
+                                    {t("common.seats")}
+                                </div>
                             </td>
-                            {offers.map((offer) => (
+                            {displayOffers.map((offer) => (
                                 <td
                                     key={offer.id}
                                     className="py-2.5 px-4 text-center"
                                 >
-                                    {isSoldOut(offer) ? (
-                                        <Badge
-                                            variant="destructive"
-                                            className="text-[10px] font-bold text-white"
-                                        >
-                                            {t("common.sold_out")}
-                                        </Badge>
-                                    ) : (
-                                        <span className="text-xs font-semibold text-emerald-600">
-                                            {offer.available_seats}{" "}
-                                            {t("common.left")}
-                                        </span>
-                                    )}
+                                    {(() => {
+                                        const seats = Number(offer.available_seats || 0);
+                                        if (seats === 0) {
+                                            return (
+                                                <span className="text-xs font-semibold text-destructive">
+                                                    {t("common.no_seats_left") || "No seats left"}
+                                                </span>
+                                            );
+                                        }
+                                        if (seats === 1) {
+                                            return (
+                                                <span className="text-xs font-semibold text-destructive">
+                                                    {t("common.last_seat")}
+                                                </span>
+                                            );
+                                        }
+                                        if (seats <= 5) {
+                                            return (
+                                                <span className="text-xs font-semibold text-amber-600">
+                                                    {seats} {t("common.left")}
+                                                </span>
+                                            );
+                                        }
+                                        if (seats <= 9) {
+                                            return (
+                                                <span className="text-xs font-semibold text-emerald-600">
+                                                    {seats} {t("common.left")}
+                                                </span>
+                                            );
+                                        }
+                                        return (
+                                            <span className="text-xs font-semibold text-emerald-600">
+                                                9 {t("common.left")}
+                                            </span>
+                                        );
+                                    })()}
                                 </td>
+                            ))}
+                            {Array.from({ length: emptyColumns }).map((_, i) => (
+                                <td key={`empty-s-${i}`} />
                             ))}
                         </tr>
 
@@ -679,15 +1033,19 @@ export default function FlightGroupCard({
                             <td className="py-3 px-4 font-bold text-xs  tracking-wider text-muted-foreground">
                                 {t("common.action")}
                             </td>
-                            {offers.map((offer) => {
-                                const soldOut = isSoldOut(offer);
-                                const openReservationStatusKey =
-                                    openReservationKey(offer, provider?.id);
-                                const openReservationAllowed = Boolean(
-                                    openReservationAvailability[
-                                        openReservationStatusKey
-                                    ],
-                                );
+                             {displayOffers.map((offer) => {
+                                 const soldOut = isSoldOut(offer);
+                                 const openReservationStatusKey =
+                                     openReservationKey(offer, provider?.id);
+                                 const openReservationAllowed = Boolean(
+                                     openReservationAvailability[
+                                         openReservationStatusKey
+                                     ],
+                                 );
+                                 const openReservationChecked =
+                                     openReservationAvailability[
+                                         openReservationStatusKey
+                                     ] !== undefined;
                                 const openReservationLoadingState = Boolean(
                                     openReservationAvailabilityLoading[
                                         openReservationStatusKey
@@ -728,14 +1086,9 @@ export default function FlightGroupCard({
                                                 <Button
                                                     size="sm"
                                                     className="font-bold shadow-sm px-4"
-                                                    disabled={soldOut}
                                                 >
-                                                    {soldOut
-                                                        ? t("common.sold_out")
-                                                        : t("common.select")}
-                                                    {!soldOut && (
-                                                        <ChevronRightIcon className="ml-1 h-3 w-3" />
-                                                    )}
+                                                    {t("common.select")}
+                                                    <ChevronRightIcon className="ml-1 h-3 w-3" />
                                                 </Button>
                                             </DialogTrigger>
                                             <DialogContent className="max-w-2xl sm:rounded-3xl p-0 overflow-hidden">
@@ -748,10 +1101,6 @@ export default function FlightGroupCard({
                                                     <DialogDescription className="text-muted-foreground font-medium text-sm mt-2">
                                                         {t(
                                                             "common.review_selected",
-                                                        )}
-                                                        {t("common.class")}{" "}
-                                                        {t(
-                                                            "common.before_proceeding",
                                                         )}
                                                     </DialogDescription>
                                                 </div>
@@ -913,7 +1262,18 @@ export default function FlightGroupCard({
                                                     )}
                                                 </div>
                                                 <div className="p-6 border-t bg-muted/30 flex flex-col sm:flex-row gap-3">
-                                                    {openReservationAllowed ? (
+                                                    {/* Open Reservation button — shown for all offers, state-driven */}
+                                                    {openReservationLoadingState ? (
+                                                        <Button
+                                                            variant="outline"
+                                                            size="lg"
+                                                            className="flex-1 font-bold shadow-sm rounded-full px-4 text-xs"
+                                                            disabled
+                                                        >
+                                                            <Loader2 className="h-3.5 w-3.5 animate-spin me-1.5" />
+                                                            {t("common.checking_open_reservation")}
+                                                        </Button>
+                                                    ) : openReservationAllowed ? (
                                                         <div className="flex-1">
                                                             <Button
                                                                 variant="outline"
@@ -927,56 +1287,55 @@ export default function FlightGroupCard({
                                                                     )
                                                                 }
                                                             >
-                                                                {t(
-                                                                    "common.open_reservation",
-                                                                )}
+                                                                {t("common.open_reservation")}
                                                             </Button>
                                                         </div>
-                                                    ) : null}
-                                                    {openReservationLoadingState ? (
+                                                    ) : openReservationChecked ? (
                                                         <Button
                                                             variant="outline"
                                                             size="lg"
-                                                            className="flex-1 font-bold shadow-sm rounded-full px-4 text-xs"
+                                                            className="flex-1 font-bold shadow-sm rounded-full px-4 text-xs opacity-50"
                                                             disabled
                                                         >
-                                                            {t(
-                                                                "common.checking_open_reservation",
-                                                            )}
+                                                            {t("common.open_reservation_unavailable")}
                                                         </Button>
                                                     ) : null}
-                                                    <div className="flex-1">
-                                                        <Button
-                                                            size="lg"
-                                                            className="w-full font-bold shadow-md rounded-full px-4 text-xs"
-                                                            onClick={() =>
-                                                                handleOfferSelection(
-                                                                    offer,
-                                                                    provider?.id,
-                                                                    "NN",
-                                                                )
-                                                            }
-                                                        >
-                                                            {t(
-                                                                "common.confirmed_reservation",
-                                                            )}
-                                                            <ChevronRightIcon className="ml-2 h-4 w-4" />
-                                                        </Button>
-                                                    </div>
+
+                                                    {/* Confirmed Reservation — only for non-sold-out */}
+                                                    {!soldOut && (
+                                                        <div className="flex-1">
+                                                            <Button
+                                                                size="lg"
+                                                                className="w-full font-bold shadow-md rounded-full px-4 text-xs"
+                                                                onClick={() =>
+                                                                    handleOfferSelection(
+                                                                        offer,
+                                                                        provider?.id,
+                                                                        "NN",
+                                                                    )
+                                                                }
+                                                            >
+                                                                {t("common.confirmed_reservation")}
+                                                                <ChevronRightIcon className="ml-2 h-4 w-4" />
+                                                            </Button>
+                                                        </div>
+                                                    )}
                                                 </div>
                                             </DialogContent>
                                         </Dialog>
                                     </td>
                                 );
                             })}
+                            {Array.from({ length: emptyColumns }).map((_, i) => (
+                                <td key={`empty-a-${i}`} />
+                            ))}
                         </tr>
                     </tbody>
                 </table>
-            </div>
+                </div>
+            </>
         );
     };
-
-    const offerId = `${flightGroup.airline_code}-${flightGroup.flight_number}`;
 
     return (
         <Card
@@ -1059,7 +1418,7 @@ export default function FlightGroupCard({
                                 </div>
                                 {segments.length <= 1 ? (
                                     <p className="text-[10px] font-semibold text-primary ">
-                                        {t("common.non_stop")}
+                                        
                                     </p>
                                 ) : (
                                     <p className="text-[10px] font-semibold text-amber-600 ">
@@ -1069,6 +1428,13 @@ export default function FlightGroupCard({
                                             : t("common.stops")}
                                     </p>
                                 )}
+                                <button
+                                    type="button"
+                                    onClick={() => setShowFlightDetails(true)}
+                                    className="text-[10px] text-primary underline underline-offset-2 hover:opacity-75 transition-opacity font-semibold mt-0.5"
+                                >
+                                    {t("common.flight_details") || "Flight Details"}
+                                </button>
                             </div>
 
                             {/* Arrival Terminal Stack */}
@@ -1109,7 +1475,7 @@ export default function FlightGroupCard({
                                     ? "bg-primary text-primary-foreground border-primary shadow-md scale-105"
                                     : isAvailable
                                       ? "bg-background text-foreground border-primary/30 hover:border-primary hover:bg-primary/5"
-                                      : "bg-muted text-muted-foreground border-muted cursor-not-allowed"
+                                       : "bg-muted text-muted-foreground border-amber-400/60 cursor-not-allowed"
                             }
                         `}
                                     >
@@ -1131,7 +1497,7 @@ export default function FlightGroupCard({
 
             {/* Row 2: Comparison Table (shown when cabin selected) */}
             {expandedCabin && (
-                <div className="bg-muted/5 p-4 sm:p-6 animate-in slide-in-from-top-2 duration-200">
+                <div ref={panelRef} className="bg-muted/5 p-4 sm:p-6 animate-in slide-in-from-top-2 duration-200">
                     {/* hide using if statement */}
                     {false && (
                         <p className="text-xs font-bold  tracking-widest text-muted-foreground mb-4">
@@ -1146,6 +1512,89 @@ export default function FlightGroupCard({
                     {renderComparisonTable(cabins[expandedCabin])}
                 </div>
             )}
+
+            {/* Flight Details Dialog */}
+            <Dialog open={showFlightDetails} onOpenChange={setShowFlightDetails}>
+                <DialogContent className="max-w-2xl">
+                    <DialogHeader>
+                        <DialogTitle className="text-2xl font-black">
+                            {t("common.flight_information")}
+                        </DialogTitle>
+                        <DialogDescription className="font-medium">
+                            {t("common.detailed_itinerary")}{" "}
+                            {getAirlineName(flightGroup.airline_code) ||
+                                flightGroup.airline_name?.split(" (")[0]}{" "}
+                            {flightGroup.airline_code}
+                            {flightGroup.flight_number}
+                        </DialogDescription>
+                    </DialogHeader>
+                    <div className="grid gap-6 py-4">
+                        {segments.map((segment, idx) => (
+                            <div
+                                key={idx}
+                                className="bg-muted/30 rounded-2xl p-6 border border-dashed border-primary/20"
+                            >
+                                <div className="flex justify-between items-start mb-6">
+                                    <div>
+                                        <p className="text-xs font-bold tracking-widest text-primary mb-1">
+                                            {t("common.carrier")}
+                                        </p>
+                                        <p className="text-lg font-black">
+                                            {flightGroup.airline_name?.split(" (")[0]}
+                                        </p>
+                                    </div>
+                                    <div className="text-right">
+                                        <p className="text-xs font-bold tracking-widest text-primary mb-1">
+                                            {t("common.aircraft")}
+                                        </p>
+                                        <p className="text-lg font-black">
+                                            {segment.aircraft || "Standard"}
+                                        </p>
+                                    </div>
+                                </div>
+                                <div className="grid grid-cols-3 items-center gap-4">
+                                    <div className="text-left">
+                                        <p className="text-sm font-bold text-muted-foreground mb-1">
+                                            {t("common.departure")}
+                                        </p>
+                                        <p className="text-2xl font-black">
+                                            {segment.departure_airport}
+                                        </p>
+                                        <p className="text-xs font-medium text-muted-foreground">
+                                            {segment.departure_time}
+                                        </p>
+                                    </div>
+                                    <div className="flex flex-col items-center gap-2">
+                                        <div className="flex items-center gap-2 text-primary font-bold text-xs bg-primary/10 px-3 py-1 rounded-full">
+                                            <Clock className="h-3 w-3" />
+                                            {formatDuration(segment.duration)}
+                                        </div>
+                                        <div className="w-full h-px bg-primary/20 relative">
+                                            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-background p-1 rounded-full border border-primary/20">
+                                                <Plane className="h-3 w-3 text-primary" />
+                                            </div>
+                                        </div>
+                                        <p className="text-[10px] font-bold text-muted-foreground tracking-tighter">
+                                            {t("common.non_stop")}
+                                        </p>
+                                    </div>
+                                    <div className="text-right">
+                                        <p className="text-sm font-bold text-muted-foreground mb-1">
+                                            {t("common.arrival")}
+                                        </p>
+                                        <p className="text-2xl font-black">
+                                            {segment.arrival_airport}
+                                        </p>
+                                        <p className="text-xs font-medium text-muted-foreground">
+                                            {segment.arrival_time}
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </DialogContent>
+            </Dialog>
 
             {/* Fare Rules Modal */}
             <Dialog

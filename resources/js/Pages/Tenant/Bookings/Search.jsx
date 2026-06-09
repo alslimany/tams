@@ -49,7 +49,7 @@ export default function Search({ searchDisplayMode, bookings, filters, airlines,
         adults: Number(searchDefaults.adults ?? 1),
         children: Number(searchDefaults.children ?? 0),
         infants: Number(searchDefaults.infants ?? 0),
-        is_return: Boolean(searchDefaults.is_return ?? false),
+        is_return: Boolean(searchDefaults.is_return ?? true),
         cabin_class: searchDefaults.cabin_class || 'economy',
     });
 
@@ -432,13 +432,16 @@ export default function Search({ searchDisplayMode, bookings, filters, airlines,
                                             onClick={() => setIsPaxDropdownOpen(!isPaxDropdownOpen)}
                                             className="w-full justify-between"
                                         >
-                                            <div className="flex items-center gap-2">
+                                             <div className="flex items-center gap-2">
                                                 <Users className="h-4 w-4 text-muted-foreground" />
-                                                <span>{totalPax} {t('common.passenger')}{totalPax > 1 ? t('common.plural_suffix') : ''}</span>
-                                                <Badge variant="secondary" className="ml-1 text-xs font-medium">
-                                                    {data.adults}A, {data.children}C, {data.infants}I
-                                                </Badge>
-                                            </div>
+                                                <span>
+                                                    {[
+                                                        data.adults > 0 ? `${data.adults} ${data.adults === 1 ? (t('common.adult') || 'Adult') : (t('common.adults') || 'Adults')}` : null,
+                                                        data.children > 0 ? `${data.children} ${data.children === 1 ? (t('common.child') || 'Child') : (t('common.children') || 'Children')}` : null,
+                                                        data.infants > 0 ? `${data.infants} ${data.infants === 1 ? (t('common.infant') || 'Infant') : (t('common.infants') || 'Infants')}` : null,
+                                                    ].filter(Boolean).join(', ')}
+                                                </span>
+                                             </div>
                                             <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform ${isPaxDropdownOpen ? 'rotate-180' : ''}`} />
                                         </Button>
 

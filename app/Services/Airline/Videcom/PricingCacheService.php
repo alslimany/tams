@@ -17,12 +17,18 @@ class PricingCacheService
     }
 
     /**
-     * Store a price in cache for 1 hour.
+     * Store a price in cache.
+     *
+     * Successful prices are cached for 1 hour so repeat searches within the same
+     * session don't re-probe the VRS.  Failed probes (sentinel false) are cached
+     * for only 5 minutes so a transient network or session error doesn't block an
+     * entire hour of searches.
      */
     public static function put(string $airline, string $origin, string $dest, string $class, string $paxType, mixed $data): void
     {
         $key = self::buildKey($airline, $origin, $dest, $class, $paxType);
-        Cache::put($key, $data, now()->addHour());
+        $ttl = $data === false ? now()->addMinutes(5) : now()->addHour();
+        Cache::put($key, $data, $ttl);
     }
 
     /**

@@ -125,6 +125,8 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
             ? VidecomResponseParser::parseXAvailability($xml, $this->getIataCode(), $this->getName(), $this->getCurrency())
             : VidecomResponseParser::parseAvailability($xml, $this->getIataCode(), $this->getName());
 
+        \Illuminate\Support\Facades\Log::debug("[{$this->getIataCode()}] searchAvailability {$origin}→{$destination}: ".count($options).' options parsed from XML response');
+
         // Warm route/class cache from all returned dates first.
         // Pricing cache key is intentionally date-agnostic, so a priced date can seed
         // a sold-out date of the same airline+route+class.
@@ -137,14 +139,19 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
             return $departureDate === $requestedDate;
         }));
 
+        \Illuminate\Support\Facades\Log::debug("[{$this->getIataCode()}] searchAvailability {$origin}→{$destination}: ".count($options)." options after date filter (requested={$requestedDate})");
+
         // Update pricing based on passenger types and cache
         foreach ($options as $option) {
             $this->applyAccuratePricing($option, $adults, $children, $infants);
         }
 
+        $beforePriceFilter = count($options);
         $options = array_values(array_filter($options, function ($option) use ($filterByPrice) {
             return ! $filterByPrice || (float) ($option->pricing['total'] ?? 0) > 0;
         }));
+
+        \Illuminate\Support\Facades\Log::debug("[{$this->getIataCode()}] searchAvailability {$origin}→{$destination}: ".count($options)." options after price filter (was={$beforePriceFilter}, filterByPrice=".($filterByPrice ? 'true' : 'false').')');
 
         return $options;
     }
@@ -291,7 +298,14 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
                 }
             }
         } catch (Exception $e) {
-            \Illuminate\Support\Facades\Log::warning("Failed to fetch consolidated prices for $airline $origin-$dest ($class): ".$e->getMessage());
+            \Illuminate\Support\Facades\Log::warning("Failed to fetch consolidated prices for $airline $origin-$dest ($class): ".$e->getMessage(), [
+                'airline' => $airline,
+                'origin' => $origin,
+                'dest' => $dest,
+                'class' => $class,
+                'flight_number' => $option->flight_number ?? null,
+                'departure_time' => $option->departure_time ?? null,
+            ]);
 
             // Cache a sentinel so subsequent calls within this request don't retry the same failing probe.
             foreach (['AD', 'CH', 'IN'] as $type) {
@@ -663,17 +677,6 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
      */
     public function createBooking(array $params)
     {
-        $passengers = $params['passengers'] ?? [];
-        $resType = $params['reservation_type'] ?? 'NN';
-        $paxInfo = $this->buildPaxInfo($passengers);
-        $contactInfo = $this->buildContactInfo($params['contact'] ?? [], count($passengers));
-        $flightSegments = $this->buildFlightSegments($params['itinerary'] ?? [], count($passengers), $resType);
-        $apfaxInfo = $this->buildApfaxInfo($passengers, $params['extras'] ?? []);
-        $ancillaryInfo = $this->buildAncillaryCommands($params['extras'] ?? [], $passengers, $params['itinerary'] ?? []);
-        $timeLimit = $this->buildTimeLimitCommand();
-
-        $agencyInfo = 'FG^FS1^MI-ABC TOURS01012';
-
         $commandString = $this->previewBookingCommand($params);
 
         $response = $this->client->runTransactionalCommand($commandString);
@@ -692,7 +695,8 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
         $ancillaryInfo = $this->buildAncillaryCommands($params['extras'] ?? [], $passengers, $params['itinerary'] ?? []);
         $timeLimit = $this->buildTimeLimitCommand();
 
-        $agencyInfo = 'FG^FS1^MI-ABC TOURS01012';
+        $draft = ($params['ticketing_mode'] ?? 'final') === 'draft';
+        $agencyInfo = $draft ? 'FG^FS1' : 'FG^FS1^MI-ABC TOURS01012';
 
         return $this->buildIssuanceCommand(
             paxInfo: $paxInfo,
@@ -702,6 +706,7 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
             ancillaryInfo: $ancillaryInfo,
             agencyInfo: $agencyInfo,
             timeLimit: $timeLimit,
+            draft: $draft,
         );
     }
 
@@ -713,6 +718,7 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
         string $ancillaryInfo,
         string $agencyInfo,
         ?string $timeLimit = null,
+        bool $draft = false,
     ): string {
         $commands = array_filter([
             $paxInfo,
@@ -722,11 +728,10 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
             $ancillaryInfo,
             $agencyInfo,
             $timeLimit,
-            'EZT*R',
-            'EZRE',
+            ...($draft ? [] : ['EZT*R', 'EZRE']),
         ]);
 
-        return 'i^'.implode('^', $commands).'^*R~x';
+        return 'i^'.implode('^', $commands).'^'.($draft ? 'E*R~X' : '*R~x');
     }
 
     public function retrieveBooking(string $rloc)

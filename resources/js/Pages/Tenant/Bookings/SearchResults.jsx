@@ -1,12 +1,13 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import axios from 'axios';
 import { Head, Link, router } from '@inertiajs/react';
+import { route } from 'ziggy-js';
 import TenantNavbarLayout from '@/Layouts/TenantNavbarLayout';
 import { Button } from "@/Components/ui/Button";
 import { Card, CardContent } from "@/Components/ui/Card";
 import { Badge } from "@/Components/ui/Badge";
    import { Sparkles, Flame, Percent } from "lucide-react"; // Import new accent icons
-import { Plane, Loader2, ChevronRight, Info, Clock, Briefcase, User, ReceiptText, ArrowRightLeft, ChevronDown, ChevronUp } from "lucide-react";
+import { Plane, Loader2, ChevronRight, Info, Clock, Briefcase, User, ReceiptText, ArrowRightLeft, ChevronDown, ChevronUp, Pencil } from "lucide-react";
 import {
     Dialog,
     DialogContent,
@@ -22,7 +23,7 @@ import FlightGroupCard from '@/Components/FlightGroupCard';
 import { useTranslation } from '@/hooks/useTranslation';
 
 export default function SearchResults({ providers, providerSources = {}, query, uuid, searchDisplayMode, showSoldoutClasses = true, airports = {} }) {
-    const { t, loading: translationsLoading, locale } = useTranslation();
+    const { t, loading: translationsLoading, locale, getAirlineName, getCabinName } = useTranslation();
 
     const airportInfo = (iata) => airports[iata] || { iata, name: null, city: null, country: null };
 
@@ -46,6 +47,7 @@ export default function SearchResults({ providers, providerSources = {}, query, 
     const [selectedOneWayProviderId, setSelectedOneWayProviderId] = useState(null);
     const [selectedOneWayReservationType, setSelectedOneWayReservationType] = useState('NN');
     const [openOfferSummaryKey, setOpenOfferSummaryKey] = useState(null);
+    const [activeExpandedKey, setActiveExpandedKey] = useState(null);
     const [activeSearchDate, setActiveSearchDate] = useState(initialActiveSearchDate);
     const [activeReturnDate, setActiveReturnDate] = useState(initialReturnDate);
 
@@ -397,11 +399,15 @@ export default function SearchResults({ providers, providerSources = {}, query, 
     const selectedOneWayTotal = Number(selectedOneWayFlight?.pricing?.total || 0);
     const selectedOneWayCurrency = selectedOneWayFlight?.pricing?.currency || 'LYD';
 
-    const bestOffer = activeResults.length > 0 ? activeResults.reduce((cheapest, flight) => {
-        const currentPrice = flight?.pricing?.total || 0;
-        const cheapestPrice = cheapest?.pricing?.total || 0;
-        return currentPrice < cheapestPrice ? flight : cheapest;
-    }) : null;
+    const bestOffer = (() => {
+        const withSeats = activeResults.filter(f => Number(f?.available_seats || 0) > 0);
+        if (withSeats.length === 0) return null;
+        return withSeats.reduce((cheapest, flight) => {
+            const currentPrice = flight?.pricing?.total || 0;
+            const cheapestPrice = cheapest?.pricing?.total || 0;
+            return currentPrice < cheapestPrice ? flight : cheapest;
+        });
+    })();
 
     const renderFlightDetailsDialog = (flight, triggerLabel = 'Flight Details') => {
         if (!flight) {
@@ -545,43 +551,7 @@ export default function SearchResults({ providers, providerSources = {}, query, 
         );
     };
 
-    const renderSelectedOneWaySummary = () => {
-        if (!selectedOneWayFlight) {
-            return null;
-        }
-
-        return (
-            <div className="rounded-2xl border bg-muted/10 p-4">
-                <p className="text-sm font-bold text-foreground">{t('common.selected_offer')}</p>
-                <div className="mt-3 space-y-3">
-                    <div className="rounded-xl border bg-background/70 p-3">
-                        <div className="flex items-center justify-between gap-3">
-                            <div className="flex items-center gap-2">
-                                <img src={route('api.airlines.logo', { code: selectedOneWayFlight.airline_code, variant: 'icon', radius: 4 })} alt={selectedOneWayFlight.airline_name} className="h-7 w-7 object-contain" />
-                                <div>
-                                    <p className="text-sm font-bold">{selectedOneWayFlight.departure_airport} → {selectedOneWayFlight.arrival_airport}</p>
-                                    <p className="text-xs text-muted-foreground">{selectedOneWayFlight.airline_code}{selectedOneWayFlight.flight_number} • {selectedOneWayFlight.pricing?.brand_name || 'Standard'}</p>
-                                </div>
-                            </div>
-                            <p className="text-sm font-black text-primary">{formatMoney(selectedOneWayFlight?.pricing?.total || 0, selectedOneWayFlight?.pricing?.currency || 'LYD')}</p>
-                        </div>
-                    </div>
-
-                    <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-2">
-                        {renderFlightDetailsDialog(selectedOneWayFlight, 'Show Flight Details')}
-                        {renderPriceDetailsDialog(selectedOneWayFlight, 'Show Price Details')}
-                        <Button type="button" variant="outline" size="sm" onClick={resetOneWaySelection}>
-                            Change offer
-                        </Button>
-                    </div>
-                </div>
-            </div>
-        );
-    };
-
-
-
-const renderOfferCard = (flight) => {
+    const renderOfferCard = (flight) => {
     const provider = findProviderForFlight(flight);
     const availableSeats = Number(flight.available_seats || 0);
     const isSoldOut = availableSeats <= 0;
@@ -763,249 +733,545 @@ const renderOfferCard = (flight) => {
         );
     };
 
+    const renderBestOfferCard = (flight) => {
+        const provider = findProviderForFlight(flight);
+        const seats = Number(flight.available_seats || 0);
+        const isSoldOut = seats <= 0;
+        const totalDuration = (flight.segments || []).reduce((acc, s) => acc + (s.duration || 0), 0);
+        const classCode = flight?.pricing?.class_code || flight?.segments?.[0]?.class || 'Y';
+        const cabinType = flight?.pricing?.cabin_type || 'Y';
+        const cabinLabel = getCabinName(cabinType === 'C' || cabinType === 'J' ? 'Business' : 'Economy');
+        const seatsColor = seats === 1 ? 'text-destructive' : seats <= 5 ? 'text-amber-600' : 'text-emerald-600';
+        const openReservationStatusKey = openReservationKey(flight, provider?.id);
+        const openReservationAllowed = Boolean(openReservationAvailability[openReservationStatusKey]);
+        const openReservationLoadingState = Boolean(openReservationAvailabilityLoading[openReservationStatusKey]);
+
+        return (
+            <div className="relative rounded-2xl border-2 border-primary bg-primary/[0.02] shadow-lg shadow-primary/15 mt-3">
+                {/* Best Offer badge — overhangs above the card */}
+                <div className="absolute -top-3 start-4 z-10">
+                    <span className="inline-flex items-center gap-1 bg-primary text-primary-foreground text-[10px] font-black px-2.5 py-1 rounded-full shadow-sm uppercase tracking-wider">
+                        <Sparkles className="h-3 w-3" />
+                        {t('common.best_offer', 'Best Offer')}
+                    </span>
+                </div>
+
+                <div className="p-4 pt-6 flex flex-col sm:flex-row sm:items-center gap-4">
+                    {/* Airline info */}
+                    <div className="flex items-center gap-3 sm:min-w-40">
+                        <div className="bg-primary/10 p-1.5 rounded shrink-0 flex items-center justify-center size-10">
+                            {flight.airline_code ? (
+                                <img
+                                    src={route('api.airlines.logo', { code: flight.airline_code, variant: 'icon-transparent', radius: 8 })}
+                                    alt={flight.airline_name}
+                                    className="h-8 w-8 object-contain"
+                                    onError={(e) => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'block'; }}
+                                />
+                            ) : null}
+                            <Plane className="h-4 w-4 text-primary" style={{ display: flight.airline_code ? 'none' : 'block' }} />
+                        </div>
+                        <div>
+                            <p className="font-bold text-sm leading-tight">{getAirlineName(flight.airline_code) || flight.airline_name.split(' (')[0]}</p>
+                            <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider">{flight.flight_number}</p>
+                        </div>
+                    </div>
+
+                    {/* Route: departure → duration → arrival + meta row below */}
+                    <div className="flex-1 flex flex-col gap-1.5">
+                        <div className="flex items-center gap-3">
+                            <div className="text-center">
+                                <p className="text-xl font-black tracking-tight">{flight.departure_time.split(' ')[1].substring(0, 5)}</p>
+                                <p className="text-xs font-semibold text-muted-foreground">{flight.departure_airport}</p>
+                            </div>
+                            <div className="flex-1 flex flex-col items-center gap-0.5">
+                                {totalDuration > 0 && (
+                                    <p className="text-[10px] font-bold text-muted-foreground">{formatDuration(totalDuration)}</p>
+                                )}
+                                <div className="flex items-center w-full gap-1">
+                                    <div className="h-px flex-1 bg-border" />
+                                    <Plane className="h-3 w-3 text-primary shrink-0" />
+                                    <div className="h-px flex-1 bg-border" />
+                                </div>
+                            </div>
+                            <div className="text-center">
+                                <p className="text-xl font-black tracking-tight">{flight.arrival_time.split(' ')[1].substring(0, 5)}</p>
+                                <p className="text-xs font-semibold text-muted-foreground">{flight.arrival_airport}</p>
+                            </div>
+                        </div>
+
+                        {/* Meta row: class · seats · details link */}
+                        <div className="flex items-center gap-2.5 justify-center flex-wrap">
+                            <span className="inline-flex items-center text-[10px] font-bold bg-muted text-muted-foreground px-2 py-0.5 rounded">
+                                {cabinLabel} · {classCode}
+                            </span>
+                            <span className={`text-[10px] font-bold ${seatsColor}`}>
+                                {seats} {t('common.seats_left', 'seats left')}
+                            </span>
+                            <Dialog>
+                                <DialogTrigger asChild>
+                                    <button type="button" className="text-[10px] font-semibold text-primary underline underline-offset-2 hover:opacity-75 transition-opacity">
+                                        {t('common.details', 'Details')}
+                                    </button>
+                                </DialogTrigger>
+                                <DialogContent className="max-w-2xl">
+                                    <DialogHeader>
+                                        <DialogTitle className="text-2xl font-black">{t('common.flight_information')}</DialogTitle>
+                                        <DialogDescription className="font-medium">
+                                            {flight.airline_name} {flight.airline_code}{flight.flight_number}
+                                        </DialogDescription>
+                                    </DialogHeader>
+                                    <div className="grid gap-6 py-4">
+                                        {(flight.segments || []).map((segment, idx) => (
+                                            <div key={idx} className="bg-muted/30 rounded-2xl p-6 border border-dashed border-primary/20">
+                                                <div className="flex justify-between items-start mb-6">
+                                                    <div>
+                                                        <p className="text-xs font-bold uppercase tracking-widest text-primary mb-1">{t('common.carrier')}</p>
+                                                        <p className="text-lg font-black">{flight.airline_name.split(' (')[0]}</p>
+                                                    </div>
+                                                    <div className="text-right">
+                                                        <p className="text-xs font-bold uppercase tracking-widest text-primary mb-1">{t('common.aircraft')}</p>
+                                                        <p className="text-lg font-black">{segment.aircraft || t('common.standard', 'Standard')}</p>
+                                                    </div>
+                                                </div>
+                                                <div className="grid grid-cols-3 items-center gap-4">
+                                                    <div>
+                                                        <p className="text-sm font-bold text-muted-foreground mb-1">{t('common.departure')}</p>
+                                                        <p className="text-2xl font-black">{segment.departure_airport}</p>
+                                                        <p className="text-sm text-muted-foreground">{segment.departure_time?.split(' ')[1]?.substring(0, 5)}</p>
+                                                    </div>
+                                                    <div className="flex flex-col items-center gap-1">
+                                                        <p className="text-xs font-bold text-muted-foreground">{formatDuration(segment.duration)}</p>
+                                                        <div className="flex items-center w-full gap-1">
+                                                            <div className="h-px flex-1 bg-border" />
+                                                            <Plane className="h-3 w-3 text-primary shrink-0" />
+                                                            <div className="h-px flex-1 bg-border" />
+                                                        </div>
+                                                    </div>
+                                                    <div className="text-right">
+                                                        <p className="text-sm font-bold text-muted-foreground mb-1">{t('common.arrival')}</p>
+                                                        <p className="text-2xl font-black">{segment.arrival_airport}</p>
+                                                        <p className="text-sm text-muted-foreground">{segment.arrival_time?.split(' ')[1]?.substring(0, 5)}</p>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </DialogContent>
+                            </Dialog>
+                        </div>
+                    </div>
+
+                    {/* Price + Select → offer summary Dialog */}
+                    <div className="flex items-center justify-between sm:justify-start gap-3 w-full sm:w-auto sm:shrink-0 border-t sm:border-t-0 sm:border-l border-border/60 pt-3 sm:pt-0 sm:pl-4">
+                        <div>
+                            <p className="text-xl font-black text-primary leading-tight">{formatMoneyValue(flight?.pricing?.total || 0)}</p>
+                            <p className="text-xs font-bold text-muted-foreground">{flight?.pricing?.currency || 'LYD'}</p>
+                        </div>
+                        <Dialog
+                            open={openOfferSummaryKey === offerSummaryKey(flight, provider?.id)}
+                            onOpenChange={(open) => {
+                                setOpenOfferSummaryKey(open ? offerSummaryKey(flight, provider?.id) : null);
+                                if (open) {
+                                    checkOpenReservationAvailability(flight, provider?.id);
+                                }
+                            }}
+                        >
+                            <DialogTrigger asChild>
+                                <Button className="font-bold shadow-sm" disabled={isSoldOut}>
+                                    {isSoldOut ? t('common.sold_out', 'Sold Out') : t('common.select', 'Select')}
+                                    {!isSoldOut && <ChevronRight className="ml-1 h-4 w-4" />}
+                                </Button>
+                            </DialogTrigger>
+                            <DialogContent className="max-w-2xl sm:rounded-3xl p-0 overflow-hidden">
+                                <div className="bg-primary/5 p-6 border-b">
+                                    <DialogTitle className="text-2xl font-black tracking-normal leading-tight">{t('common.offer_summary')}</DialogTitle>
+                                    <DialogDescription className="text-muted-foreground font-medium text-sm mt-2">{t('common.review_selected_flight')}</DialogDescription>
+                                </div>
+                                <div className="p-6 space-y-6 max-h-[60vh] overflow-y-auto">
+                                    <div className="flex justify-between items-center bg-card border rounded-2xl p-4 shadow-sm">
+                                        <div>
+                                            <p className="text-sm font-bold text-muted-foreground">{t('common.itinerary_fare')}</p>
+                                            <p className="text-xl font-black">{flight.departure_airport} <ArrowRightLeft className="inline shrink-0 h-4 w-4 mx-1" /> {flight.arrival_airport}</p>
+                                            <p className="text-sm font-medium">{flight.airline_name} • {flight.airline_code}{flight.flight_number}</p>
+                                        </div>
+                                        <div className="text-right">
+                                            <p className="text-sm font-bold text-muted-foreground">{t('common.grand_total')}</p>
+                                            <p className="text-2xl font-black text-primary">{formatMoneyValue(flight.pricing.total)} <span className="text-sm">{flight.pricing.currency}</span></p>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <p className="font-bold mb-3 uppercase tracking-widest text-xs text-muted-foreground">{t('common.flight_segments')}</p>
+                                        <div className="space-y-3">
+                                            {flight.segments.map((seg, i) => (
+                                                <div key={i} className="flex gap-4 p-4 border rounded-xl bg-muted/10 items-center">
+                                                    <Plane className="h-5 w-5 text-primary" />
+                                                    <div className="flex-1">
+                                                        <div className="flex justify-between font-black text-sm">
+                                                            <span>{seg.departure_airport} ({seg.departure_time.split(' ')[1].substring(0, 5)})</span>
+                                                            <span>{seg.arrival_airport} ({seg.arrival_time.split(' ')[1].substring(0, 5)})</span>
+                                                        </div>
+                                                        <p className="text-xs text-muted-foreground font-medium mt-1">{t('common.duration')}: {formatDuration(seg.duration)} • {seg.aircraft || t('common.standard')}</p>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="p-6 border-t bg-muted/30 flex flex-col sm:flex-row gap-3">
+                                    {openReservationLoadingState && (
+                                        <Button variant="outline" size="lg" className="flex-1 font-bold shadow-sm rounded-full px-4 text-xs" disabled>
+                                            <Loader2 className="h-4 w-4 animate-spin text-primary mr-2" />
+                                            {t('common.checking_open_reservation', 'Checking...')}
+                                        </Button>
+                                    )}
+                                    {openReservationAllowed && (
+                                        <Button variant="outline" size="lg" className="flex-1 font-bold shadow-sm rounded-full px-4 text-xs" onClick={() => handleOfferSelection(flight, provider?.id, 'QQ')}>
+                                            {t('common.open_reservation', 'Open Reservation')}
+                                        </Button>
+                                    )}
+                                    <Button size="lg" className="flex-1 font-bold shadow-md rounded-full px-4 text-xs" onClick={() => handleOfferSelection(flight, provider?.id, 'NN')}>
+                                        {t('common.confirmed_reservation', 'Confirmed Reservation')}
+                                        <ChevronRight className="ml-2 h-4 w-4" />
+                                    </Button>
+                                </div>
+                            </DialogContent>
+                        </Dialog>
+                    </div>
+                </div>
+            </div>
+        );
+    };
+
+    const renderLockedFlightCard = (flight, onChangeFlight) => (
+        <div className="rounded-2xl border bg-card p-4 flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3 min-w-0">
+                <div className="bg-primary/10 p-1.5 rounded shrink-0">
+                    {flight.airline_code ? (
+                        <img
+                            src={route('api.airlines.logo', { code: flight.airline_code, variant: 'icon-transparent', radius: 8 })}
+                            alt={flight.airline_name}
+                            className="h-8 w-8 object-contain"
+                        />
+                    ) : (
+                        <Plane className="h-5 w-5 text-primary" />
+                    )}
+                </div>
+                <div className="min-w-0">
+                    <p className="font-bold text-sm truncate">{getAirlineName(flight.airline_code) || flight.airline_name.split(' (')[0]}</p>
+                    <p className="text-xs text-muted-foreground">{flight.flight_number} · {flight.departure_airport} → {flight.arrival_airport}</p>
+                    <p className="text-xs text-muted-foreground">{flight.departure_time?.split(' ')[1]?.substring(0, 5)} – {flight.arrival_time?.split(' ')[1]?.substring(0, 5)}</p>
+                </div>
+            </div>
+            <div className="flex items-center gap-3 shrink-0">
+                <p className="text-lg font-black text-primary">{formatMoneyValue(flight?.pricing?.total || 0)} {t(`common.${(flight?.pricing?.currency || 'LYD').toLowerCase()}`, flight?.pricing?.currency || 'LYD')}</p>
+                <Button type="button" variant="outline" size="sm" onClick={onChangeFlight}>
+                    {t('common.change', 'Change')}
+                </Button>
+            </div>
+        </div>
+    );
+
+    const renderDateStrip = (baseDate, mode) => (
+        <div className="flex flex-1 md:flex-none bg-card border rounded-xl shadow-sm overflow-hidden w-full md:w-auto mt-4 md:mt-0">
+            {[-3, -2, -1, 0, 1, 2, 3].map(offset => {
+                const date = new Date(baseDate);
+                date.setDate(date.getDate() + offset);
+                const isSelected = offset === 0;
+                const isPast = date < new Date(new Date().setHours(0, 0, 0, 0));
+                const localDateStr = new Date(date.getTime() - (date.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
+                const dayName = date.toLocaleDateString(locale, { weekday: 'short' });
+                const dayNum = date.getDate();
+                const monthName = date.toLocaleDateString(locale, { month: 'short' });
+
+                if (isPast && !isSelected) {
+                    return (
+                        <div key={offset} className="flex-1 min-w-15 md:min-w-20 py-2 border-r last:border-r-0 text-center opacity-40 cursor-not-allowed bg-muted/20">
+                            <div className="text-[10px] font-bold uppercase text-muted-foreground">{dayName}</div>
+                            <div className="text-sm md:text-base font-black text-muted-foreground">{monthName} {dayNum}</div>
+                        </div>
+                    );
+                }
+
+                if (mode === 'return') {
+                    return (
+                        <button
+                            key={offset}
+                            type="button"
+                            className={`flex-1 min-w-15 md:min-w-20 py-2 px-1 md:px-4 border-r last:border-r-0 text-center transition-colors focus:outline-none hover:bg-primary/5 ${isSelected ? 'bg-primary text-primary-foreground hover:bg-primary' : 'bg-transparent text-foreground'}`}
+                            onClick={() => {
+                                setActiveReturnDate(localDateStr);
+                                loadReturnOptions(selectedOutboundFlight, selectedOutboundProviderId || findProviderForFlight(selectedOutboundFlight)?.id, selectedOutboundReservationType, localDateStr, true);
+                            }}
+                        >
+                            <div className={`text-[10px] font-bold uppercase ${isSelected ? 'text-primary-foreground/80' : 'text-muted-foreground'}`}>{dayName}</div>
+                            <div className="text-sm md:text-base font-black whitespace-nowrap">{monthName} {dayNum}</div>
+                        </button>
+                    );
+                }
+
+                return (
+                    <Link
+                        key={offset}
+                        href={route('flights.search', { ...query, date: localDateStr })}
+                        as="a"
+                        onClick={() => setActiveSearchDate(localDateStr)}
+                        className={`flex-1 min-w-15 md:min-w-20 py-2 px-1 md:px-4 border-r last:border-r-0 text-center transition-colors focus:outline-none hover:bg-primary/5 ${isSelected ? 'bg-primary text-primary-foreground hover:bg-primary' : 'bg-transparent text-foreground'}`}
+                    >
+                        <div className={`text-[10px] font-bold uppercase ${isSelected ? 'text-primary-foreground/80' : 'text-muted-foreground'}`}>{dayName}</div>
+                        <div className="text-sm md:text-base font-black whitespace-nowrap">{monthName} {dayNum}</div>
+                    </Link>
+                );
+            })}
+        </div>
+    );
+
+    const renderRouteHeading = (origin, destination, date, showAirportInfo = true) => (
+        <div>
+            <h2 className="text-4xl font-black tracking-tight flex items-center gap-3">
+                <span className="flex flex-col leading-none">
+                    <span>{origin}</span>
+                    {showAirportInfo && airportInfo(origin).name && (
+                        <span className="text-sm font-semibold text-muted-foreground mt-1">
+                            {airportInfo(origin).name}
+                            {airportInfo(origin).country ? ` · ${airportInfo(origin).country}` : ''}
+                        </span>
+                    )}
+                </span>
+                <ChevronRight className="h-8 w-8 text-muted-foreground/30 shrink-0" />
+                <span className="flex flex-col leading-none">
+                    <span>{destination}</span>
+                    {showAirportInfo && airportInfo(destination).name && (
+                        <span className="text-sm font-semibold text-muted-foreground mt-1">
+                            {airportInfo(destination).name}
+                            {airportInfo(destination).country ? ` · ${airportInfo(destination).country}` : ''}
+                        </span>
+                    )}
+                </span>
+            </h2>
+            <p className="text-muted-foreground font-medium mt-1">
+                {new Date(date).toLocaleDateString(locale, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })} • {
+                    [
+                        query.adults > 0 ? t('common.adults_count', { count: query.adults }) : null,
+                        query.children > 0 ? t('common.children_count', { count: query.children }) : null,
+                        query.infants > 0 ? t('common.infants_count', { count: query.infants }) : null,
+                    ].filter(Boolean).join(', ')
+                }
+
+                <Link
+                href={route('flights.index', query)}
+                className="mt-2 ms-3 inline-flex items-center gap-1.5  font-semibold text-primary hover:underline underline-offset-2"
+                >
+                    
+                    {t('common.edit_search') || 'Edit Search'}
+                </Link>
+            </p>
+            
+        </div>
+    );
+
+    const renderOffersIndicator = (loading, loadingKey, count, singularKey = 'common.flight_offer_found', pluralKey = 'common.flight_offers_found') => (
+        <div className={`mb-6 rounded-xl border px-4 py-3 ${offersIndicatorStyles[loading ? 'loading' : count > 0 ? 'loaded' : 'empty']}`}>
+            <div className="flex items-center gap-3">
+                {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plane className="h-4 w-4" />}
+                <p className="text-sm font-bold">
+                    {loading
+                        ? t(loadingKey)
+                        : count > 0
+                            ? t(count === 1 ? singularKey : pluralKey, { count })
+                            : t('common.no_flight_offers_found')}
+                </p>
+            </div>
+        </div>
+    );
+
+    const resetOutboundSelection = () => {
+        setSelectedOutboundFlight(null);
+        setSelectedOutboundProviderId(null);
+        setSelectedOutboundReservationType('NN');
+        setSelectedReturnFlight(null);
+        setSelectedReturnProviderId(null);
+        setSelectedReturnReservationType('NN');
+        setReturnOptions([]);
+        setActiveReturnDate(initialReturnDate);
+    };
+
     return (
         <TenantNavbarLayout>
             <Head title={`Flights to ${airportInfo(activeDestination).name || activeDestination}`} />
 
             <div className={`max-w-7xl mx-auto py-8 px-4 ${((isRoundTripSearch && selectedOutboundFlight && selectedReturnFlight) || (!isRoundTripSearch && selectedOneWayFlight)) ? 'pb-28' : ''}`}>
-                <div className="flex flex-col md:flex-row md:items-end justify-between mb-10 gap-6">
+                {isRoundTripSearch && selectedOutboundFlight ? (
+                    /* ===== TWO-SECTION ROUND-TRIP LAYOUT ===== */
                     <div>
-                        {/* <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary/10 text-primary text-xs font-bold uppercase tracking-wider mb-2">
-                            <div className="size-1.5 rounded-full bg-primary animate-pulse" />
-                            Search Results
-                        </div> */}
-                        <h2 className="text-4xl font-black tracking-tight flex items-center gap-3">
-                            <span className="flex flex-col leading-none">
-                                <span>{activeOrigin}</span>
-                                {airportInfo(activeOrigin).name && (
-                                    <span className="text-sm font-semibold text-muted-foreground mt-1">
-                                        {airportInfo(activeOrigin).name}
-                                        {airportInfo(activeOrigin).country ? ` · ${airportInfo(activeOrigin).country}` : ''}
-                                    </span>
-                                )}
-                            </span>
-                            <ChevronRight className="h-8 w-8 text-muted-foreground/30 shrink-0" />
-                            <span className="flex flex-col leading-none">
-                                <span>{activeDestination}</span>
-                                {airportInfo(activeDestination).name && (
-                                    <span className="text-sm font-semibold text-muted-foreground mt-1">
-                                        {airportInfo(activeDestination).name}
-                                        {airportInfo(activeDestination).country ? ` · ${airportInfo(activeDestination).country}` : ''}
-                                    </span>
-                                )}
-                            </span>
-                        </h2>
-                        <p className="text-muted-foreground font-medium mt-1">
-                            {new Date(activeDate).toLocaleDateString(locale, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })} • {
-                                [
-                                    query.adults > 0 ? `${query.adults} Adult${query.adults > 1 ? 's' : ''}` : null,
-                                    query.children > 0 ? `${query.children} Child${query.children > 1 ? 'ren' : ''}` : null,
-                                    query.infants > 0 ? `${query.infants} Infant${query.infants > 1 ? 's' : ''}` : null
-                                ].filter(Boolean).join(', ')
-                            }
-                        </p>
-                    </div>
-                    <div className="flex flex-1 md:flex-none bg-card border rounded-xl shadow-sm overflow-hidden w-full md:w-auto mt-4 md:mt-0">
-                        {[-3, -2, -1, 0, 1, 2, 3].map(offset => {
-                            const date = new Date(activeDate);
-                            date.setDate(date.getDate() + offset);
-                            const isSelected = offset === 0;
-                            const isPast = date < new Date(new Date().setHours(0, 0, 0, 0));
+                        {/* SECTION 1 – Locked outbound */}
+                        <div className="mb-0">
+                            <div className="flex flex-col md:flex-row md:items-end justify-between mb-6 gap-6">
+                                {renderRouteHeading(query.origin, query.destination, activeSearchDate)}
+                                {renderDateStrip(activeSearchDate, 'outbound')}
+                            </div>
+                            {renderLockedFlightCard(selectedOutboundFlight, resetOutboundSelection)}
+                        </div>
 
-                            // Format date for the POST payload (YYYY-MM-DD)
-                            const localDateStr = new Date(date.getTime() - (date.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
-                            const dayName = date.toLocaleDateString(locale, { weekday: 'short' });
-                            const dayNum = date.getDate();
-                            const monthName = date.toLocaleDateString(locale, { month: 'short' });
+                        {/* DASHED DIVIDER */}
+                        <div className="relative py-8">
+                            <div className="absolute inset-0 flex items-center">
+                                <div className="w-full border-t border-dashed border-primary/30" />
+                            </div>
+                            <div className="relative flex justify-center">
+                                <span className="bg-background px-4 text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                                    {t('common.return_flight', 'Return Flight')}
+                                </span>
+                            </div>
+                        </div>
 
-                            if (isPast && !isSelected) {
-                                return (
-                                    <div key={offset} className="flex-1 min-w-15 md:min-w-20 py-2 border-r last:border-r-0 text-center opacity-40 cursor-not-allowed bg-muted/20">
-                                        <div className="text-[10px] font-bold uppercase text-muted-foreground">{dayName}</div>
-                                        <div className="text-sm md:text-base font-black text-muted-foreground">{monthName} {dayNum}</div>
-                                    </div>
-                                );
-                            }
+                        {/* SECTION 2 – Active inbound */}
+                        <div>
+                            <div className="flex flex-col md:flex-row md:items-end justify-between mb-10 gap-6">
+                                {renderRouteHeading(activeOrigin, activeDestination, activeDate)}
+                                {renderDateStrip(activeReturnDate, 'return')}
+                            </div>
 
-                            return (
-                                isSelectingReturnStep ? (
-                                    <button
-                                        key={offset}
-                                        type="button"
-                                        className={`flex-1 min-w-15 md:min-w-20 py-2 px-1 md:px-4 border-r last:border-r-0 text-center transition-colors focus:outline-none hover:bg-primary/5 ${isSelected ? 'bg-primary text-primary-foreground hover:bg-primary' : 'bg-transparent text-foreground'}`}
-                                        onClick={() => {
-                                            setActiveReturnDate(localDateStr);
-                                            loadReturnOptions(selectedOutboundFlight, selectedOutboundProviderId || findProviderForFlight(selectedOutboundFlight)?.id, selectedOutboundReservationType, localDateStr, true);
-                                        }}
-                                    >
-                                        <div className={`text-[10px] font-bold uppercase ${isSelected ? 'text-primary-foreground/80' : 'text-muted-foreground'}`}>{dayName}</div>
-                                        <div className="text-sm md:text-base font-black whitespace-nowrap">{monthName} {dayNum}</div>
-                                    </button>
-                                ) : (
-                                    <Link
-                                        key={offset}
-                                        href={route('flights.search', { ...query, date: localDateStr })}
-                                        as="a"
-                                        onClick={() => setActiveSearchDate(localDateStr)}
-                                        className={`flex-1 min-w-15 md:min-w-20 py-2 px-1 md:px-4 border-r last:border-r-0 text-center transition-colors focus:outline-none hover:bg-primary/5 ${isSelected ? 'bg-primary text-primary-foreground hover:bg-primary' : 'bg-transparent text-foreground'}`}
-                                    >
-                                        <div className={`text-[10px] font-bold uppercase ${isSelected ? 'text-primary-foreground/80' : 'text-muted-foreground'}`}>{dayName}</div>
-                                        <div className="text-sm md:text-base font-black whitespace-nowrap">{monthName} {dayNum}</div>
-                                    </Link>
-                                )
-                            );
-                        })}
-                    </div>
-                </div>
+                            {renderOffersIndicator(
+                                loadingReturnOptions,
+                                'common.loading_return_flight_offers',
+                                searchDisplayMode === 'per_flight' ? groupedFlights.length : returnOptions.length,
+                                'common.flight_found',
+                                'common.flights_found',
+                            )}
 
-                <div className={`mb-6 rounded-xl border px-4 py-3 ${offersIndicatorStyles[offersIndicatorState]}`}>
-                    <div className="flex items-center gap-3">
-                        {isOffersLoading ? (
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                        ) : (
-                            <Plane className="h-4 w-4" />
-                        )}
-                        <p className="text-sm font-bold">
-                            {isOffersLoading
-                                ? (isSelectingReturnStep ? t('common.loading_return_flight_offers') : t('common.loading_flight_offers'))
-                                : offersFoundCount > 0
-                                    ? t(offersFoundCount === 1 ? 'common.flight_offer_found' : 'common.flight_offers_found', {
-                                        count: offersFoundCount
+                            {providerErrors.length > 0 && (
+                                <div className="rounded-2xl border border-amber-500/40 bg-amber-500/5 p-4 mb-6">
+                                    <p className="text-sm font-bold text-amber-700 dark:text-amber-400">
+                                        {t('common.some_flights_unavailable')}
+                                    </p>
+                                </div>
+                            )}
+
+                            <div className="space-y-6">
+                                {selectedReturnFlight ? (
+                                    renderLockedFlightCard(selectedReturnFlight, () => {
+                                        setSelectedReturnFlight(null);
+                                        setSelectedReturnProviderId(null);
+                                        setSelectedReturnReservationType('NN');
                                     })
-                                    : t('common.no_flight_offers_found')}
-                        </p>
+                                ) : returnOptions.length > 0 ? (
+                                    searchDisplayMode === 'per_flight'
+                                        ? groupedFlights.map((flightGroup) => (
+                                            <FlightGroupCard
+                                                key={`${flightGroup.airline_code}-${flightGroup.flight_number}`}
+                                                flightGroup={flightGroup}
+                                                providers={providers}
+                                                showSoldoutClasses={showSoldoutClasses}
+                                                openReservationAvailability={openReservationAvailability}
+                                                openReservationAvailabilityLoading={openReservationAvailabilityLoading}
+                                                openOfferSummaryKey={openOfferSummaryKey}
+                                                setOpenOfferSummaryKey={setOpenOfferSummaryKey}
+                                                checkOpenReservationAvailability={checkOpenReservationAvailability}
+                                                handleOfferSelection={handleOfferSelection}
+                                                activeExpandedKey={activeExpandedKey}
+                                                onExpandedChange={setActiveExpandedKey}
+                                            />
+                                        ))
+                                        : returnOptions.map(renderOfferCard)
+                                ) : (
+                                    !loadingReturnOptions && (
+                                        <div className="text-center py-24 border rounded-3xl bg-card shadow-sm">
+                                            <Plane className="h-16 w-16 text-muted-foreground/20 mx-auto mb-4" />
+                                            <h3 className="text-xl font-bold">No Return Flights Found</h3>
+                                            <p className="text-muted-foreground max-w-xs mx-auto">No return options were found for your selected outbound flight. Change outbound flight or adjust dates.</p>
+                                            <Button type="button" variant="outline" className="font-bold mt-6" onClick={resetOutboundSelection}>
+                                                {t('common.change', 'Change outbound')}
+                                            </Button>
+                                        </div>
+                                    )
+                                )}
+                            </div>
+                        </div>
                     </div>
-                </div>
+                ) : (
+                    /* ===== SINGLE-SECTION LAYOUT (one-way / round-trip step 1) ===== */
+                    <>
+                        <div className="flex flex-col md:flex-row md:items-end justify-between mb-10 gap-6">
+                            {renderRouteHeading(activeOrigin, activeDestination, activeDate)}
+                            {renderDateStrip(activeDate, 'outbound')}
+                        </div>
 
-                <div className="space-y-6">
-                    {!isRoundTripSearch && renderSelectedOneWaySummary()}
+                        {renderOffersIndicator(
+                            isOffersLoading,
+                            'common.loading_flight_offers',
+                            searchDisplayMode === 'per_flight' ? groupedFlights.length : offersFoundCount,
+                            'common.flight_found',
+                            'common.flights_found',
+                        )}
 
-                    {isRoundTripSearch && (
-                        <div className="rounded-2xl border bg-muted/10 p-4">
-                            <p className="text-sm font-bold text-foreground">
-                                {selectedOutboundFlight ? 'Step 2 of 2: Select return flight' : 'Step 1 of 2: Select outbound flight'}
-                            </p>
-                            {selectedOutboundFlight ? (
-                                <div className="mt-3 space-y-3">
-                                    <div className="grid gap-3 md:grid-cols-2">
-                                        <div className="rounded-xl border bg-background/70 p-3">
-                                            <p className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">{t('common.outbound')}</p>
-                                            <div className="mt-2 flex items-center justify-between gap-3">
-                                                <div className="flex items-center gap-2">
-                                                    <img src={route('api.airlines.logo', { code: selectedOutboundFlight.airline_code, variant: 'icon', radius: 4 })} alt={selectedOutboundFlight.airline_name} className="h-7 w-7 object-contain" />
-                                                    <div>
-                                                        <p className="text-sm font-bold">{selectedOutboundFlight.departure_airport} → {selectedOutboundFlight.arrival_airport}</p>
-                                                        <p className="text-xs text-muted-foreground">{selectedOutboundFlight.airline_code}{selectedOutboundFlight.flight_number}</p>
-                                                    </div>
-                                                </div>
-                                                <p className="text-sm font-black text-primary">{formatMoney(selectedOutboundFlight?.pricing?.total || 0, selectedOutboundFlight?.pricing?.currency || 'LYD')}</p>
-                                            </div>
-                                        </div>
+                        <div className="space-y-6">
+                            {!isRoundTripSearch && selectedOneWayFlight && renderLockedFlightCard(selectedOneWayFlight, resetOneWaySelection)}
 
-                                        <div className="rounded-xl border bg-background/70 p-3">
-                                            <p className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">{t('common.return')}</p>
-                                            {selectedReturnFlight ? (
-                                                <div className="mt-2 flex items-center justify-between gap-3">
-                                                    <div className="flex items-center gap-2">
-                                                        <img src={route('api.airlines.logo', { code: selectedReturnFlight.airline_code, variant: 'icon', radius: 4 })} alt={selectedReturnFlight.airline_name} className="h-7 w-7 object-contain" />
-                                                        <div>
-                                                            <p className="text-sm font-bold">{selectedReturnFlight.departure_airport} → {selectedReturnFlight.arrival_airport}</p>
-                                                            <p className="text-xs text-muted-foreground">{selectedReturnFlight.airline_code}{selectedReturnFlight.flight_number}</p>
-                                                        </div>
-                                                    </div>
-                                                    <p className="text-sm font-black text-primary">{formatMoney(selectedReturnFlight?.pricing?.total || 0, selectedReturnFlight?.pricing?.currency || 'LYD')}</p>
-                                                </div>
-                                            ) : (
-                                                <p className="mt-2 text-xs text-muted-foreground">{t('common.select_return_offer')}</p>
-                                            )}
-                                        </div>
-                                    </div>
+                            {providerErrors.length > 0 && (
+                                <div className="rounded-2xl border border-amber-500/40 bg-amber-500/5 p-4">
+                                    <p className="text-sm font-bold text-amber-700 dark:text-amber-400">
+                                        {t('common.some_flights_unavailable')}
+                                    </p>
+                                </div>
+                            )}
 
-                                    <div className="flex justify-end">
-                                        <Button
-                                            type="button"
-                                            variant="outline"
-                                            size="sm"
-                                            onClick={() => {
-                                                setSelectedOutboundFlight(null);
-                                                setSelectedOutboundProviderId(null);
-                                                setSelectedOutboundReservationType('NN');
-                                                setSelectedReturnFlight(null);
-                                                setSelectedReturnProviderId(null);
-                                                setSelectedReturnReservationType('NN');
-                                                setReturnOptions([]);
-                                                setActiveReturnDate(initialReturnDate);
-                                            }}
-                                        >
-                                            Change outbound
-                                        </Button>
+                            {!loading && bestOffer && !selectedOneWayFlight && (
+                                <div className="space-y-3">
+                                    {renderBestOfferCard(bestOffer)}
+                                     <div className="flex items-center gap-3">
+                                       
+                                        <div className="h-px bg-border flex-1"></div>
                                     </div>
                                 </div>
-                            ) : null}
+                            )}
+
+                            {!isRoundTripSearch && selectedOneWayFlight ? null : activeResults.length > 0 ? (
+                                searchDisplayMode === 'per_flight'
+                                    ? groupedFlights.map((flightGroup) => (
+                                        <FlightGroupCard
+                                            key={`${flightGroup.airline_code}-${flightGroup.flight_number}`}
+                                            flightGroup={flightGroup}
+                                            providers={providers}
+                                            showSoldoutClasses={showSoldoutClasses}
+                                            openReservationAvailability={openReservationAvailability}
+                                            openReservationAvailabilityLoading={openReservationAvailabilityLoading}
+                                            openOfferSummaryKey={openOfferSummaryKey}
+                                            setOpenOfferSummaryKey={setOpenOfferSummaryKey}
+                                            checkOpenReservationAvailability={checkOpenReservationAvailability}
+                                            handleOfferSelection={handleOfferSelection}
+                                            activeExpandedKey={activeExpandedKey}
+                                            onExpandedChange={setActiveExpandedKey}
+                                        />
+                                    ))
+                                    : activeResults.map(renderOfferCard)
+                            ) : (
+                                !loading && (
+                                    <div className="text-center py-24 border rounded-3xl bg-card shadow-sm">
+                                        <Plane className="h-16 w-16 text-muted-foreground/20 mx-auto mb-4" />
+                                        <h3 className="text-xl font-bold">No Flights Found</h3>
+                                        <p className="text-muted-foreground max-w-xs mx-auto">We couldn't find any flights for your selected route and date. Try adjusting your search.</p>
+                                        <Link href={route('flights.index')} data={query} className="mt-6 inline-block">
+                                            <Button variant="outline" className="font-bold">{t('common.modify_search')}</Button>
+                                        </Link>
+                                    </div>
+                                )
+                            )}
                         </div>
-                    )}
+                    </>
+                )}
 
-                    {providerErrors.length > 0 && (
-                        <div className="rounded-2xl border border-amber-500/40 bg-amber-500/5 p-4">
-                            <p className="text-sm font-bold text-amber-700 dark:text-amber-400">
-                                {t('common.some_flights_unavailable')}
-                            </p>
-                        </div>
-                    )}
-
-                    {bestOffer && !selectedOneWayFlight && !selectedOutboundFlight && (
-                        <div className="space-y-4">
-                            <div className="flex items-center gap-3">
-                                <div className="h-2 w-2 rounded-full bg-primary"></div>
-                                <h3 className="text-lg font-bold">{t('common.best_offer')}</h3>
-                                <div className="h-px bg-border flex-1"></div>
-                            </div>
-                            {renderOfferCard(bestOffer)}
-                        </div>
-                    )}
-
-                    {!isRoundTripSearch && selectedOneWayFlight ? null : activeResults.length > 0 ? (
-                        searchDisplayMode === 'per_flight'
-                            ? groupedFlights.map((flightGroup) => (
-                                <FlightGroupCard
-                                    key={`${flightGroup.airline_code}-${flightGroup.flight_number}`}
-                                    flightGroup={flightGroup}
-                                    providers={providers}
-                                    showSoldoutClasses={showSoldoutClasses}
-                                    openReservationAvailability={openReservationAvailability}
-                                    openReservationAvailabilityLoading={openReservationAvailabilityLoading}
-                                    openOfferSummaryKey={openOfferSummaryKey}
-                                    setOpenOfferSummaryKey={setOpenOfferSummaryKey}
-                                    checkOpenReservationAvailability={checkOpenReservationAvailability}
-                                    handleOfferSelection={handleOfferSelection}
-                                />
-                            ))
-                            : activeResults.map(renderOfferCard)
-                    ) : (
-                        !loading && !loadingReturnOptions && (
-                            <div className="text-center py-24 border rounded-3xl bg-card shadow-sm">
-                                <Plane className="h-16 w-16 text-muted-foreground/20 mx-auto mb-4" />
-                                <h3 className="text-xl font-bold">{selectedOutboundFlight ? 'No Return Flights Found' : 'No Flights Found'}</h3>
-                                <p className="text-muted-foreground max-w-xs mx-auto">{selectedOutboundFlight ? 'No return options were found for your selected outbound flight. Change outbound flight or adjust dates.' : "We couldn't find any flights for your selected route and date. Try adjusting your search."}</p>
-                                <Link href={route('flights.index')} data={query} className="mt-6 inline-block">
-                                    <Button variant="outline" className="font-bold">{t('common.modify_search')}</Button>
-                                </Link>
-                            </div>
-                        )
-                    )}
-                </div>
-
+                {/* Fixed bottom bar – round-trip continue */}
                 {isRoundTripSearch && selectedOutboundFlight && selectedReturnFlight ? (
                     <div className="fixed inset-x-0 bottom-0 z-40 border-t bg-background/95 backdrop-blur supports-backdrop-filter:bg-background/85">
                         <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-3">
                             <div className="min-w-0 flex-1">
                                 <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">{t('common.selected_itinerary')}</p>
                                 <p className="truncate text-xs font-semibold">
-                                    {selectedOutboundFlight.departure_airport} → {selectedOutboundFlight.arrival_airport} • {selectedReturnFlight.departure_airport} → {selectedReturnFlight.arrival_airport}
+                                    {selectedOutboundFlight.departure_airport} → {selectedOutboundFlight.arrival_airport} → {selectedReturnFlight.arrival_airport}
                                 </p>
                                 <div className="mt-0.5 flex items-baseline gap-1">
                                     <span className="text-2xl font-black leading-none text-primary">{formatMoney(selectedRoundTripTotal, selectedRoundTripCurrency).split(' ')[0]}</span>
-                                    <span className="text-sm font-bold text-primary">{selectedRoundTripCurrency}</span>
+                                    <span className="text-sm font-bold text-primary">{t(`common.${selectedRoundTripCurrency.toLowerCase()}`, selectedRoundTripCurrency)}</span>
                                 </div>
                             </div>
                             <Button type="button" size="lg" className="shrink-0 font-bold" onClick={continueRoundTrip}>
@@ -1016,6 +1282,7 @@ const renderOfferCard = (flight) => {
                     </div>
                 ) : null}
 
+                {/* Fixed bottom bar – one-way continue */}
                 {!isRoundTripSearch && selectedOneWayFlight ? (
                     <div className="fixed inset-x-0 bottom-0 z-40 border-t bg-background/95 backdrop-blur supports-backdrop-filter:bg-background/85">
                         <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-3">
@@ -1026,7 +1293,7 @@ const renderOfferCard = (flight) => {
                                 </p>
                                 <div className="mt-0.5 flex items-baseline gap-1">
                                     <span className="text-2xl font-black leading-none text-primary">{formatMoney(selectedOneWayTotal, selectedOneWayCurrency).split(' ')[0]}</span>
-                                    <span className="text-sm font-bold text-primary">{selectedOneWayCurrency}</span>
+                                    <span className="text-sm font-bold text-primary">{t(`common.${selectedOneWayCurrency.toLowerCase()}`, selectedOneWayCurrency)}</span>
                                 </div>
                             </div>
                             <Button type="button" size="lg" className="shrink-0 font-bold" onClick={continueOneWay}>

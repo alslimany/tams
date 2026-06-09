@@ -23,6 +23,17 @@ return Application::configure(basePath: dirname(__DIR__))
             \App\Http\Middleware\TrackUserActivity::class,
             \App\Http\Middleware\CheckActiveUser::class,
         ]);
+        
+        // $middleware->redirectTo(
+        //     guests: '/login',
+        //     users: '/flights' // Change this from '/dashboard' to '/'
+        // );
+
+        $middleware->priority([
+            \Illuminate\Session\Middleware\StartSession::class,
+            \App\Http\Middleware\HandleInertiaRequests::class, // Must be prioritized
+            \Illuminate\Auth\Middleware\Authenticate::class,
+        ]);
 
         $middleware->alias([
             'role' => \App\Http\Middleware\EnsureUserRole::class,

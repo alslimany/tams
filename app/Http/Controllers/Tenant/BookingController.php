@@ -97,7 +97,9 @@ class BookingController extends Controller
                 'adults' => (int) ($searchDefaults['adults'] ?? 1),
                 'children' => (int) ($searchDefaults['children'] ?? 0),
                 'infants' => (int) ($searchDefaults['infants'] ?? 0),
-                'is_return' => filter_var($searchDefaults['is_return'] ?? false, FILTER_VALIDATE_BOOLEAN),
+                'is_return' => array_key_exists('is_return', $searchDefaults)
+                    ? filter_var($searchDefaults['is_return'], FILTER_VALIDATE_BOOLEAN)
+                    : true,
                 'cabin_class' => (string) ($searchDefaults['cabin_class'] ?? 'economy'),
             ],
             'searchDisplayMode' => tenant()->getInternal('search_display_mode') ?? 'per_offer',
@@ -931,6 +933,7 @@ class BookingController extends Controller
             'extras.esim_selection.name' => 'nullable|string|max:255',
             'extras.esim_selection.price' => 'nullable|numeric|min:0',
             'extras.esim_selection.currency' => 'nullable|string|max:10',
+            'ticketing_mode' => 'nullable|in:final,draft',
         ], [
             'passengers.*.first_name.alpha' => 'Passenger first name must contain letters only.',
             'passengers.*.last_name.alpha' => 'Passenger last name must contain letters only.',
@@ -1164,12 +1167,15 @@ class BookingController extends Controller
 
         $extras['include_docs'] = $passportRequired || $this->passengersContainPassportDetails($passengers);
 
+        $isDraft = ($validated['ticketing_mode'] ?? 'final') === 'draft';
+
         $providerPayload = [
             'passengers' => $passengers,
             'contact' => $customer,
             'itinerary' => $mappedItinerary,
             'extras' => $extras,
             'reservation_type' => $reservationType,
+            'ticketing_mode' => $isDraft ? 'draft' : 'final',
         ];
 
         $pricing = $flight['pricing'] ?? [];
@@ -1191,19 +1197,21 @@ class BookingController extends Controller
             $providerSourceType = (string) ($sourceMetadata['provider_source_type'] ?? '');
             $requiresSourceProviderWallet = in_array($providerSourceType, ['default_agency', 'agency_network'], true);
 
-            if ($source->usesMasterAgencySupply()) {
-                app(ProcessWalletTransactions::class)->assertCanIssueForAmounts([
-                    strtoupper($currency) => $totalPrice,
-                ], $issuer);
-            }
+            if (! $isDraft) {
+                if ($source->usesMasterAgencySupply()) {
+                    app(ProcessWalletTransactions::class)->assertCanIssueForAmounts([
+                        strtoupper($currency) => $totalPrice,
+                    ], $issuer);
+                }
 
-            if ($source->usesOwnCredentials() || $requiresSourceProviderWallet) {
-                app(ProcessProviderWalletTransactions::class)->assertCanWithdrawForSelector(
-                    $sourceMetadata['provider_selector'] ?? null,
-                    $providerConfig,
-                    strtoupper($currency),
-                    $totalPrice,
-                );
+                if ($source->usesOwnCredentials() || $requiresSourceProviderWallet) {
+                    app(ProcessProviderWalletTransactions::class)->assertCanWithdrawForSelector(
+                        $sourceMetadata['provider_selector'] ?? null,
+                        $providerConfig,
+                        strtoupper($currency),
+                        $totalPrice,
+                    );
+                }
             }
         } catch (InsufficientWalletBalanceException $exception) {
             return back()->withInput()->with('error', $exception->getMessage());
@@ -1240,17 +1248,17 @@ class BookingController extends Controller
                     : 'Failed to communicate with the airline: '.$exception->getMessage());
         }
 
-        $order = DB::transaction(function () use ($providerConfig, $totalPrice, $currency, $pnr, $providerPayload, $ancillaryCatalog, $ancillarySummary, $customer, $isRoundTrip, $outboundProviderId, $returnProviderId, $flight, $passengers, $baseTotal, $sourceMetadata, $esimSelection): Order {
+        $order = DB::transaction(function () use ($isDraft, $providerConfig, $totalPrice, $currency, $pnr, $providerPayload, $ancillaryCatalog, $ancillarySummary, $customer, $isRoundTrip, $outboundProviderId, $returnProviderId, $flight, $passengers, $baseTotal, $sourceMetadata, $esimSelection): Order {
             $order = Order::query()->create([
                 'owner_type' => get_class(request()->user()),
                 'owner_id' => request()->user()?->id,
                 'number' => $this->orderNumberGenerator->generate(),
-                'status' => 'confirmed',
-                'issued_at' => now(),
+                'status' => $isDraft ? 'pending' : 'confirmed',
+                'issued_at' => $isDraft ? null : now(),
                 'subtotal' => $totalPrice,
                 'tax_total' => 0,
                 'grand_total' => $totalPrice,
-                'amount_paid' => $totalPrice,
+                'amount_paid' => $isDraft ? 0 : $totalPrice,
                 'currency' => strtoupper($currency),
                 'payment_method' => 'airline_token',
                 'payment_reference' => $pnr,
@@ -1289,14 +1297,20 @@ class BookingController extends Controller
                 'total' => $totalPrice,
                 'total_amount' => $totalPrice,
                 'currency' => strtoupper($currency),
-                'status' => 'confirmed',
+                'status' => $isDraft ? 'pending' : 'confirmed',
                 'transaction_type' => 'issue',
-                'paid' => $totalPrice,
-                'remaining' => 0,
+                'paid' => $isDraft ? 0 : $totalPrice,
+                'remaining' => $isDraft ? $totalPrice : 0,
             ]);
 
             return $order;
         });
+
+        if ($isDraft) {
+            Cache::forget("flight_search_{$validated['uuid']}");
+
+            return redirect()->route('tickets.completed', ['booking' => $order->id])->with('success', 'Draft booking created. Issue the ticket when ready.');
+        }
 
         $this->applyFinancialSourceAndCommission($order);
 

@@ -1,15 +1,17 @@
 import React from 'react';
-import { Head, Link, usePage } from '@inertiajs/react';
+import { Head, Link, useForm, usePage } from '@inertiajs/react';
 import TenantNavbarLayout from '@/Layouts/TenantNavbarLayout';
 import { Card, CardContent, CardHeader, CardTitle } from "@/Components/ui/Card";
 import { Badge } from "@/Components/ui/Badge";
 import { Button } from "@/Components/ui/Button";
-import { Plane, Calendar, Users, CreditCard, CheckCircle2, AlertCircle, ArrowRight, User, Info } from "lucide-react";
+import { Plane, Calendar, Users, CreditCard, CheckCircle2, AlertCircle, ArrowRight, User, Info, Loader2, FileText } from "lucide-react";
 
 export default function Show({ booking }) {
     const { auth } = usePage().props;
     const canManageTickets = auth.user?.role === 'admin' || auth.user?.role === 'manager';
-    
+    const { post: issuePost, processing: issueProcessing } = useForm({});
+    const handleIssueTicket = () => issuePost(route('tickets.issue', { booking: booking.id }));
+
     // Format dates nicely
     const formatDate = (dateString) => {
         if (!dateString) return '';
@@ -36,18 +38,29 @@ export default function Show({ booking }) {
                     <div>
                         <div className="flex items-center gap-3 mb-2">
                             <Badge variant={booking.status === 'pending' ? 'secondary' : 'default'} className="px-3 py-1 uppercase tracking-widest text-xs font-black">
-                                {booking.status === 'pending' ? 'Awaiting Payment' : booking.status}
+                                {booking.status === 'pending' ? 'Draft' : booking.status}
                             </Badge>
                             <span className="text-sm font-bold text-muted-foreground">Booking Reference</span>
                         </div>
                         <h1 className="text-5xl font-black tracking-tight text-primary">{booking.pnr}</h1>
                     </div>
-                    {booking.status === 'pending' && (
-                        <Button size="lg" className="rounded-full shadow-lg font-black bg-indigo-600 hover:bg-indigo-700 text-white px-8">
-                            <CreditCard className="mr-2 h-5 w-5" /> Proceed to Payment
+                    {booking.status === 'pending' && canManageTickets && (
+                        <Button size="lg" className="rounded-full shadow-lg font-black px-8" onClick={handleIssueTicket} disabled={issueProcessing}>
+                            {issueProcessing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CreditCard className="mr-2 h-5 w-5" />}
+                            Issue Ticket
                         </Button>
                     )}
                 </div>
+
+                {booking.status === 'pending' && (
+                    <div className="mb-6 flex items-start gap-3 rounded-xl border border-primary/20 bg-primary/5 p-4 text-sm">
+                        <FileText className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
+                        <div>
+                            <p className="font-bold text-primary">Draft Booking</p>
+                            <p className="text-muted-foreground mt-0.5">The PNR is reserved but no ticket has been issued yet. Use <strong>Issue Ticket</strong> to finalise and process payment.</p>
+                        </div>
+                    </div>
+                )}
 
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                     
@@ -136,15 +149,15 @@ export default function Show({ booking }) {
                                 <h3 className="text-xs font-black uppercase tracking-widest text-muted-foreground mb-4">Payment Summary</h3>
                                 
                                 <div className="flex justify-between items-end mb-6">
-                                    <span className="font-bold text-muted-foreground text-sm">Amount Due</span>
+                                    <span className="font-bold text-muted-foreground text-sm">{booking.status === 'pending' ? 'Total Fare' : 'Amount Paid'}</span>
                                     <span className="text-4xl font-black text-primary">{booking.total_price} <span className="text-sm">{booking.currency}</span></span>
                                 </div>
                                 
                                 <div className="space-y-3 pt-6 border-t border-dashed">
                                     <div className="flex justify-between text-sm font-medium">
                                         <span className="text-muted-foreground">Booking Status</span>
-                                        <span className={booking.status === 'pending' ? 'text-amber-600 font-bold' : 'text-emerald-600 font-bold'}>
-                                            {booking.status === 'pending' ? 'Unpaid' : 'Confirmed'}
+                                        <span className={`font-bold ${booking.status === 'pending' ? 'text-muted-foreground' : 'text-primary'}`}>
+                                            {booking.status === 'pending' ? 'Draft' : 'Confirmed'}
                                         </span>
                                     </div>
                                     <div className="flex justify-between text-sm font-medium">
@@ -162,17 +175,25 @@ export default function Show({ booking }) {
                                 </div>
                                 
                                 {booking.status === 'pending' ? (
-                                    <div className="mt-8">
-                                        <Button className="w-full rounded-xl py-6 text-base font-black shadow-md bg-indigo-600 hover:bg-indigo-700 text-white">
-                                            Pay Now Securely
-                                        </Button>
-                                        <p className="text-xs text-center text-muted-foreground mt-3 flex justify-center items-center gap-1 font-medium">
-                                            <AlertCircle className="h-3 w-3" /> Secure payment gateway
-                                        </p>
-                                    </div>
+                                    canManageTickets ? (
+                                        <div className="mt-8">
+                                            <Button className="w-full rounded-xl py-6 text-base font-black shadow-md" onClick={handleIssueTicket} disabled={issueProcessing}>
+                                                {issueProcessing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CreditCard className="mr-2 h-5 w-5" />}
+                                                Issue Ticket
+                                            </Button>
+                                            <p className="text-xs text-center text-muted-foreground mt-3 flex justify-center items-center gap-1 font-medium">
+                                                <AlertCircle className="h-3 w-3" /> PNR reserved — no payment deducted yet
+                                            </p>
+                                        </div>
+                                    ) : (
+                                        <div className="mt-8 bg-muted p-4 rounded-xl flex items-center justify-center gap-2 border">
+                                            <AlertCircle className="h-5 w-5 text-muted-foreground" />
+                                            <span className="font-bold text-muted-foreground">Awaiting Issuance</span>
+                                        </div>
+                                    )
                                 ) : (
-                                    <div className="mt-8 bg-emerald-50 text-emerald-700 p-4 rounded-xl flex items-center justify-center gap-2 border border-emerald-100">
-                                        <CheckCircle2 className="h-5 w-5" />
+                                    <div className="mt-8 bg-muted p-4 rounded-xl flex items-center justify-center gap-2 border">
+                                        <CheckCircle2 className="h-5 w-5 text-primary" />
                                         <span className="font-bold">Payment Complete</span>
                                     </div>
                                 )}
@@ -213,8 +234,12 @@ export default function Show({ booking }) {
                                     </div>
                                 )) : (
                                     <div className="rounded-xl border border-dashed p-4">
-                                        <p className="text-sm text-muted-foreground mb-4">No ticket has been issued for this booking yet.</p>
-                                        {booking.status !== 'cancelled' && booking.status !== 'refunded' && canManageTickets && (
+                                        <p className="text-sm text-muted-foreground mb-4">
+                                            {booking.status === 'pending'
+                                                ? 'Draft booking — use the Issue Ticket button above to finalise.'
+                                                : 'No ticket has been issued for this booking yet.'}
+                                        </p>
+                                        {booking.status !== 'cancelled' && booking.status !== 'refunded' && booking.status !== 'pending' && canManageTickets && (
                                             <Button asChild className="w-full">
                                                 <Link href={route('tickets.issue', { booking: booking.id })} method="post" as="button">
                                                     Issue Ticket

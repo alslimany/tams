@@ -5,6 +5,7 @@ import { Label } from "@/Components/ui/Label";
 import { Head, Link, useForm, usePage } from '@inertiajs/react';
 import { useTranslation } from "@/hooks/useTranslation";
 import { Plane, Hotel, Shield } from 'lucide-react';
+import axios from 'axios';
 
 export default function Login({ status, canResetPassword }) {
     const { tenant } = usePage().props;
@@ -16,7 +17,30 @@ export default function Login({ status, canResetPassword }) {
         remember: false,
     });
 
-    const submit = (e) => {
+    const submit = async (e) => {
+    e.preventDefault();
+    
+    try {
+        // Submit using vanilla axios to bypass Inertia headers entirely
+        await axios.post(route('login'), {
+            email: data.email,
+            password: data.password,
+            remember: data.remember,
+        });
+
+        // Navigate directly to flights after successful login
+        window.location.href = route('flights.index')
+    } catch (error) {
+        // If the backend returns validation errors, apply them to your form state
+        if (error.response && error.response.data.errors) {
+            // Map validation errors manually back to the Inertia useForm error bag
+            Object.keys(error.response.data.errors).forEach((key) => {
+                setError(key, error.response.data.errors[key][0]);
+            });
+        }
+    }
+};
+    const submit_ = (e) => {
         e.preventDefault();
         post(route('login'), {
             onFinish: () => reset('password'),
