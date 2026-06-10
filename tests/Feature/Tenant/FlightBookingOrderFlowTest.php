@@ -7,7 +7,9 @@ use App\Models\Tenant\OrderItem;
 use App\Models\TenantProvider;
 use App\Models\User;
 use Bavix\Wallet\Models\Transaction as WalletTransaction;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
 /** @var array<string, mixed> $state */
@@ -746,4 +748,84 @@ test('passengers page resolves cached provider selector and keeps provider id fa
             ->where('provider_id', $state['provider']->id)
             ->where('reservation_type', 'NN')
         );
+});
+
+test('passport and visa files are attached to order item via media library', function () {
+    global $state;
+
+    Storage::fake('public');
+
+    $this->actingAs($state['user']);
+
+    $providerWallet = $state['provider']->getOrCreateCurrencyWallet('LYD');
+    $providerWallet->depositFloat(1000, ['type' => 'seed_provider_balance']);
+
+    $baseUrl = 'http://'.$state['tenant']->domains->first()->domain;
+
+    $passportFile = UploadedFile::fake()->image('passport.jpg');
+    $visaFile = UploadedFile::fake()->image('visa.png');
+
+    $response = $this->post($baseUrl.route('flights.store', [], false), [
+        'uuid' => Str::uuid()->toString(),
+        'provider_id' => $state['provider']->id,
+        'reservation_type' => 'NN',
+        'flight' => [
+            'pricing' => ['total' => 500, 'currency' => 'LYD'],
+            'segments' => [
+                [
+                    'flight_number' => 'YI123',
+                    'departure_airport' => 'MJI',
+                    'arrival_airport' => 'IST',
+                    'departure_time' => now()->addDays(2)->toDateTimeString(),
+                    'arrival_time' => now()->addDays(2)->addHours(2)->toDateTimeString(),
+                ],
+            ],
+        ],
+        'customer' => [
+            'first_name' => 'John',
+            'last_name' => 'Doe',
+            'email' => 'john@example.com',
+            'phone' => '123456789',
+        ],
+        'passengers' => [
+            [
+                'type' => 'adult',
+                'first_name' => 'John',
+                'last_name' => 'Doe',
+                'dob' => '1990-01-01',
+                'gender' => 'M',
+                'passport_number' => 'A1234567',
+                'passport_expiry' => '2030-01-01',
+                'passport_issue_country' => 'LBY',
+                'nationality' => 'LBY',
+                'passport_file' => $passportFile,
+                'visa_file' => $visaFile,
+            ],
+        ],
+        'extras' => [
+            'selected_services' => [],
+            'seats' => [],
+        ],
+    ]);
+
+    tenancy()->initialize($state['tenant']);
+
+    expect($response->status())->toBe(302);
+    expect(session('error'))->toBeNull();
+
+    $orderItem = OrderItem::query()->first();
+
+    expect($orderItem)->not->toBeNull();
+
+    $passports = $orderItem->getMedia('passports');
+    $visas = $orderItem->getMedia('visas');
+
+    expect($passports)->toHaveCount(1)
+        ->and($passports->first()->custom_properties['passenger_index'])->toBe(0)
+        ->and($passports->first()->custom_properties['passenger_name'])->toBe('John Doe')
+        ->and($passports->first()->file_name)->toBe('passport.jpg');
+
+    expect($visas)->toHaveCount(1)
+        ->and($visas->first()->custom_properties['passenger_index'])->toBe(0)
+        ->and($visas->first()->file_name)->toBe('visa.png');
 });

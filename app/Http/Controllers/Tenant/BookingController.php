@@ -914,6 +914,8 @@ class BookingController extends Controller
             'passengers.*.passport_expiry' => 'nullable|date',
             'passengers.*.passport_issue_country' => 'nullable|string|size:3',
             'passengers.*.nationality' => 'nullable|string|size:3',
+            'passengers.*.passport_file' => 'nullable|file|mimes:jpg,jpeg,png,webp,pdf|max:10240',
+            'passengers.*.visa_file' => 'nullable|file|mimes:jpg,jpeg,png,webp,pdf|max:10240',
             'customer.first_name' => 'nullable|string',
             'customer.last_name' => 'nullable|string',
             'customer.email' => 'nullable|email',
@@ -1305,6 +1307,27 @@ class BookingController extends Controller
 
             return $order;
         });
+
+        // Attach passport/visa document files to the order item (optional per passenger)
+        $orderItem = $order->items()->first();
+        if ($orderItem) {
+            foreach ($passengers as $index => $passenger) {
+                $passengerName = trim(($passenger['first_name'] ?? '').' '.($passenger['last_name'] ?? ''));
+                $customProps = ['passenger_index' => $index, 'passenger_name' => $passengerName];
+
+                if ($passportFile = $request->file("passengers.{$index}.passport_file")) {
+                    $orderItem->addMedia($passportFile)
+                        ->withCustomProperties($customProps)
+                        ->toMediaCollection('passports');
+                }
+
+                if ($visaFile = $request->file("passengers.{$index}.visa_file")) {
+                    $orderItem->addMedia($visaFile)
+                        ->withCustomProperties($customProps)
+                        ->toMediaCollection('visas');
+                }
+            }
+        }
 
         if ($isDraft) {
             Cache::forget("flight_search_{$validated['uuid']}");

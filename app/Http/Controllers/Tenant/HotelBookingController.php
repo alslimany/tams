@@ -9,6 +9,8 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Tenant\Hotel\HotelBookRequest;
 use App\Http\Requests\Tenant\Hotel\HotelSearchRequest;
 use App\Http\Requests\Tenant\Hotel\HotelSelectRequest;
+use App\Models\Country;
+use App\Models\ProviderLocation;
 use App\Models\Tenant\Order;
 use App\Models\Tenant\OrderItem;
 use App\Models\Tenant\TenantHotelProvider;
@@ -46,6 +48,31 @@ class HotelBookingController extends Controller
     {
         try {
             $query = trim((string) $request->query('q', ''));
+            $locale = app()->getLocale();
+
+            // --- DB-backed autocomplete (fast, no external API call) ---
+            $dbResults = ProviderLocation::query()
+                ->forProvider('3t')
+                ->active()
+                ->search($query)
+                ->orderByRaw("FIELD(location_type, 'city', 'hotel') ASC")
+                ->limit(30)
+                ->get();
+
+            if ($dbResults->isNotEmpty()) {
+                $destinations = $dbResults->map(fn (ProviderLocation $loc): array => [
+                    'code' => $loc->code,
+                    'label' => $loc->translatedName($locale),
+                    'country' => $loc->country_code ?? '',
+                    'category' => $loc->location_type,
+                    'location_type' => $loc->location_type,
+                    'parent_code' => $loc->parent_code ?? '',
+                ])->values()->all();
+
+                return response()->json(['destinations' => $destinations]);
+            }
+
+            // --- Live API fallback (used when DB has not been seeded yet) ---
             $payload = $this->providerManager->provider()->autocomplete(
                 $query === '' ? [] : ['termSearch' => $query],
             );
@@ -214,6 +241,8 @@ class HotelBookingController extends Controller
                 fn (mixed $k): bool => is_string($k) && $k !== '',
             )),
             'civilityOptions' => $civilityOptions,
+            'countries' => Country::orderBy('name_en')
+                ->get(['alpha2', 'alpha3', 'name_en', 'name_ar', 'name_fr']),
         ]);
     }
 
@@ -472,8 +501,12 @@ class HotelBookingController extends Controller
     protected function normalizeAutocompleteDestinations(array $items): array
     {
         return array_values(array_map(function (array $item): array {
+            // Preserve the city/hotel code so the frontend can populate city_id
+            $code = (string) ($item['cityId'] ?? $item['hotelCode'] ?? $item['id'] ?? '');
+
             return collect([
                 ...$item,
+                'code' => $code,
                 'label' => (string) ($item['label'] ?? $item['name'] ?? ''),
                 'country' => (string) ($item['country'] ?? ''),
                 'category' => (string) ($item['category'] ?? ''),

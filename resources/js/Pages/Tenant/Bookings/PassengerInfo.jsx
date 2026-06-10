@@ -78,7 +78,7 @@ function DocumentScanModal({ open, onOpenChange, onSuccess, title, description, 
             const { data } = await axios.post(route('flights.scan-passport'), form, {
                 headers: { 'Content-Type': 'multipart/form-data' },
             });
-            onSuccess(data);
+            onSuccess(data, file);
             onOpenChange(false);
             setPreview(null);
         } catch (err) {
@@ -773,10 +773,12 @@ export default function PassengerInfo({ uuid, provider_id, flight, reservation_t
                     passport_expiry: '',
                     passport_issue_country: 'LBY',
                     nationality: 'LBY',
+                    passport_file: null,
                     visa_number: '',
                     visa_type: '',
                     visa_expiry: '',
                     visa_issue_country: '',
+                    visa_file: null,
                 });
             }
         });
@@ -835,6 +837,8 @@ export default function PassengerInfo({ uuid, provider_id, flight, reservation_t
     const [serviceModalOpen, setServiceModalOpen] = useState(false);
     const [serviceModalCode, setServiceModalCode] = useState(null);
     const [serviceModalOfferKey, setServiceModalOfferKey] = useState('oneway');
+    const [pendingDocUpload, setPendingDocUpload] = useState(null); // { index, type: 'passport' | 'visa' }
+    const docUploadInputRef = useRef(null);
 
     const offerContexts = useMemo(() => {
         if (is_round_trip && flight?.round_trip) {
@@ -1320,7 +1324,7 @@ export default function PassengerInfo({ uuid, provider_id, flight, reservation_t
     };
 
     /** Fill a passenger's fields from a passport scan result. Only overwrites non-empty values. */
-    const handleFillFromScan = (scanData) => {
+    const handleFillFromScan = (scanData, file) => {
         if (scanPassengerIndex === null) return;
         const updatedPassengers = data.passengers.map((p, i) => {
             if (i !== scanPassengerIndex) return p;
@@ -1333,6 +1337,7 @@ export default function PassengerInfo({ uuid, provider_id, flight, reservation_t
                 passport_expiry: scanData.passport_expiry || p.passport_expiry,
                 passport_issue_country: scanData.passport_issue_country || p.passport_issue_country,
                 nationality: scanData.nationality || p.nationality,
+                passport_file: file ?? p.passport_file,
             };
             return { ...p, ...filled };
         });
@@ -1341,7 +1346,7 @@ export default function PassengerInfo({ uuid, provider_id, flight, reservation_t
     };
 
     /** Fill a passenger's visa fields from a visa scan result. */
-    const handleFillFromVisaScan = (scanData) => {
+    const handleFillFromVisaScan = (scanData, file) => {
         if (scanVisaPassengerIndex === null) return;
         const updatedPassengers = data.passengers.map((p, i) => {
             if (i !== scanVisaPassengerIndex) return p;
@@ -1350,6 +1355,7 @@ export default function PassengerInfo({ uuid, provider_id, flight, reservation_t
                 visa_number: scanData.passport_number || p.visa_number,
                 visa_expiry: scanData.passport_expiry || p.visa_expiry,
                 visa_issue_country: scanData.passport_issue_country || p.visa_issue_country,
+                visa_file: file ?? p.visa_file,
             };
         });
         setData('passengers', updatedPassengers);
@@ -1372,6 +1378,23 @@ export default function PassengerInfo({ uuid, provider_id, flight, reservation_t
             }
             return next;
         });
+    };
+
+    /** Open the hidden file input for direct document attachment (no OCR). */
+    const openDocUpload = (index, type) => {
+        setPendingDocUpload({ index, type });
+        docUploadInputRef.current?.click();
+    };
+
+    /** Handle file selection from the hidden input — store File object in passenger state. */
+    const handleDocUpload = (e) => {
+        const file = e.target.files?.[0];
+        if (!file || !pendingDocUpload) return;
+        const { index, type } = pendingDocUpload;
+        const field = type === 'passport' ? 'passport_file' : 'visa_file';
+        handlePassengerChange(index, field, file);
+        setPendingDocUpload(null);
+        e.target.value = '';
     };
 
     const submitBooking = (event) => {
@@ -1764,6 +1787,29 @@ export default function PassengerInfo({ uuid, provider_id, flight, reservation_t
                                                         </div>
                                                     </div>
 
+                                                    {/* Passport document attachment */}
+                                                    {passenger.passport_file ? (
+                                                        <div className="flex items-center gap-3 rounded-lg border border-dashed border-input bg-muted/20 p-2.5">
+                                                            <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded border bg-background">
+                                                                {passenger.passport_file.type?.startsWith('image/') ? (
+                                                                    <img src={URL.createObjectURL(passenger.passport_file)} alt="" className="h-full w-full object-cover" />
+                                                                ) : (
+                                                                    <Upload className="h-3.5 w-3.5 text-muted-foreground" />
+                                                                )}
+                                                            </div>
+                                                            <p className="min-w-0 flex-1 truncate text-xs text-muted-foreground">{passenger.passport_file.name}</p>
+                                                            <div className="flex gap-3 text-xs">
+                                                                <button type="button" className="text-primary hover:underline" onClick={() => openDocUpload(index, 'passport')}>{t('common.change')}</button>
+                                                                <button type="button" className="text-destructive hover:underline" onClick={() => handlePassengerChange(index, 'passport_file', null)}>{t('common.remove')}</button>
+                                                            </div>
+                                                        </div>
+                                                    ) : (
+                                                        <button type="button" className="flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground" onClick={() => openDocUpload(index, 'passport')}>
+                                                            <Upload className="h-3.5 w-3.5" />
+                                                            {t('common.attach_document')}
+                                                        </button>
+                                                    )}
+
                                                     {/* Optional visa section */}
                                                     <div className="border-t pt-4">
                                                         <button
@@ -1832,6 +1878,29 @@ export default function PassengerInfo({ uuid, provider_id, flight, reservation_t
                                                                         />
                                                                     </div>
                                                                 </div>
+
+                                                                {/* Visa document attachment */}
+                                                                {passenger.visa_file ? (
+                                                                    <div className="flex items-center gap-3 rounded-lg border border-dashed border-input bg-muted/20 p-2.5">
+                                                                        <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded border bg-background">
+                                                                            {passenger.visa_file.type?.startsWith('image/') ? (
+                                                                                <img src={URL.createObjectURL(passenger.visa_file)} alt="" className="h-full w-full object-cover" />
+                                                                            ) : (
+                                                                                <Upload className="h-3.5 w-3.5 text-muted-foreground" />
+                                                                            )}
+                                                                        </div>
+                                                                        <p className="min-w-0 flex-1 truncate text-xs text-muted-foreground">{passenger.visa_file.name}</p>
+                                                                        <div className="flex gap-3 text-xs">
+                                                                            <button type="button" className="text-primary hover:underline" onClick={() => openDocUpload(index, 'visa')}>{t('common.change')}</button>
+                                                                            <button type="button" className="text-destructive hover:underline" onClick={() => handlePassengerChange(index, 'visa_file', null)}>{t('common.remove')}</button>
+                                                                        </div>
+                                                                    </div>
+                                                                ) : (
+                                                                    <button type="button" className="flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground" onClick={() => openDocUpload(index, 'visa')}>
+                                                                        <Upload className="h-3.5 w-3.5" />
+                                                                        {t('common.attach_document')}
+                                                                    </button>
+                                                                )}
                                                             </div>
                                                         )}
                                                     </div>
@@ -2156,6 +2225,14 @@ export default function PassengerInfo({ uuid, provider_id, flight, reservation_t
                                 </div>
                             </TabsContent>
                         </Tabs>
+                        {/* Hidden input for direct document attachment (without OCR scanning) */}
+                        <input
+                            ref={docUploadInputRef}
+                            type="file"
+                            accept="image/jpeg,image/jpg,image/png,image/webp,application/pdf"
+                            className="hidden"
+                            onChange={handleDocUpload}
+                        />
                     </form>
                 </div>
 

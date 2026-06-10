@@ -194,7 +194,7 @@ export default function HotelSearch() {
         form.setData({
             ...form.data,
             city: String(destination.label ?? ''),
-            city_id: '',
+            city_id: String(destination.code ?? ''),
         });
         setSelectedDestination(destination);
         setDestinationQuery(destinationLabel(destination));

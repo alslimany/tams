@@ -179,6 +179,10 @@ const collectBoardTypes = (hotels) => {
     return [...boards].sort();
 };
 
+// Collect unique hotel names
+const collectHotelNames = (hotels) =>
+    [...new Set(hotels.map((h) => h.name).filter(Boolean))].sort();
+
 // ─── Star Rating display ─────────────────────────────────────────────────────
 
 const StarRating = ({ rating, size = 'sm' }) => {
@@ -577,17 +581,19 @@ const HotelInfoModal = ({ hotel, search, selectRoom, onClose, t }) => {
                                                 <button
                                                     type="button"
                                                     onClick={() => togglePanel(group.roomIndex)}
-                                                    className="flex w-full items-center justify-between gap-3 bg-muted/30 px-4 py-3 text-left hover:bg-muted/50"
+                                                    className="flex w-full items-start justify-between gap-3 bg-muted/30 px-4 py-3 text-left hover:bg-muted/50"
                                                 >
-                                                    <div className="flex items-center gap-2">
-                                                        <BedDouble className="size-4 shrink-0 text-primary" />
-                                                        <span className="font-bold">
-                                                            {isMultiRoom
-                                                                ? `${t('common.room')} ${groupIdx + 1}`
-                                                                : t('common.select_your_room')}
-                                                        </span>
+                                                    <div className="flex flex-col gap-1.5">
+                                                        <div className="flex items-center gap-2">
+                                                            <BedDouble className="size-4 shrink-0 text-primary" />
+                                                            <span className="font-bold">
+                                                                {isMultiRoom
+                                                                    ? `${t('common.room')} ${groupIdx + 1}`
+                                                                    : t('common.select_your_room')}
+                                                            </span>
+                                                        </div>
                                                         {selectedBoard && (
-                                                            <Badge variant="outline" className="gap-1 text-xs">
+                                                            <Badge variant="outline" className="w-fit gap-1 text-xs">
                                                                 <CheckCircle2 className="size-3 text-green-600" />
                                                                 {selectedBoard.room_name}
                                                                 {' · '}
@@ -1027,10 +1033,46 @@ const MapModal = ({ hotels, search, onClose, t }) => {
     );
 };
 
+// ─── Collapsible checkbox list (used by board type + hotel name filters) ──────
+
+const CollapsibleCheckList = ({ items, selected, onToggle, maxVisible = 10, t }) => {
+    const [expanded, setExpanded] = React.useState(false);
+    const visible = expanded ? items : items.slice(0, maxVisible);
+    const hiddenCount = items.length - maxVisible;
+
+    return (
+        <div className="space-y-2">
+            {visible.map((item) => (
+                <label key={item} className="flex cursor-pointer items-center gap-2.5">
+                    <input
+                        type="checkbox"
+                        checked={selected.includes(item)}
+                        onChange={() => onToggle(item)}
+                        className="size-4 rounded border-input accent-primary"
+                    />
+                    <span className="line-clamp-1 text-sm">{item}</span>
+                </label>
+            ))}
+            {items.length > maxVisible && (
+                <button
+                    type="button"
+                    onClick={() => setExpanded((v) => !v)}
+                    className="mt-1 text-xs font-semibold text-primary hover:underline"
+                >
+                    {expanded
+                        ? t('common.show_less')
+                        : t('common.show_more_count', { count: hiddenCount })}
+                </button>
+            )}
+        </div>
+    );
+};
+
 // ─── Filter sidebar ───────────────────────────────────────────────────────────
 
 const FilterSidebar = ({ hotels, filters, setFilters, t }) => {
     const boardTypes = React.useMemo(() => collectBoardTypes(hotels), [hotels]);
+    const hotelNames = React.useMemo(() => collectHotelNames(hotels), [hotels]);
 
     const allPrices = hotels
         .map((h) => getLowestAvailableRoom(h.rooms))
@@ -1043,7 +1085,9 @@ const FilterSidebar = ({ hotels, filters, setFilters, t }) => {
     const hasActiveFilters =
         filters.stars.length > 0 ||
         filters.refundableOnly ||
+        filters.availableOnly ||
         filters.boards.length > 0 ||
+        filters.hotelNames.length > 0 ||
         filters.minPrice !== '' ||
         filters.maxPrice !== '';
 
@@ -1061,8 +1105,17 @@ const FilterSidebar = ({ hotels, filters, setFilters, t }) => {
         }));
     };
 
+    const toggleHotelName = (name) => {
+        setFilters((f) => ({
+            ...f,
+            hotelNames: f.hotelNames.includes(name)
+                ? f.hotelNames.filter((n) => n !== name)
+                : [...f.hotelNames, name],
+        }));
+    };
+
     const clearAll = () =>
-        setFilters({ stars: [], refundableOnly: false, boards: [], minPrice: '', maxPrice: '' });
+        setFilters({ stars: [], refundableOnly: false, availableOnly: false, boards: [], hotelNames: [], minPrice: '', maxPrice: '' });
 
     return (
         <aside className="w-64 shrink-0 space-y-6">
@@ -1142,23 +1195,42 @@ const FilterSidebar = ({ hotels, filters, setFilters, t }) => {
                 </label>
             </div>
 
+            {/* Available only */}
+            <div className="space-y-2">
+                <label className="flex cursor-pointer items-center gap-2.5">
+                    <input
+                        type="checkbox"
+                        checked={filters.availableOnly}
+                        onChange={(e) => setFilters((f) => ({ ...f, availableOnly: e.target.checked }))}
+                        className="size-4 rounded border-input accent-primary"
+                    />
+                    <span className="text-sm font-semibold">{t('common.filter_available_only')}</span>
+                </label>
+            </div>
+
+            {/* Hotels */}
+            {hotelNames.length > 0 && (
+                <div className="space-y-3">
+                    <p className="text-sm font-semibold">{t('common.filter_hotels')}</p>
+                    <CollapsibleCheckList
+                        items={hotelNames}
+                        selected={filters.hotelNames}
+                        onToggle={toggleHotelName}
+                        t={t}
+                    />
+                </div>
+            )}
+
             {/* Board type */}
             {boardTypes.length > 0 && (
                 <div className="space-y-3">
                     <p className="text-sm font-semibold">{t('common.filter_board_type')}</p>
-                    <div className="space-y-2">
-                        {boardTypes.map((board) => (
-                            <label key={board} className="flex cursor-pointer items-center gap-2.5">
-                                <input
-                                    type="checkbox"
-                                    checked={filters.boards.includes(board)}
-                                    onChange={() => toggleBoard(board)}
-                                    className="size-4 rounded border-input accent-primary"
-                                />
-                                <span className="text-sm">{board}</span>
-                            </label>
-                        ))}
-                    </div>
+                    <CollapsibleCheckList
+                        items={boardTypes}
+                        selected={filters.boards}
+                        onToggle={toggleBoard}
+                        t={t}
+                    />
                 </div>
             )}
         </aside>
@@ -1289,9 +1361,10 @@ const HotelCardList = ({ hotel, hotelIndex, search, selectRoom, t }) => {
     return (
         <>
             <Card className="overflow-hidden border shadow-sm transition-shadow hover:shadow-md">
-                <div className="flex gap-0">
-                    {/* Image */}
-                    <div className="relative h-auto w-48 shrink-0 overflow-hidden bg-muted sm:w-56">
+                {/* Stack vertically on mobile, side-by-side on sm+ */}
+                <div className="flex flex-col sm:flex-row">
+                    {/* Image: full width on mobile, fixed width on sm+ */}
+                    <div className="relative h-44 w-full shrink-0 overflow-hidden bg-muted sm:h-auto sm:w-44">
                         {meta.thumbImage ? (
                             <img
                                 src={meta.thumbImage}
@@ -1418,7 +1491,7 @@ const applyFilters = (hotels, filters) => {
         const lowestRoom = getLowestAvailableRoom(hotel.rooms);
         const price = lowestRoom ? Number(lowestRoom.price) : null;
 
-        // Star filter — compare against ratingId-based integer rating
+        // Star filter
         if (filters.stars.length > 0 && !filters.stars.includes(rating)) return false;
 
         // Price range
@@ -1428,11 +1501,17 @@ const applyFilters = (hotels, filters) => {
         // Refundable only
         if (filters.refundableOnly && !hasRefundableRate(hotel.rooms)) return false;
 
+        // Available only — hotel must have at least one available room
+        if (filters.availableOnly && getAvailableRoomsCount(hotel.rooms) === 0) return false;
+
         // Board type
         if (filters.boards.length > 0) {
             const hotelBoards = (hotel.rooms || []).map((r) => r.board_name).filter(Boolean);
             if (!filters.boards.some((b) => hotelBoards.includes(b))) return false;
         }
+
+        // Hotel name
+        if (filters.hotelNames.length > 0 && !filters.hotelNames.includes(hotel.name)) return false;
 
         return true;
     });
@@ -1449,10 +1528,13 @@ export default function HotelResults({ searchUuid, search }) {
     const [layout, setLayout] = React.useState('grid'); // 'grid' | 'list'
     const [sort, setSort] = React.useState('price_asc');
     const [mapOpen, setMapOpen] = React.useState(false);
+    const [mobileFiltersOpen, setMobileFiltersOpen] = React.useState(false);
     const [filters, setFilters] = React.useState({
         stars: [],
         refundableOnly: false,
+        availableOnly: false,
         boards: [],
+        hotelNames: [],
         minPrice: '',
         maxPrice: '',
     });
@@ -1521,6 +1603,14 @@ export default function HotelResults({ searchUuid, search }) {
         [hotels, filters, sort],
     );
 
+    const activeFilterCount =
+        filters.stars.length +
+        (filters.refundableOnly ? 1 : 0) +
+        (filters.availableOnly ? 1 : 0) +
+        filters.boards.length +
+        filters.hotelNames.length +
+        (filters.minPrice !== '' || filters.maxPrice !== '' ? 1 : 0);
+
     const hasResults = !loading && !error && hotels.length > 0;
 
     return (
@@ -1558,71 +1648,92 @@ export default function HotelResults({ searchUuid, search }) {
 
                 {/* Toolbar */}
                 {hasResults && (
-                    <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card px-4 py-3">
-                        {/* Left: result count + sort */}
-                        <div className="flex items-center gap-3">
-                            <span className="text-sm text-muted-foreground">
-                                {t('common.showing_results', {
-                                    shown: filteredHotels.length,
-                                    total: hotels.length,
-                                })}
-                            </span>
-                            <div className="flex items-center gap-1.5">
-                                <label htmlFor="sort-select" className="text-sm font-semibold">
-                                    {t('common.sort_by')}:
-                                </label>
-                                <select
-                                    id="sort-select"
-                                    value={sort}
-                                    onChange={(e) => setSort(e.target.value)}
-                                    className="rounded-md border border-input bg-background px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                                >
-                                    {SORT_OPTIONS.map((opt) => (
-                                        <option key={opt.value} value={opt.value}>
-                                            {t(opt.labelKey)}
-                                        </option>
-                                    ))}
-                                </select>
-                            </div>
-                        </div>
+                    <div className="mb-5 rounded-xl border bg-card px-4 py-3">
+                        {/* Row 1: result count */}
+                        <p className="mb-3 text-sm text-muted-foreground">
+                            {t('common.showing_results', {
+                                shown: filteredHotels.length,
+                                total: hotels.length,
+                            })}
+                        </p>
 
-                        {/* Right: layout + map */}
-                        <div className="flex items-center gap-2">
-                            <div className="flex items-center rounded-lg border bg-muted p-1">
-                                <button
-                                    onClick={() => setLayout('grid')}
-                                    aria-label={t('common.layout_grid')}
-                                    className={`rounded-md p-1.5 transition-colors ${
-                                        layout === 'grid'
-                                            ? 'bg-background text-foreground shadow-sm'
-                                            : 'text-muted-foreground hover:text-foreground'
-                                    }`}
+                        {/* Row 2: filters toggle (mobile) + sort | layout + map */}
+                        <div className="flex items-center justify-between gap-2">
+                            {/* Left: mobile filters button + sort */}
+                            <div className="flex items-center gap-2">
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    className="gap-1.5 lg:hidden"
+                                    onClick={() => setMobileFiltersOpen((v) => !v)}
                                 >
-                                    <LayoutGrid className="size-4" />
-                                </button>
-                                <button
-                                    onClick={() => setLayout('list')}
-                                    aria-label={t('common.layout_list')}
-                                    className={`rounded-md p-1.5 transition-colors ${
-                                        layout === 'list'
-                                            ? 'bg-background text-foreground shadow-sm'
-                                            : 'text-muted-foreground hover:text-foreground'
-                                    }`}
-                                >
-                                    <List className="size-4" />
-                                </button>
+                                    <SlidersHorizontal className="size-4" />
+                                    {t('common.filters')}
+                                    {activeFilterCount > 0 && (
+                                        <span className="flex size-4 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">
+                                            {activeFilterCount}
+                                        </span>
+                                    )}
+                                </Button>
+
+                                <div className="flex items-center gap-1.5">
+                                    <label htmlFor="sort-select" className="hidden text-sm font-semibold sm:block">
+                                        {t('common.sort_by')}:
+                                    </label>
+                                    <select
+                                        id="sort-select"
+                                        value={sort}
+                                        onChange={(e) => setSort(e.target.value)}
+                                        className="rounded-md border border-input bg-background px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                                    >
+                                        {SORT_OPTIONS.map((opt) => (
+                                            <option key={opt.value} value={opt.value}>
+                                                {t(opt.labelKey)}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
                             </div>
 
-                            <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                className="gap-2"
-                                onClick={() => setMapOpen(true)}
-                            >
-                                <MapIcon className="size-4" />
-                                {t('common.view_on_map')}
-                            </Button>
+                            {/* Right: grid/list toggle + map button */}
+                            <div className="flex items-center gap-3">
+                                <div className="hidden items-center rounded-lg border bg-muted p-1 sm:flex">
+                                    <button
+                                        onClick={() => setLayout('grid')}
+                                        aria-label={t('common.layout_grid')}
+                                        className={`rounded-md p-1.5 transition-colors ${
+                                            layout === 'grid'
+                                                ? 'bg-background text-foreground shadow-sm'
+                                                : 'text-muted-foreground hover:text-foreground'
+                                        }`}
+                                    >
+                                        <LayoutGrid className="size-4" />
+                                    </button>
+                                    <button
+                                        onClick={() => setLayout('list')}
+                                        aria-label={t('common.layout_list')}
+                                        className={`rounded-md p-1.5 transition-colors ${
+                                            layout === 'list'
+                                                ? 'bg-background text-foreground shadow-sm'
+                                                : 'text-muted-foreground hover:text-foreground'
+                                        }`}
+                                    >
+                                        <List className="size-4" />
+                                    </button>
+                                </div>
+
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    className="gap-2"
+                                    onClick={() => setMapOpen(true)}
+                                >
+                                    <MapIcon className="size-4" />
+                                    <span className="hidden sm:inline">{t('common.view_on_map')}</span>
+                                </Button>
+                            </div>
                         </div>
                     </div>
                 )}
@@ -1656,7 +1767,7 @@ export default function HotelResults({ searchUuid, search }) {
                 {/* Results: sidebar + grid/list */}
                 {hasResults && (
                     <div className="flex gap-6">
-                        {/* Filter sidebar */}
+                        {/* Filter sidebar — desktop only */}
                         <div className="hidden lg:block">
                             <FilterSidebar
                                 hotels={hotels}
@@ -1668,6 +1779,17 @@ export default function HotelResults({ searchUuid, search }) {
 
                         {/* Hotel cards */}
                         <div className="min-w-0 flex-1">
+                            {/* Mobile filter panel — shown below toolbar when toggled */}
+                            {mobileFiltersOpen && (
+                                <div className="mb-4 rounded-xl border bg-card p-4 lg:hidden">
+                                    <FilterSidebar
+                                        hotels={hotels}
+                                        filters={filters}
+                                        setFilters={setFilters}
+                                        t={t}
+                                    />
+                                </div>
+                            )}
                             {filteredHotels.length === 0 ? (
                                 <Card>
                                     <CardContent className="p-6 text-center text-muted-foreground">

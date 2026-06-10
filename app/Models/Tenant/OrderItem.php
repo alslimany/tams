@@ -4,9 +4,14 @@ namespace App\Models\Tenant;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Spatie\MediaLibrary\HasMedia;
+use Spatie\MediaLibrary\InteractsWithMedia;
+use Spatie\MediaLibrary\MediaCollections\Models\Media;
 
-class OrderItem extends Model
+class OrderItem extends Model implements HasMedia
 {
+    use InteractsWithMedia;
+
     protected $guarded = [];
 
     protected function casts(): array
@@ -29,6 +34,24 @@ class OrderItem extends Model
             'paid' => 'decimal:2',
             'remaining' => 'decimal:2',
         ];
+    }
+
+    public function registerMediaCollections(): void
+    {
+        $this->addMediaCollection('passports')
+            ->acceptsMimeTypes(['image/jpeg', 'image/png', 'image/webp', 'application/pdf']);
+
+        $this->addMediaCollection('visas')
+            ->acceptsMimeTypes(['image/jpeg', 'image/png', 'image/webp', 'application/pdf']);
+    }
+
+    public function registerMediaConversions(?Media $media = null): void
+    {
+        $this->addMediaConversion('thumb')
+            ->width(200)
+            ->height(200)
+            ->performOnCollections('passports', 'visas')
+            ->nonQueued();
     }
 
     public function order(): BelongsTo
