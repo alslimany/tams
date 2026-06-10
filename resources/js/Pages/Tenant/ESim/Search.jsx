@@ -160,10 +160,33 @@ function CountrySelect({ countries, value, onChange, placeholder, id, error }) {
     );
 }
 
+// ─── Featured Country Card ────────────────────────────────────────────────────
+
+function FeaturedCountryCard({ country, locale, onSelect }) {
+    const getLabel = (c) => {
+        if (locale === 'ar' && c.name_ar) return c.name_ar;
+        if (locale === 'fr' && c.name_fr) return c.name_fr;
+        return c.name_en;
+    };
+
+    return (
+        <button
+            type="button"
+            onClick={() => onSelect(country.alpha2)}
+            className="group flex flex-col items-center gap-2 rounded-xl border border-white/20 bg-white/10 px-4 py-4 text-white backdrop-blur-sm transition-all hover:border-white/40 hover:bg-white/20 hover:scale-105 focus:outline-none focus:ring-2 focus:ring-white/50"
+        >
+            <span className="text-4xl leading-none drop-shadow-sm">{toFlagEmoji(country.alpha2)}</span>
+            <span className="text-sm font-medium leading-tight">{getLabel(country)}</span>
+        </button>
+    );
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
-export default function ESimSearch({ countries = [] }) {
+export default function ESimSearch({ countries = [], featuredCountries = [] }) {
     const { t } = useTranslation();
+    const { props } = usePage();
+    const locale = props.locale || 'en';
 
     const form = useForm({ country: '' });
 
@@ -172,13 +195,21 @@ export default function ESimSearch({ countries = [] }) {
         form.post(route('esim.search'), { preserveScroll: true });
     };
 
+    const selectFeatured = (alpha2) => {
+        form.setData('country', alpha2);
+        // Small timeout so the state update propagates before submitting
+        setTimeout(() => {
+            form.post(route('esim.search'), { preserveScroll: true });
+        }, 0);
+    };
+
     return (
         <TenantNavbarLayout>
             <Head title={t('esim.search.title')} />
 
             <section className="relative min-h-dvh bg-slate-900">
                 <div
-                    className="absolute inset-0 bg-cover bg-center opacity-40"
+                    className="absolute inset-0 bg-cover bg-center bg-no-repeat"
                     style={{ backgroundImage: "url('/img/search-hero-esim.png')" }}
                 />
                 <div className="absolute inset-0 bg-gradient-to-b from-slate-900/70 via-slate-900/60 to-slate-900/90" />
@@ -245,6 +276,24 @@ export default function ESimSearch({ countries = [] }) {
                             </form>
                         </CardContent>
                     </Card>
+
+                    {featuredCountries.length > 0 && (
+                        <div className="mx-auto mt-8 max-w-5xl">
+                            <p className="mb-4 text-center text-sm font-medium text-white/70">
+                                {t('esim.search.featured_destinations')}
+                            </p>
+                            <div className="flex flex-wrap justify-center gap-3">
+                                {featuredCountries.map((country) => (
+                                    <FeaturedCountryCard
+                                        key={country.alpha2}
+                                        country={country}
+                                        locale={locale}
+                                        onSelect={selectFeatured}
+                                    />
+                                ))}
+                            </div>
+                        </div>
+                    )}
                 </div>
             </section>
         </TenantNavbarLayout>

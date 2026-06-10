@@ -3,6 +3,7 @@
 use App\Http\Controllers\AgencyRegistrationController;
 use App\Http\Controllers\Landlord\AgencyWalletController;
 use App\Http\Controllers\Landlord\AirportController;
+use App\Http\Controllers\Landlord\CountryController;
 use App\Http\Controllers\Landlord\Auth\AuthenticatedSessionController as LandlordAuthenticatedSessionController;
 use App\Http\Controllers\Landlord\DashboardController as LandlordDashboardController;
 use App\Http\Controllers\Landlord\GlobalFlightCacheSettingsController;
@@ -55,6 +56,9 @@ Route::prefix('admin')->name('landlord.')->group(function () {
         // Airport Management
         Route::resource('airports', AirportController::class)->names('airports');
         Route::patch('airports/{airport}/toggle-registration', [AirportController::class, 'toggleRegistration'])->name('airports.toggle-registration');
+
+        Route::get('countries', [CountryController::class, 'index'])->name('countries.index');
+        Route::patch('countries/{country}/toggle-esim-featured', [CountryController::class, 'toggleEsimFeatured'])->name('countries.toggle-esim-featured');
 
         // Legacy Agent Migration
         Route::prefix('migration')->name('migration.')->group(function () {

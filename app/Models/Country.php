@@ -22,5 +22,13 @@ class Country extends Model
         'name_en',
         'name_ar',
         'name_fr',
+        'esim_featured',
     ];
+
+    protected function casts(): array
+    {
+        return [
+            'esim_featured' => 'boolean',
+        ];
+    }
 }

@@ -781,6 +781,7 @@
     "esim.search.optional": "Optional",
     "esim.search.search_button": "Search Packages",
     "esim.search.searching": "Searching...",
+    "esim.search.featured_destinations": "Popular Destinations",
     "esim.search.hint": "Leave data size and validity blank to see all available packages.",
     "esim.results.title": "eSIM Results",
     "esim.results.heading": "Available eSIM Packages",

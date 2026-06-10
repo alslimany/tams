@@ -33,8 +33,20 @@ class ESimBookingController extends Controller
 
     public function index(): Response
     {
-        $countries = Country::orderBy('name_en')
-            ->get(['alpha2', 'name_en', 'name_ar', 'name_fr'])
+        $allCountries = Country::orderBy('name_en')
+            ->get(['alpha2', 'name_en', 'name_ar', 'name_fr', 'esim_featured']);
+
+        $countries = $allCountries
+            ->map(fn (Country $c): array => [
+                'alpha2' => $c->alpha2,
+                'name_en' => $c->name_en,
+                'name_ar' => $c->name_ar,
+                'name_fr' => $c->name_fr,
+            ])
+            ->values();
+
+        $featuredCountries = $allCountries
+            ->filter(fn (Country $c): bool => $c->esim_featured)
             ->map(fn (Country $c): array => [
                 'alpha2' => $c->alpha2,
                 'name_en' => $c->name_en,
@@ -45,6 +57,7 @@ class ESimBookingController extends Controller
 
         return Inertia::render('Tenant/ESim/Search', [
             'countries' => $countries,
+            'featuredCountries' => $featuredCountries,
         ]);
     }
 
