@@ -50,16 +50,9 @@ class OrderController extends Controller
     /**
      * Order detail with items and wallet transactions.
      */
-    public function show(Request $request): JsonResponse
+    public function show(Order $order): JsonResponse
     {
-        $validated = $request->validate([
-            'order' => 'required'
-        ]);
-
-        $order = Order::query()
-            ->with(['owner', 'items', 'statusLogs.user'])
-            ->where('id', $validated['order'])
-            ->firstOrFail();
+        $order->load(['owner', 'items', 'statusLogs.user']);
 
         return $this->success([
             'order' => $this->formatOrder($order),
