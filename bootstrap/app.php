@@ -29,11 +29,12 @@ return Application::configure(basePath: dirname(__DIR__))
         //     users: '/flights' // Change this from '/dashboard' to '/'
         // );
 
-        $middleware->priority([
+        // Keep HandleInertiaRequests after StartSession without replacing Laravel's
+        // default middleware priority list (which includes SubstituteBindings).
+        $middleware->prependToPriorityList(
             \Illuminate\Session\Middleware\StartSession::class,
-            \App\Http\Middleware\HandleInertiaRequests::class, // Must be prioritized
-            \Illuminate\Auth\Middleware\Authenticate::class,
-        ]);
+            \App\Http\Middleware\HandleInertiaRequests::class,
+        );
 
         $middleware->alias([
             'role' => \App\Http\Middleware\EnsureUserRole::class,

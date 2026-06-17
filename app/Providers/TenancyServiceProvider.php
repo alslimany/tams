@@ -156,8 +156,17 @@ class TenancyServiceProvider extends ServiceProvider
             Middleware\InitializeTenancyByRequestData::class,
         ];
 
+        $kernel = $this->app[\Illuminate\Contracts\Http\Kernel::class];
+
         foreach (array_reverse($tenancyMiddleware) as $middleware) {
-            $this->app[\Illuminate\Contracts\Http\Kernel::class]->prependToMiddlewarePriority($middleware);
+            $kernel->prependToMiddlewarePriority($middleware);
         }
+
+        // Route model binding must run after tenancy is initialized so tenant
+        // models resolve against the tenant database, not the central connection.
+        $kernel->addToMiddlewarePriorityAfter(
+            Middleware\InitializeTenancyByPath::class,
+            \Illuminate\Routing\Middleware\SubstituteBindings::class,
+        );
     }
 }
