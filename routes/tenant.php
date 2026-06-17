@@ -105,6 +105,7 @@ Route::prefix(config('tenancy.tenant_path_prefix', 'agency').'/{tenant}')->group
                 Route::post('esim/select/{uuid}', [ESimBookingController::class, 'select'])->name('esim.select');
                 Route::get('esim/checkout/{uuid}', [ESimBookingController::class, 'checkout'])->name('esim.checkout');
                 Route::post('esim/book', [ESimBookingController::class, 'book'])->name('esim.book');
+                Route::post('orders/{order}/esim-items/{item}/refund', [ESimBookingController::class, 'refund'])->name('orders.esim-items.refund');
             });
 
             // Insurance
@@ -227,8 +228,14 @@ Route::prefix(config('tenancy.tenant_path_prefix', 'agency').'/{tenant}')->group
 
             // Ledger
             Route::get('/ledger/journal', [LedgerController::class, 'journalEntries'])->name('ledger.journal');
+            Route::post('/ledger/journal', [LedgerController::class, 'storeJournalEntry'])->name('ledger.journal.store');
+            Route::get('/ledger/journal/{id}', [LedgerController::class, 'showJournalEntry'])->name('ledger.journal.show');
+            Route::put('/ledger/journal/{id}', [LedgerController::class, 'updateJournalEntry'])->name('ledger.journal.update');
             Route::get('/ledger/trial-balance', [LedgerController::class, 'trialBalance'])->name('ledger.trial-balance');
             Route::get('/ledger/chart-of-accounts', [LedgerController::class, 'chartOfAccounts'])->name('ledger.coa');
+            Route::post('/ledger/chart-of-accounts', [LedgerController::class, 'storeChartOfAccount'])->name('ledger.coa.store');
+            Route::put('/ledger/chart-of-accounts/{code}', [LedgerController::class, 'updateChartOfAccount'])->name('ledger.coa.update');
+            Route::delete('/ledger/chart-of-accounts/{code}', [LedgerController::class, 'destroyChartOfAccount'])->name('ledger.coa.destroy');
             Route::get('/ledger/accounts/{code}', [LedgerController::class, 'accountDetail'])->name('ledger.account');
 
             // Issuance history

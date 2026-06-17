@@ -48,4 +48,11 @@ interface ESimProviderInterface
      * @return array{firstName: string, lastName: string, email: string, title: string, mobileNo: string|null, balance: string}
      */
     public function organization(): array;
+
+    /**
+     * Permanently delete an eSIM from the provider account by ICCID.
+     *
+     * @return array{status: string}
+     */
+    public function deleteEsim(string $iccid): array;
 }

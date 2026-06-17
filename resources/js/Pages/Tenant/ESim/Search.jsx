@@ -7,7 +7,7 @@ import { Label } from '@/Components/ui/Label';
 import { Button } from '@/Components/ui/Button';
 import { Badge } from '@/Components/ui/Badge';
 import { useTranslation } from '@/hooks/useTranslation';
-import { CheckIcon, ChevronDownIcon, Loader2, SearchIcon, SmartphoneNfc, X } from 'lucide-react';
+import { CheckIcon, ChevronDownIcon, Loader2, SearchIcon, SmartphoneNfc, Sparkles, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -173,10 +173,15 @@ function FeaturedCountryCard({ country, locale, onSelect }) {
         <button
             type="button"
             onClick={() => onSelect(country.alpha2)}
-            className="group flex flex-col items-center gap-2 rounded-xl border border-white/20 bg-white/10 px-4 py-4 text-white backdrop-blur-sm transition-all hover:border-white/40 hover:bg-white/20 hover:scale-105 focus:outline-none focus:ring-2 focus:ring-white/50"
+            className="group relative flex flex-col items-center gap-2.5 rounded-2xl border border-white/15 bg-white/[0.08] px-5 py-5 text-white backdrop-blur-sm transition-all duration-300 hover:border-white/30 hover:bg-white/[0.14] hover:shadow-lg hover:shadow-white/5 hover:-translate-y-0.5 focus:outline-none focus:ring-2 focus:ring-white/40"
         >
-            <span className="text-4xl leading-none drop-shadow-sm">{toFlagEmoji(country.alpha2)}</span>
-            <span className="text-sm font-medium leading-tight">{getLabel(country)}</span>
+            <span className="text-5xl leading-none drop-shadow-md transition-transform duration-300 group-hover:scale-110">
+                {toFlagEmoji(country.alpha2)}
+            </span>
+            <span className="text-sm font-semibold leading-tight">{getLabel(country)}</span>
+            <span className="font-mono text-[10px] uppercase tracking-wider text-white/40">
+                {country.alpha2}
+            </span>
         </button>
     );
 }
@@ -197,10 +202,10 @@ export default function ESimSearch({ countries = [], featuredCountries = [] }) {
 
     const selectFeatured = (alpha2) => {
         form.setData('country', alpha2);
-        // Small timeout so the state update propagates before submitting
-        setTimeout(() => {
-            form.post(route('esim.search'), { preserveScroll: true });
-        }, 0);
+        form.post(route('esim.search'), {
+            data: { country: alpha2 },
+            preserveScroll: true,
+        });
     };
 
     return (
@@ -278,11 +283,16 @@ export default function ESimSearch({ countries = [], featuredCountries = [] }) {
                     </Card>
 
                     {featuredCountries.length > 0 && (
-                        <div className="mx-auto mt-8 max-w-5xl">
-                            <p className="mb-4 text-center text-sm font-medium text-white/70">
-                                {t('esim.search.featured_destinations')}
-                            </p>
-                            <div className="flex flex-wrap justify-center gap-3">
+                        <div className="mx-auto mt-10 max-w-5xl">
+                            <div className="mb-5 flex items-center justify-center gap-3">
+                                <div className="h-px flex-1 bg-white/15" />
+                                <span className="flex items-center gap-2 whitespace-nowrap text-xs font-semibold uppercase tracking-widest text-white/50">
+                                    <Sparkles className="size-3 text-amber-400" />
+                                    {t('esim.search.featured_destinations')}
+                                </span>
+                                <div className="h-px flex-1 bg-white/15" />
+                            </div>
+                            <div className="flex flex-wrap justify-center gap-4">
                                 {featuredCountries.map((country) => (
                                     <FeaturedCountryCard
                                         key={country.alpha2}

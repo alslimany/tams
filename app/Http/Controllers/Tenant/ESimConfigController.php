@@ -8,6 +8,7 @@ use App\Services\ESim\ESimProviderFactory;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Inertia\Inertia;
 use Inertia\Response;
 use Throwable;
@@ -107,6 +108,30 @@ class ESimConfigController extends Controller
                 'provider_type' => $provider->provider_type,
                 'product_type' => 'esim',
             ]);
+        }
+
+        // Sync balance from the L2 provider API
+        try {
+            $orgData = ESimProviderFactory::make($provider)->organization();
+            $apiBalance = (float) ($orgData['balance'] ?? 0);
+
+            if ($apiBalance > 0) {
+                $wallet = $provider->getOrCreateCurrencyWallet($currency);
+                $currentBalance = round((float) $wallet->balanceFloat, 2);
+
+                if ($apiBalance > $currentBalance) {
+                    $depositAmount = round($apiBalance - $currentBalance, 2);
+                    $wallet->depositFloat($depositAmount, [
+                        'type' => 'balance_sync',
+                        'source' => 'l2_organization_api',
+                        'description' => 'Balance synced from L2 provider API.',
+                        'provider_type' => $provider->provider_type,
+                        'product_type' => 'esim',
+                    ]);
+                }
+            }
+        } catch (Throwable $exception) {
+            Log::warning('Failed to sync L2 provider balance: '.$exception->getMessage());
         }
 
         return back()->with('success', 'eSIM provider configuration saved successfully.');

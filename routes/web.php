@@ -3,8 +3,8 @@
 use App\Http\Controllers\AgencyRegistrationController;
 use App\Http\Controllers\Landlord\AgencyWalletController;
 use App\Http\Controllers\Landlord\AirportController;
-use App\Http\Controllers\Landlord\CountryController;
 use App\Http\Controllers\Landlord\Auth\AuthenticatedSessionController as LandlordAuthenticatedSessionController;
+use App\Http\Controllers\Landlord\CountryController;
 use App\Http\Controllers\Landlord\DashboardController as LandlordDashboardController;
 use App\Http\Controllers\Landlord\GlobalFlightCacheSettingsController;
 use App\Http\Controllers\Landlord\MigrationController;

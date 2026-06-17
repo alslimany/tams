@@ -100,6 +100,18 @@ class L2Provider implements ESimProviderInterface
         ]);
     }
 
+    /** @return array{status: string} */
+    public function deleteEsim(string $iccid): array
+    {
+        $response = $this->post('/api/whitelabel/v2/esims/delete', [
+            'iccid' => $iccid,
+        ]);
+
+        return [
+            'status' => (string) ($response['status'] ?? 'unknown'),
+        ];
+    }
+
     /**
      * @return array<int, array{name: string, brandName: string, speed: string[]}>
      */
@@ -136,7 +148,7 @@ class L2Provider implements ESimProviderInterface
     public function organization(): array
     {
         return Cache::remember('esim_org_'.$this->config->id, now()->addMinutes(5), function (): array {
-            $response = $this->post('/api/whitelabel/v2/organization', []);
+            $response = $this->get('/api/whitelabel/v2/organization');
 
             return [
                 'firstName' => (string) ($response['firstName'] ?? ''),
@@ -201,6 +213,24 @@ class L2Provider implements ESimProviderInterface
             ->connectTimeout(10)
             ->retry(2, 500)
             ->post($this->baseUrl.$path, $payload);
+
+        return $this->parseResponse($response);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function get(string $path): array
+    {
+        $response = Http::withHeaders([
+            'x-api-key' => $this->apiKey,
+            'clientSecret' => $this->clientSecret,
+            'Accept' => 'application/json',
+        ])
+            ->timeout(30)
+            ->connectTimeout(10)
+            ->retry(2, 500)
+            ->get($this->baseUrl.$path);
 
         return $this->parseResponse($response);
     }

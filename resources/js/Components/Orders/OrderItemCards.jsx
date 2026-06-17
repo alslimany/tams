@@ -17,6 +17,9 @@ import {
     MoreHorizontal,
     Plane,
     ShieldCheck,
+    SmartphoneNfc,
+    Smartphone,
+    QrCode,
 } from 'lucide-react';
 
 const compactStatusVariant = (status) => {
@@ -616,7 +619,245 @@ export function HotelOrderItemCard({ item, canManage, onCancel }) {
     );
 }
 
-export function OrderItemsSection({ order, canManageItems, canManageInsurance, canManageHotels, onVoid, onRefund, onChangeTicket, onPrintTickets, onInsuranceCancel, onPrintPolicy, onHotelCancel, isInsuranceCancellationApproved }) {
+export function ESimOrderItemCard({ item, canManage, onRefund }) {
+    const { t } = useTranslation();
+    const details = item.item_details ?? {};
+    const product = item.product_details ?? {};
+    const customer = details.customer ?? {};
+    const country = valueOrFallback(details.country, product.country);
+    const days = Number(details.validity_days ?? 0);
+    const dataMb = Number(details.data_mb ?? 0);
+    const activationCode = valueOrFallback(details.activation_code);
+    const smdpAddress = valueOrFallback(details.smdp_address);
+    const lpaString = valueOrFallback(details.lpa_string);
+    const matchingId = activationCode !== '-' ? activationCode : '';
+
+    const iosInstallUrl = lpaString && lpaString !== '-'
+        ? `https://esimsetup.apple.com/esim_qrcode_provisioning?carddata=${encodeURIComponent(lpaString)}`
+        : null;
+
+    const lpaQrString = smdpAddress !== '-' && matchingId
+        ? `LPA:1$${smdpAddress}$${matchingId}$`
+        : null;
+
+    const qrCodeUrl = lpaQrString
+        ? `https://api.qrserver.com/v1/create-qr-code/?size=280x280&data=${encodeURIComponent(lpaQrString)}`
+        : null;
+
+    const [activateOpen, setActivateOpen] = React.useState(false);
+    const [guideTab, setGuideTab] = React.useState('ios');
+
+    const canRefund = item.status === 'issued';
+
+    return (
+        <>
+            <CardShell
+                icon={SmartphoneNfc}
+                eyebrow={t('orders.product_esim')}
+                title={valueOrFallback(details.package_name, product.package_name, details.package_id)}
+                reference={t('orders.provider_order_ref') + ': ' + valueOrFallback(details.provider_order_id, item.provider_reference)}
+                status={item.status}
+                total={item.total_amount ?? item.total}
+                currency={item.currency}
+                provider={item.provider}
+                actions={canManage ? (
+                    <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                            <Button variant="outline" size="sm" className="h-8 px-2 text-xs">
+                                {t('orders.manage')} <MoreHorizontal className="ms-1 size-4" />
+                            </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-48">
+                            <DropdownMenuLabel>{t('orders.manage_esim')}</DropdownMenuLabel>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                                disabled={!canRefund}
+                                className={canRefund ? 'text-rose-600 focus:text-rose-700' : ''}
+                                onSelect={(event) => {
+                                    event.preventDefault();
+                                    onRefund(item);
+                                }}
+                            >
+                                {t('orders.esim_refund')}
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                                onSelect={(event) => {
+                                    event.preventDefault();
+                                    setActivateOpen(true);
+                                }}
+                            >
+                                {t('orders.esim_activate')}
+                            </DropdownMenuItem>
+                        </DropdownMenuContent>
+                    </DropdownMenu>
+                ) : null}
+            >
+                <div className="space-y-4">
+                    {/* Package summary */}
+                    <div className="grid gap-3 text-sm md:grid-cols-4">
+                        <Field label={t('orders.esim_country')} value={country} />
+                        <Field
+                            label={t('orders.esim_data')}
+                            value={dataMb > 0 ? `${dataMb} MB` : t('orders.esim_unlimited')}
+                        />
+                        <Field
+                            label={t('orders.esim_validity')}
+                            value={days > 0 ? t('orders.days_count', { count: days }) : '-'}
+                        />
+                        <Field
+                            label={t('orders.esim_customer')}
+                            value={valueOrFallback(customer.name, customer.full_name, customer.email)}
+                        />
+                    </div>
+
+                    {/* One-click install */}
+                    {iosInstallUrl ? (
+                        <div className="rounded-xl border border-sky-200 bg-gradient-to-br from-sky-50 to-blue-50 p-4">
+                            <p className="text-xs font-bold uppercase text-sky-700">{t('orders.esim_one_click_install')}</p>
+                            <p className="mt-1 text-xs text-sky-600">{t('orders.esim_install_ios_hint')}</p>
+                            <a
+                                href={iosInstallUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="mt-3 inline-flex items-center gap-2 rounded-lg bg-sky-600 px-4 py-2 text-xs font-bold text-white shadow-sm transition hover:bg-sky-700"
+                            >
+                                <SmartphoneNfc className="size-3.5" />
+                                {t('orders.esim_install_on_ios')}
+                            </a>
+                        </div>
+                    ) : null}
+                </div>
+            </CardShell>
+
+            {/* Activation Modal */}
+            {activateOpen ? (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setActivateOpen(false)}>
+                    <div
+                        className="w-full max-w-lg rounded-2xl bg-white shadow-2xl"
+                        onClick={(event) => event.stopPropagation()}
+                    >
+                        <div className="border-b px-6 py-4">
+                            <div className="flex items-center gap-3">
+                                <div className="flex size-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                                    <QrCode className="size-5" />
+                                </div>
+                                <div>
+                                    <h2 className="text-lg font-black text-slate-950">{t('orders.esim_activate_title')}</h2>
+                                    <p className="text-xs text-slate-500">{t('orders.esim_activate_subtitle')}</p>
+                                </div>
+                            </div>
+                            <button
+                                onClick={() => setActivateOpen(false)}
+                                className="absolute right-6 top-4 rounded-lg p-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+                            >
+                                <svg className="size-5" viewBox="0 0 20 20" fill="currentColor">
+                                    <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
+                                </svg>
+                            </button>
+                        </div>
+
+                        <div className="space-y-5 px-6 py-5">
+                            {/* QR Code */}
+                            {qrCodeUrl ? (
+                                <div className="flex flex-col items-center">
+                                    <div className="rounded-xl border-2 border-slate-200 bg-white p-3">
+                                        <img
+                                            src={qrCodeUrl}
+                                            alt="eSIM QR Code"
+                                            className="size-56"
+                                        />
+                                    </div>
+                                    <p className="mt-3 text-center text-xs font-medium text-slate-500">
+                                        {t('orders.esim_scan_qr_hint')}
+                                    </p>
+                                </div>
+                            ) : null}
+
+                            {/* Setup guide tabs */}
+                            <div className="space-y-4">
+                                <div className="flex rounded-lg bg-slate-100 p-1">
+                                    <button
+                                        type="button"
+                                        onClick={() => setGuideTab('ios')}
+                                        className={`flex flex-1 items-center justify-center gap-1.5 rounded-md px-3 py-2 text-xs font-bold transition ${
+                                            guideTab === 'ios'
+                                                ? 'bg-white text-slate-900 shadow-sm'
+                                                : 'text-slate-500 hover:text-slate-700'
+                                        }`}
+                                    >
+                                        <svg className="size-3.5" viewBox="0 0 24 24" fill="currentColor">
+                                            <path d="M18.71 19.5C17.88 20.74 17 21.95 15.66 21.97C14.32 21.99 13.89 21.18 12.37 21.18C10.84 21.18 10.37 21.95 9.099 21.99C7.789 22.03 6.799 20.68 5.959 19.47C4.249 16.97 3.019 12.44 4.789 9.389C5.669 7.829 7.249 6.839 8.969 6.819C10.25 6.799 11.47 7.689 12.25 7.689C13.03 7.689 14.51 6.619 16.05 6.779C16.71 6.809 18.54 7.049 19.72 8.789C19.63 8.849 17.62 10.04 17.64 12.54C17.66 15.46 20.18 16.44 20.25 16.47C20.18 16.67 19.58 18.79 18.71 19.5ZM12.03 6.539C11.17 5.629 11.51 4.189 11.81 3.399C12.53 3.139 13.43 2.939 14.23 3.399C14.69 3.659 14.93 4.049 14.93 4.699C14.93 5.929 14.07 7.149 12.03 6.539Z" />
+                                        </svg>
+                                        {t('orders.esim_guide_ios')}
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setGuideTab('android')}
+                                        className={`flex flex-1 items-center justify-center gap-1.5 rounded-md px-3 py-2 text-xs font-bold transition ${
+                                            guideTab === 'android'
+                                                ? 'bg-white text-slate-900 shadow-sm'
+                                                : 'text-slate-500 hover:text-slate-700'
+                                        }`}
+                                    >
+                                        <Smartphone className="size-3.5" />
+                                        {t('orders.esim_guide_android')}
+                                    </button>
+                                </div>
+
+                                {/* Steps */}
+                                {guideTab === 'ios' ? (
+                                    <ol className="space-y-3">
+                                        {[
+                                            t('orders.esim_guide_ios_step1'),
+                                            t('orders.esim_guide_ios_step2'),
+                                            t('orders.esim_guide_ios_step3'),
+                                            t('orders.esim_guide_ios_step4'),
+                                        ].map((step, i) => (
+                                            <li key={i} className="flex gap-3 text-sm">
+                                                <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-slate-200 text-[11px] font-bold text-slate-600">
+                                                    {i + 1}
+                                                </span>
+                                                <span className="text-slate-700">{step}</span>
+                                            </li>
+                                        ))}
+                                    </ol>
+                                ) : (
+                                    <ol className="space-y-3">
+                                        {[
+                                            t('orders.esim_guide_android_step1'),
+                                            t('orders.esim_guide_android_step2'),
+                                            t('orders.esim_guide_android_step3'),
+                                            t('orders.esim_guide_android_step4'),
+                                        ].map((step, i) => (
+                                            <li key={i} className="flex gap-3 text-sm">
+                                                <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-slate-200 text-[11px] font-bold text-slate-600">
+                                                    {i + 1}
+                                                </span>
+                                                <span className="text-slate-700">{step}</span>
+                                            </li>
+                                        ))}
+                                    </ol>
+                                )}
+                            </div>
+                        </div>
+
+                        <div className="border-t bg-slate-50/50 px-6 py-4">
+                            <Button
+                                variant="outline"
+                                className="w-full"
+                                onClick={() => setActivateOpen(false)}
+                            >
+                                {t('orders.close')}
+                            </Button>
+                        </div>
+                    </div>
+                </div>
+            ) : null}
+        </>
+    );
+}
+
+export function OrderItemsSection({ order, canManageItems, canManageInsurance, canManageHotels, onVoid, onRefund, onChangeTicket, onPrintTickets, onInsuranceCancel, onPrintPolicy, onHotelCancel, isInsuranceCancellationApproved, onEsimRefund }) {
     return (
         <div className="space-y-3">
             {(order.items ?? []).map((item) => {
@@ -640,6 +881,17 @@ export function OrderItemsSection({ order, canManageItems, canManageInsurance, c
                             item={item}
                             canManage={canManageHotels}
                             onCancel={onHotelCancel}
+                        />
+                    );
+                }
+
+                if (item.type === 'esim' || item.product_type === 'esim') {
+                    return (
+                        <ESimOrderItemCard
+                            key={item.id}
+                            item={item}
+                            canManage={canManageItems}
+                            onRefund={onEsimRefund}
                         />
                     );
                 }

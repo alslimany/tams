@@ -232,6 +232,16 @@ export default function Show({ order, itemTransactions, voidRefundAccount }) {
         });
     };
 
+    const refundEsim = (item) => {
+        if (!window.confirm(t('orders.confirm_esim_refund'))) {
+            return;
+        }
+
+        router.post(route('orders.esim-items.refund', { order: order.id, item: item.id }), {}, {
+            preserveScroll: true,
+        });
+    };
+
     const closeCancelModal = () => {
         if (cancelForm.processing) {
             return;
@@ -386,6 +396,7 @@ export default function Show({ order, itemTransactions, voidRefundAccount }) {
                     onInsuranceCancel={openCancelModal}
                     onPrintPolicy={openPolicyReport}
                     onHotelCancel={cancelHotelBooking}
+                    onEsimRefund={refundEsim}
                     isInsuranceCancellationApproved={isInsuranceCancellationApproved}
                 />
 

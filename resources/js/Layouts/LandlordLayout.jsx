@@ -3,7 +3,7 @@ import { Link, usePage } from '@inertiajs/react';
 import { Button } from '@/Components/ui/Button';
 import { Badge } from '@/Components/ui/Badge';
 import { Toaster, toast } from 'sonner';
-import { LayoutDashboard, Users, Settings, LogOut, Plane, BarChart3, ArrowDownToLine } from 'lucide-react';
+import { LayoutDashboard, Users, Settings, LogOut, Plane, BarChart3, ArrowDownToLine, Globe } from 'lucide-react';
 import { useTranslation } from '@/hooks/useTranslation';
 
 export default function LandlordLayout({ children }) {
@@ -64,6 +64,13 @@ const { csrf_token } = usePage().props;
                         className={`flex items-center gap-3 px-4 py-3 text-sm font-bold rounded-xl transition-all ${route().current('landlord.airports.*') ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-900'}`}
                     >
                         <Plane className="h-5 w-5" /> Airports
+                    </Link>
+
+                    <Link
+                        href={route('landlord.countries.index')}
+                        className={`flex items-center gap-3 px-4 py-3 text-sm font-bold rounded-xl transition-all ${route().current('landlord.countries.*') ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-900'}`}
+                    >
+                        <Globe className="h-5 w-5" /> Countries
                     </Link>
 
                     <div className="pt-8 text-[10px] uppercase tracking-[0.2em] font-black text-slate-400 mb-4 px-4">{t('landlord.console.system')}</div>

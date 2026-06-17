@@ -11,6 +11,8 @@ use App\Http\Requests\Tenant\ESim\ESimBookRequest;
 use App\Http\Requests\Tenant\ESim\ESimSearchRequest;
 use App\Models\Airport;
 use App\Models\Country;
+use App\Models\Tenant\Order;
+use App\Models\Tenant\OrderItem;
 use App\Models\Tenant\TenantEsimProvider;
 use App\Models\User;
 use App\Services\ESim\ESimApiException;
@@ -257,6 +259,20 @@ class ESimBookingController extends Controller
             return back()->with('error', $exception->getMessage());
         }
 
+        // Validate real-time L2 API balance before placing the order
+        try {
+            $providerOrg = $this->providerManager->provider()->organization();
+            $apiBalance = (float) ($providerOrg['balance'] ?? 0);
+
+            if ($apiBalance < $amount) {
+                return back()->with('error', "Insufficient provider balance. Required: \${$amount} {$currency}, available: \${$apiBalance} {$currency}.");
+            }
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return back()->with('error', 'Unable to verify provider balance. Please try again.');
+        }
+
         $issuer = $request->user();
 
         if (! $issuer instanceof User) {
@@ -295,6 +311,57 @@ class ESimBookingController extends Controller
         }
 
         return redirect()->route('orders.show', $order)->with('success', 'eSIM purchased successfully.');
+    }
+
+    public function refund(Order $order, OrderItem $item): RedirectResponse
+    {
+        abort_unless($item->order_id === $order->id, 404);
+        abort_unless($item->type === 'esim' || $item->product_type === 'esim', 404);
+        abort_unless($item->status === 'issued', 404, 'Only issued eSIMs can be refunded.');
+
+        $iccid = (string) ($item->ticket_number ?: data_get($item->item_details, 'iccid', ''));
+
+        if ($iccid === '') {
+            return back()->with('error', 'No ICCID found for this eSIM order item.');
+        }
+
+        try {
+            $this->providerManager->provider()->deleteEsim($iccid);
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return back()->with('error', $exception instanceof ESimApiException ? $exception->getMessage() : 'Unable to delete eSIM from provider. Please try again.');
+        }
+
+        // Refund the provider wallet
+        $walletTransactionUuid = data_get($item->item_details, 'provider_wallet_transaction_id');
+        $esimProvider = $this->providerManager->activeProvider();
+
+        if ($walletTransactionUuid && $esimProvider instanceof TenantEsimProvider) {
+            $wallet = $esimProvider->getOrCreateCurrencyWallet(strtoupper((string) ($item->currency ?? 'USD')));
+            $refundAmount = round((float) data_get($item->item_details, 'provider_wallet_withdrawal_amount', (float) ($item->total_amount ?? $item->total ?? 0)), 2);
+
+            if ($refundAmount > 0) {
+                $wallet->depositFloat($refundAmount, [
+                    'type' => 'esim_refund',
+                    'description' => 'eSIM refund for ICCID '.$iccid.'.',
+                    'order_id' => $order->id,
+                    'order_item_id' => $item->id,
+                    'original_transaction_uuid' => $walletTransactionUuid,
+                    'product_type' => 'esim',
+                ]);
+            }
+        }
+
+        $item->update([
+            'status' => 'refunded',
+            'item_details' => array_merge((array) $item->item_details, [
+                'refunded_at' => now()->toISOString(),
+                'refund_iccid' => $iccid,
+            ]),
+        ]);
+
+        return back()->with('success', 'eSIM refunded successfully.');
     }
 
     /**

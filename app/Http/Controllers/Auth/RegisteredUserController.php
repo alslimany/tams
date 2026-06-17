@@ -38,13 +38,13 @@ class RegisteredUserController extends Controller
         if (function_exists('tenancy') && tenancy()->initialized) {
             $tenant = tenancy()->tenant;
             $plan = $tenant->plan;
-            
+
             // \Illuminate\Support\Facades\Log::error('User Count: ' . User::count());
             // \Illuminate\Support\Facades\Log::error('Max Users: ' . ($plan ? $plan->max_users : 'null'));
 
             if ($plan && $plan->max_users) {
                 if (User::count() >= $plan->max_users) {
-                    return back()->withErrors(['email' => 'Maximum number of users reached for this plan (' . $plan->max_users . '). Please upgrade your plan.']);
+                    return back()->withErrors(['email' => 'Maximum number of users reached for this plan ('.$plan->max_users.'). Please upgrade your plan.']);
                 }
             }
         }

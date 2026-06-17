@@ -36,7 +36,7 @@ class AirlineLogoController extends Controller
         $radius = $request->query('radius');
 
         // Sanitize variant input to prevent path traversal
-        if (!in_array($variant, ['default', 'icon', 'tail', 'icon-transparent', 'icon-white', 'logo-bg-white', 'icon-transparent'])) {
+        if (! in_array($variant, ['default', 'icon', 'tail', 'icon-transparent', 'icon-white', 'logo-bg-white', 'icon-transparent'])) {
             $variant = 'default';
         }
 
@@ -50,11 +50,11 @@ class AirlineLogoController extends Controller
         $storagePath = "airlines/logos/{$code}/{$filename}";
 
         // Check if cached locally
-        if (!Storage::disk('public')->exists($storagePath)) {
+        if (! Storage::disk('public')->exists($storagePath)) {
             // Fetch from Logostream API
             $apiKey = env('AIRLINE_LOGO_API_KEY');
 
-            if (!$apiKey) {
+            if (! $apiKey) {
                 abort(500, 'Airline Logo API Key not configured.');
             }
 
@@ -72,8 +72,7 @@ class AirlineLogoController extends Controller
 
             if ($response->successful()) {
                 Storage::disk('public')->put($storagePath, $response->body());
-            }
-            else {
+            } else {
                 abort($response->status(), 'Airline logo not found or API error.');
             }
         }

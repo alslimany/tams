@@ -16,7 +16,6 @@ class CreateOrderFromESimPurchase
 {
     public function __construct(
         protected OrderNumberGenerator $orderNumberGenerator,
-        protected ProcessWalletTransactions $processWalletTransactions,
         protected InitializeTenantLedger $initializeTenantLedger,
         protected PostToLedger $postToLedger,
     ) {}
@@ -131,8 +130,6 @@ class CreateOrderFromESimPurchase
                 'paid' => $price,
                 'remaining' => 0,
             ]);
-
-            $this->processWalletTransactions->execute($order, $issuer, allowNegativeBalance: false);
 
             $this->initializeTenantLedger->execute();
             $this->postToLedger->execute($order, includeOwnCredentials: false);

@@ -20,7 +20,7 @@ return new class extends Migration
             $table->text('credentials'); // Encrypted JSON
             $table->boolean('is_active')->default(true);
             $table->timestamps();
-            
+
             // Allow multiple accounts per airline (e.g. Medsky EUR, Medsky LYD)
             $table->unique(['provider_type', 'airline_code', 'account_name']);
         });

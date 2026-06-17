@@ -43,7 +43,7 @@ class LoginRequest extends FormRequest
         $this->ensureIsNotRateLimited();
 
         $credentials = $this->only('password');
-        
+
         if ($this->filled('login_code')) {
             $credentials['login_code'] = $this->input('login_code');
             $throttleKey = Str::transliterate(Str::lower($this->input('login_code')).'|'.$this->ip());

@@ -23,7 +23,7 @@ return Application::configure(basePath: dirname(__DIR__))
             \App\Http\Middleware\TrackUserActivity::class,
             \App\Http\Middleware\CheckActiveUser::class,
         ]);
-        
+
         // $middleware->redirectTo(
         //     guests: '/login',
         //     users: '/flights' // Change this from '/dashboard' to '/'

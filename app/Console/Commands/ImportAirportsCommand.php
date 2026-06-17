@@ -4,7 +4,6 @@ namespace App\Console\Commands;
 
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
-use App\Models\Airport;
 
 class ImportAirportsCommand extends Command
 {
@@ -28,19 +27,20 @@ class ImportAirportsCommand extends Command
     public function handle()
     {
         $csvPath = base_path('.trae/docs/airports.csv');
-        if (!file_exists($csvPath)) {
+        if (! file_exists($csvPath)) {
             $this->error("File not found at: {$csvPath}");
+
             return;
         }
 
-        $this->info("Importing airports from CSV...");
+        $this->info('Importing airports from CSV...');
 
         $file = fopen($csvPath, 'r');
-        $header = fgetcsv($file); 
+        $header = fgetcsv($file);
 
         $airportsToInsert = [];
         $count = 0;
-        
+
         while (($row = fgetcsv($file)) !== false) {
             $data = array_combine($header, $row);
 

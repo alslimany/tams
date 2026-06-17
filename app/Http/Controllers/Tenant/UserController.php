@@ -14,8 +14,9 @@ class UserController extends Controller
     public function index()
     {
         $users = User::all();
+
         return Inertia::render('Tenant/Users/Index', [
-            'users' => $users
+            'users' => $users,
         ]);
     }
 
@@ -47,7 +48,7 @@ class UserController extends Controller
     public function edit(User $user)
     {
         return Inertia::render('Tenant/Users/Edit', [
-            'user' => $user
+            'user' => $user,
         ]);
     }
 
@@ -55,7 +56,7 @@ class UserController extends Controller
     {
         $request->validate([
             'name' => 'required|string|max:255',
-            'email' => 'required|string|email|max:255|unique:users,email,' . $user->id,
+            'email' => 'required|string|email|max:255|unique:users,email,'.$user->id,
             'role' => 'required|in:agent,manager,admin',
             'is_active' => 'required|boolean',
         ]);
@@ -82,7 +83,7 @@ class UserController extends Controller
     public function toggleStatus(User $user)
     {
         $user->update([
-            'is_active' => !$user->is_active
+            'is_active' => ! $user->is_active,
         ]);
 
         return back()->with('success', 'User status updated successfully.');

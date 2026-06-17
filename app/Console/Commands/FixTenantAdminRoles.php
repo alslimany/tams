@@ -29,15 +29,15 @@ class FixTenantAdminRoles extends Command
     {
         Tenant::all()->each(function (Tenant $tenant) {
             $this->info("Processing tenant: {$tenant->id}");
-            
+
             $tenant->run(function () {
                 $firstUser = User::orderBy('created_at', 'asc')->first();
-                
+
                 if ($firstUser) {
                     $firstUser->update(['role' => 'admin', 'is_active' => true]);
                     $this->line("  Promoted user: {$firstUser->email} to admin");
                 } else {
-                    $this->warn("  No users found for this tenant.");
+                    $this->warn('  No users found for this tenant.');
                 }
             });
         });
