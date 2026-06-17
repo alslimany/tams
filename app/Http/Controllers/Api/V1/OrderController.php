@@ -53,12 +53,12 @@ class OrderController extends Controller
     public function show(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'order_id' => ['required', 'uuid'],
+            'order' => ['required', 'uuid'],
         ]);
 
         $order = Order::query()
             ->with(['owner', 'items', 'statusLogs.user'])
-            ->where('id', $validated['order_id'])
+            ->where('id', $validated['order'])
             ->firstOrFail();
 
         return $this->success([
