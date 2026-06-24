@@ -14,6 +14,8 @@ use App\Http\Controllers\Concerns\ExtractsPnrLocator;
 use App\Models\Tenant\Order;
 use App\Models\User;
 use App\Services\Airline\AgencyProviderResolver;
+use App\Services\Airline\CabinClassFilter;
+use App\Services\Airline\FlightOfferPresenter;
 use App\Services\Airline\ProviderFactory;
 use App\Services\GlobalCache\GlobalFlightCacheSettingsService;
 use App\Services\GlobalCache\RouteAvailabilityService;
@@ -37,6 +39,7 @@ class FlightController extends Controller
         protected RouteAvailabilityService $routeAvailabilityService,
         protected GlobalFlightCacheSettingsService $globalFlightCacheSettingsService,
         protected OrderNumberGenerator $orderNumberGenerator,
+        protected FlightOfferPresenter $flightOfferPresenter,
     ) {}
 
     /**
@@ -56,10 +59,11 @@ class FlightController extends Controller
             'children' => ['nullable', 'integer', 'min:0', 'max:9'],
             'infants' => ['nullable', 'integer', 'min:0', 'max:9'],
             'is_return' => ['nullable', 'boolean'],
-            'cabin_class' => ['nullable', 'string', 'in:Y,C,F'],
+            'cabin_class' => ['nullable', 'string', 'in:all,Y,C,F,W,economy,premium_economy,business,first'],
         ]);
 
         $searchUuid = (string) Str::uuid();
+        $validated['cabin_class'] = $validated['cabin_class'] ?? 'all';
         Cache::put("flight_search_{$searchUuid}", $validated, now()->addMinutes(30));
 
         $providers = $this->providerResolver->getAllActiveProviders();
@@ -104,6 +108,12 @@ class FlightController extends Controller
         }
 
         $providerId = (int) $request->input('provider_id');
+        $lockedProviderId = (int) ($searchParams['locked_provider_id'] ?? 0);
+
+        if ($lockedProviderId > 0 && $providerId !== $lockedProviderId) {
+            return $this->error('This search session is locked to the issuing airline provider.', 422);
+        }
+
         $providers = $this->providerResolver->getAllActiveProviders();
         $providerConfig = $providers->firstWhere('id', $providerId);
 
@@ -128,8 +138,42 @@ class FlightController extends Controller
             'provider_id' => $providerId,
             'airline_code' => $providerConfig->airline_code,
             'airline_name' => $providerConfig->airline_name,
-            'offers' => $flights,
+            'offers' => $this->flightOfferPresenter->presentMany($flights),
         ]);
+    }
+
+    /**
+     * Fetch fare rules (fare notes) for a selected offer class.
+     */
+    public function fareRules(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'provider_id' => ['required', 'integer'],
+            'fare_id' => ['required', 'string', 'max:20'],
+        ]);
+
+        $providerConfig = $this->resolveProvider((int) $validated['provider_id']);
+
+        if (! $providerConfig) {
+            return $this->error('Provider not found.', 404);
+        }
+
+        try {
+            $provider = ProviderFactory::make($providerConfig);
+            $rules = $provider->getFareRules($validated['fare_id']);
+
+            return $this->success([
+                'fare_id' => $validated['fare_id'],
+                'rules' => $rules,
+            ]);
+        } catch (Exception $e) {
+            Log::error('API fare rules fetch failed: '.$e->getMessage(), [
+                'provider_id' => $validated['provider_id'],
+                'fare_id' => $validated['fare_id'],
+            ]);
+
+            return $this->error('Failed to fetch fare rules.', 422);
+        }
     }
 
     /**
@@ -207,6 +251,7 @@ class FlightController extends Controller
             'customer.last_name' => ['required', 'string'],
             'customer.email' => ['nullable', 'email'],
             'customer.phone' => ['nullable', 'string'],
+            'ticketing_mode' => ['nullable', 'string', 'in:final,draft'],
         ], [
             'passengers.*.first_name.alpha' => 'Passenger first name must contain letters only.',
             'passengers.*.last_name.alpha' => 'Passenger last name must contain letters only.',
@@ -259,28 +304,33 @@ class FlightController extends Controller
             return $this->error('An authenticated user is required.', 401);
         }
 
-        // Validate wallet balance
-        try {
-            $source = app(DetermineFinancialSource::class)->execute(
-                (string) $providerConfig->airline_code,
-                $currency
-            );
+        $isDraft = ($validated['ticketing_mode'] ?? 'final') === 'draft';
 
-            if ($source->usesMasterAgencySupply()) {
-                app(ProcessWalletTransactions::class)->assertCanIssueForAmounts([
-                    strtoupper($currency) => $totalPrice,
-                ], $issuer);
+        // Validate wallet balance for final (issued) bookings only.
+        if (! $isDraft) {
+            try {
+                $source = app(DetermineFinancialSource::class)->execute(
+                    (string) $providerConfig->airline_code,
+                    $currency
+                );
+
+                if ($source->usesMasterAgencySupply()) {
+                    app(ProcessWalletTransactions::class)->assertCanIssueForAmounts([
+                        strtoupper($currency) => $totalPrice,
+                    ], $issuer);
+                }
+            } catch (InsufficientWalletBalanceException $e) {
+                return $this->error($e->getMessage(), 402);
             }
-        } catch (InsufficientWalletBalanceException $e) {
-            return $this->error($e->getMessage(), 402);
         }
 
-        // Issue ticket via provider
+        // Book via provider
         $providerPayload = [
             'passengers' => $passengers,
             'contact' => $customer,
             'itinerary' => $mappedItinerary,
             'reservation_type' => $reservationType,
+            'ticketing_mode' => $isDraft ? 'draft' : 'final',
         ];
 
         try {
@@ -308,17 +358,17 @@ class FlightController extends Controller
         }
 
         // Create order in database
-        $order = DB::transaction(function () use ($providerConfig, $totalPrice, $currency, $pnr, $flight, $passengers, $customer, $issuer, $cachedOffer): Order {
+        $order = DB::transaction(function () use ($isDraft, $providerConfig, $totalPrice, $currency, $pnr, $flight, $passengers, $customer, $issuer, $cachedOffer): Order {
             $order = Order::query()->create([
                 'owner_type' => get_class($issuer),
                 'owner_id' => $issuer->id,
                 'number' => $this->orderNumberGenerator->generate(),
-                'status' => 'confirmed',
-                'issued_at' => now(),
+                'status' => $isDraft ? 'pending' : 'confirmed',
+                'issued_at' => $isDraft ? null : now(),
                 'subtotal' => $totalPrice,
                 'tax_total' => 0,
                 'grand_total' => $totalPrice,
-                'amount_paid' => $totalPrice,
+                'amount_paid' => $isDraft ? 0 : $totalPrice,
                 'currency' => strtoupper($currency),
                 'payment_method' => 'airline_token',
                 'payment_reference' => $pnr,
@@ -339,6 +389,7 @@ class FlightController extends Controller
                     'segments' => $flight['segments'] ?? [$flight],
                     'passengers' => $passengers,
                     'customer' => $customer,
+                    'ticketing_mode' => $isDraft ? 'draft' : 'final',
                 ],
                 'product_details' => [
                     'segments' => $flight['segments'] ?? [$flight],
@@ -351,14 +402,24 @@ class FlightController extends Controller
                 'total' => $totalPrice,
                 'total_amount' => $totalPrice,
                 'currency' => strtoupper($currency),
-                'status' => 'confirmed',
+                'status' => $isDraft ? 'pending' : 'confirmed',
                 'transaction_type' => 'issue',
-                'paid' => $totalPrice,
-                'remaining' => 0,
+                'paid' => $isDraft ? 0 : $totalPrice,
+                'remaining' => $isDraft ? $totalPrice : 0,
             ]);
 
             return $order;
         });
+
+        if ($isDraft) {
+            Cache::forget("flight_search_{$validated['uuid']}");
+
+            return $this->success(
+                $this->formatOrder($order->fresh()->load('items')),
+                'Draft reservation created. Issue the ticket with POST /flights/{booking}/tickets/issue when ready.',
+                201,
+            );
+        }
 
         // Apply financial source and process wallet transactions
         app(ApplyFinancialSourceAndCommission::class)->execute($order);
@@ -480,6 +541,17 @@ class FlightController extends Controller
         $providerFlights = collect($provider->searchAvailability($params));
         $providerConfig->update(['last_used_at' => now()]);
 
-        return $providerFlights->sortBy('pricing.total')->values()->toArray();
+        $cabinClass = $searchParams['cabin_class'] ?? 'all';
+        $filtered = CabinClassFilter::filter($providerFlights->all(), $cabinClass);
+
+        $sorted = collect($filtered)->sortBy(function (mixed $offer): float {
+            if ($offer instanceof \App\DTOs\Airline\FlightOption) {
+                return (float) ($offer->pricing['total'] ?? 0);
+            }
+
+            return (float) data_get($offer, 'pricing.total', 0);
+        })->values()->all();
+
+        return $this->flightOfferPresenter->presentMany($sorted);
     }
 }

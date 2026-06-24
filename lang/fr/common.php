@@ -300,6 +300,7 @@ return [
     'to' => 'À',
     'class' => 'Classe',
     'economy' => 'Économie',
+    'all_classes' => 'Toutes les classes',
     'premium_economy' => 'Économie Premium',
     'business' => 'Affaires',
     'first_class' => 'Première Classe',

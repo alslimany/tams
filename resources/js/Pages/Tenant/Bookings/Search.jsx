@@ -50,7 +50,7 @@ export default function Search({ searchDisplayMode, bookings, filters, airlines,
         children: Number(searchDefaults.children ?? 0),
         infants: Number(searchDefaults.infants ?? 0),
         is_return: Boolean(searchDefaults.is_return ?? true),
-        cabin_class: searchDefaults.cabin_class || 'economy',
+        cabin_class: searchDefaults.cabin_class || 'all',
     });
 
     const { t } = useTranslation();
@@ -356,6 +356,7 @@ export default function Search({ searchDisplayMode, bookings, filters, airlines,
                                                 <SelectValue placeholder={t('common.select_class')} />
                                             </SelectTrigger>
                                             <SelectContent className="rounded-md" align="start">
+                                                <SelectItem value="all">{t('common.all_classes')}</SelectItem>
                                                 <SelectItem value="economy">{t('common.economy')}</SelectItem>
                                                 <SelectItem value="premium_economy">{t('common.premium_economy')}</SelectItem>
                                                 <SelectItem value="business">{t('common.business')}</SelectItem>

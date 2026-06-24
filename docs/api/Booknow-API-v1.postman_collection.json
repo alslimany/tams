@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Booknow API v1",
-    "description": "## Booknow REST API v1 \u2014 Mobile Application\n\n**Base URL**: `{{base_url}}/api/v1`  \n**Auth**: Bearer token (set via `{{token}}` variable after Login)  \n**Content-Type**: `application/json`\n\n### Quick Start\n1. Set `base_url` to your tenant domain (e.g. `https://agency.atom.ly`)\n2. Run **Login** \u2014 copy the returned `token` to the `{{token}}` collection variable\n3. All other endpoints use `{{token}}` automatically\n\n### Response Format\n```json\n{ \"success\": true|false, \"message\": \"...\", \"data\": {...} }\n```",
+    "description": "## Booknow REST API v1 \u2014 Mobile Application\n\n**Base URL**: `{{base_url}}/agency/{{tenant}}/api/v1`  \n**Auth**: Bearer token (set via `{{token}}` variable after Login)  \n**Content-Type**: `application/json`\n\n### Token Abilities\n| Ability | Scope |\n|---------|-------|\n| `read` | Results, orders, fare rules, reports, wallet |\n| `write` | Search, select, book |\n| `issue` | Issue ticket, void/refund, change segment |\n| `report` | Dashboard & reports |\n| `*` | Full access |\n\n### Quick Start\n1. Set `base_url` and `tenant` (e.g. `median`)\n2. Run **Login** \u2014 token is saved to `{{token}}` automatically\n3. Use flight/hotel flows; for changes use **Change Segment** folder\n\n### Recent Updates\n- Cabin filter: `cabin_class` = `all` | `Y` | `C` | `F`\n- Offers include `baggage`, `airline_logo_url`, `fare_id`\n- `POST /flights/fare-rules` for FN fare notes\n- `GET /airlines/{code}/logo` and `logo_url` on airlines list\n- Draft booking: `ticketing_mode: draft` then `POST .../tickets/issue`\n- Change segment: search \u2192 results \u2192 quote \u2192 confirm\n\n### Response Format\n```json\n{ \"success\": true|false, \"message\": \"...\", \"data\": {...} }\n```",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "auth": {
@@ -20,6 +20,34 @@
     },
     {
       "key": "token",
+      "value": ""
+    },
+    {
+      "key": "tenant",
+      "value": "median"
+    },
+    {
+      "key": "flight_uuid",
+      "value": ""
+    },
+    {
+      "key": "flight_provider_id",
+      "value": ""
+    },
+    {
+      "key": "booking_id",
+      "value": ""
+    },
+    {
+      "key": "order_id",
+      "value": ""
+    },
+    {
+      "key": "item_id",
+      "value": ""
+    },
+    {
+      "key": "ticket_id",
       "value": ""
     }
   ],
@@ -241,22 +269,56 @@
                 "airlines"
               ]
             },
-            "description": "Returns all active airlines available to the tenant."
+            "description": "Returns all active airlines available to the tenant. Each airline includes a `logo_url` for direct use in the UI."
           },
           "response": [
             {
               "name": "200",
               "status": "OK",
               "code": 200,
-              "body": "{\n  \"success\": true,\n  \"data\": [\n    { \"airline_code\": \"YI\", \"airline_name\": \"Yemenia Airways\" }\n  ]\n}"
+              "body": "{\n  \"success\": true,\n  \"data\": [\n    {\n      \"airline_code\": \"YI\",\n      \"airline_name\": \"Yemenia Airways\",\n      \"logo_url\": \"https://agency.atom.ly/agency/median/api/v1/airlines/YI/logo?variant=icon-transparent&radius=8\"\n    }\n  ]\n}"
             }
           ]
+        },
+        {
+          "name": "Airline Logo",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/agency/{{tenant}}/api/v1/airlines/YI/logo?variant=icon-transparent&radius=8",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "agency",
+                "{{tenant}}",
+                "api",
+                "v1",
+                "airlines",
+                "YI",
+                "logo"
+              ],
+              "query": [
+                {
+                  "key": "variant",
+                  "value": "icon-transparent",
+                  "description": "default | icon | tail | icon-transparent | icon-white | logo-bg-white"
+                },
+                {
+                  "key": "radius",
+                  "value": "8"
+                }
+              ]
+            },
+            "description": "Returns the airline logo image (PNG). Also available as `airline_logo_url` on each flight offer and `logo_url` on the airlines list."
+          },
+          "response": []
         }
       ]
     },
     {
       "name": "\u2708\ufe0f Flights",
-      "description": "Flight search, pricing, and booking flow.\n\n**Flow**: Search \u2192 Results \u2192 Calendar/Return-Options \u2192 Select \u2192 Book",
+      "description": "Flight search, pricing, and booking flow.\n\n**Book flow**: Search \u2192 Results \u2192 (Fare Rules) \u2192 Select \u2192 Book (`ticketing_mode: final` or `draft`)\n\n**Draft flow**: Book with `ticketing_mode: draft` \u2192 Issue Ticket\n\n**Change flow**: See **Change Segment** folder",
       "item": [
         {
           "name": "1. Search Flights",
@@ -285,7 +347,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"origin\": \"MJI\",\n  \"destination\": \"IST\",\n  \"date\": \"2026-06-15\",\n  \"adults\": 1,\n  \"children\": 0,\n  \"infants\": 0,\n  \"is_return\": false\n}"
+              "raw": "{\n  \"origin\": \"MJI\",\n  \"destination\": \"IST\",\n  \"date\": \"2026-06-15\",\n  \"adults\": 1,\n  \"children\": 0,\n  \"infants\": 0,\n  \"is_return\": false,\n  \"cabin_class\": \"all\"\n}"
             },
             "url": {
               "raw": "{{base_url}}/agency/{{tenant}}/api/v1/flights/search",
@@ -301,7 +363,7 @@
                 "search"
               ]
             },
-            "description": "Create a flight search session. Returns a UUID to use in subsequent calls.\n\n**Round-trip**: set `is_return: true` and add `return_date`."
+            "description": "Create a flight search session. Returns a UUID to use in subsequent calls.\n\n**cabin_class**: `all` (default) | `Y` (economy) | `C` (business) | `F` (first)\n\n**Round-trip**: set `is_return: true` and add `return_date`."
           },
           "response": [
             {
@@ -338,14 +400,53 @@
                 }
               ]
             },
-            "description": "Fetch flight offers from a specific provider for the given search session."
+            "description": "Fetch flight offers from a specific provider for the given search session.\n\nEach offer includes:\n- `baggage`: `{ hold_weight, hand_weight, hold_pieces }`\n- `airline_logo_url`\n- `fare_id` (use with **Fare Rules**)\n- `pricing.cabin_type` for cabin filtering\n\nDuring a **change search**, the session is locked to the issuing airline (`locked_provider_id`)."
           },
           "response": [
             {
               "name": "200",
               "status": "OK",
               "code": 200,
-              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"uuid\": \"...\",\n    \"provider_id\": 1,\n    \"airline_code\": \"YI\",\n    \"airline_name\": \"Yemenia Airways\",\n    \"offers\": [\n      {\n        \"flight_number\": \"YI500\",\n        \"departure_airport\": \"MJI\",\n        \"arrival_airport\": \"IST\",\n        \"departure_time\": \"2026-06-15T10:00:00\",\n        \"arrival_time\": \"2026-06-15T14:00:00\",\n        \"class\": \"Y\",\n        \"pricing\": { \"total\": 450, \"currency\": \"LYD\", \"base\": 400, \"tax\": 50 }\n      }\n    ]\n  }\n}"
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"uuid\": \"...\",\n    \"provider_id\": 1,\n    \"airline_code\": \"YI\",\n    \"airline_name\": \"Yemenia Airways\",\n    \"offers\": [\n      {\n        \"id\": \"500-MJI-IST-2026-06-15-Y\",\n        \"flight_number\": \"YI500\",\n        \"airline_code\": \"YI\",\n        \"airline_name\": \"Oya (Economy Y)\",\n        \"departure_airport\": \"MJI\",\n        \"arrival_airport\": \"IST\",\n        \"departure_time\": \"2026-06-15 10:00\",\n        \"arrival_time\": \"2026-06-15 14:00\",\n        \"segments\": [{ \"class\": \"Y\", \"cabin_type\": \"Y\" }],\n        \"pricing\": {\n          \"currency\": \"LYD\",\n          \"total\": 450,\n          \"cabin_type\": \"Y\",\n          \"class_code\": \"Y\",\n          \"fare_id\": \"384\"\n        },\n        \"baggage\": {\n          \"hold_weight\": \"20K\",\n          \"hand_weight\": \"7K\",\n          \"hold_pieces\": \"1\"\n        },\n        \"airline_logo_url\": \"https://agency.atom.ly/agency/median/api/v1/airlines/YI/logo?variant=icon-transparent&radius=8\",\n        \"fare_id\": \"384\",\n        \"available_seats\": 5\n      }\n    ]\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "2b. Fare Rules (FN)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"provider_id\": {{flight_provider_id}},\n  \"fare_id\": \"384\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/agency/{{tenant}}/api/v1/flights/fare-rules",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "agency",
+                "{{tenant}}",
+                "api",
+                "v1",
+                "flights",
+                "fare-rules"
+              ]
+            },
+            "description": "Fetch fare notes / ticket rules for a class using the Videcom FN command.\n\nPass `fare_id` from the selected offer's `pricing.fare_id` or top-level `fare_id`.\n\nRequires `read` ability."
+          },
+          "response": [
+            {
+              "name": "200",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"fare_id\": \"384\",\n    \"rules\": \"CHANGES: Permitted with penalty...\\nREFUNDS: Non-refundable...\"\n  }\n}"
             }
           ]
         },
@@ -473,6 +574,25 @@
         },
         {
           "name": "6. Book Flight \u2014 Issue Ticket",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var json = pm.response.json();",
+                  "if (json.success && json.data && json.data.id) {",
+                  "    pm.collectionVariables.set('booking_id', json.data.id);",
+                  "    pm.collectionVariables.set('order_id', json.data.id);",
+                  "    if (json.data.items && json.data.items[0]) {",
+                  "        pm.collectionVariables.set('item_id', json.data.items[0].id);",
+                  "        pm.collectionVariables.set('ticket_id', json.data.items[0].id);",
+                  "    }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
           "request": {
             "method": "POST",
             "header": [
@@ -483,7 +603,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"uuid\": \"{{flight_uuid}}\",\n  \"passengers\": [\n    {\n      \"type\": \"adult\",\n      \"first_name\": \"John\",\n      \"last_name\": \"Doe\",\n      \"dob\": \"1990-01-15\",\n      \"gender\": \"M\",\n      \"passport_number\": \"A1234567\",\n      \"passport_expiry\": \"2028-06-01\",\n      \"passport_issue_country\": \"LBY\",\n      \"nationality\": \"LBY\"\n    }\n  ],\n  \"customer\": {\n    \"first_name\": \"John\",\n    \"last_name\": \"Doe\",\n    \"email\": \"john@example.com\",\n    \"phone\": \"+218911234567\"\n  }\n}"
+              "raw": "{\n  \"uuid\": \"{{flight_uuid}}\",\n  \"ticketing_mode\": \"final\",\n  \"passengers\": [\n    {\n      \"type\": \"adult\",\n      \"first_name\": \"John\",\n      \"last_name\": \"Doe\",\n      \"dob\": \"1990-01-15\",\n      \"gender\": \"M\",\n      \"passport_number\": \"A1234567\",\n      \"passport_expiry\": \"2028-06-01\",\n      \"passport_issue_country\": \"LBY\",\n      \"nationality\": \"LBY\"\n    }\n  ],\n  \"customer\": {\n    \"first_name\": \"John\",\n    \"last_name\": \"Doe\",\n    \"email\": \"john@example.com\",\n    \"phone\": \"+218911234567\"\n  }\n}"
             },
             "url": {
               "raw": "{{base_url}}/agency/{{tenant}}/api/v1/flights/book",
@@ -499,7 +619,7 @@
                 "book"
               ]
             },
-            "description": "Finalize booking \u2014 issue ticket, create order, process wallet. Must call **Select Flight** first."
+            "description": "Finalize booking and issue ticket immediately (`ticketing_mode: final`, default). Creates order, charges wallet, and issues e-ticket. Must call **Select Flight** first.\n\nFor hold-only PNR without payment, use **6b. Book Flight \u2014 Draft Reservation**."
           },
           "response": [
             {
@@ -513,6 +633,64 @@
               "status": "Payment Required",
               "code": 402,
               "body": "{\n  \"success\": false,\n  \"message\": \"Insufficient wallet balance: requires 450.00 LYD, available 100.00 LYD\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "6b. Book Flight \u2014 Draft Reservation",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var json = pm.response.json();",
+                  "if (json.success && json.data && json.data.id) {",
+                  "    pm.collectionVariables.set('booking_id', json.data.id);",
+                  "    pm.collectionVariables.set('order_id', json.data.id);",
+                  "    if (json.data.items && json.data.items[0]) {",
+                  "        pm.collectionVariables.set('item_id', json.data.items[0].id);",
+                  "        pm.collectionVariables.set('ticket_id', json.data.items[0].id);",
+                  "    }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"uuid\": \"{{flight_uuid}}\",\n  \"ticketing_mode\": \"draft\",\n  \"passengers\": [\n    {\n      \"type\": \"adult\",\n      \"first_name\": \"John\",\n      \"last_name\": \"Doe\",\n      \"dob\": \"1990-01-15\",\n      \"gender\": \"M\",\n      \"passport_number\": \"A1234567\",\n      \"passport_expiry\": \"2028-06-01\",\n      \"passport_issue_country\": \"LBY\",\n      \"nationality\": \"LBY\"\n    }\n  ],\n  \"customer\": {\n    \"first_name\": \"John\",\n    \"last_name\": \"Doe\",\n    \"email\": \"john@example.com\",\n    \"phone\": \"+218911234567\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/agency/{{tenant}}/api/v1/flights/book",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "agency",
+                "{{tenant}}",
+                "api",
+                "v1",
+                "flights",
+                "book"
+              ]
+            },
+            "description": "Hold a PNR without issuing or charging wallet (`ticketing_mode: draft`).\n\nOrder status is `pending`. Finalize later with **7. Issue Ticket**.\n\nRequires `write` ability."
+          },
+          "response": [
+            {
+              "name": "201 \u2014 Draft Created",
+              "status": "Created",
+              "code": 201,
+              "body": "{\n  \"success\": true,\n  \"message\": \"Draft reservation created. Issue the ticket with POST /flights/{booking}/tickets/issue when ready.\",\n  \"data\": {\n    \"id\": \"01jx...\",\n    \"number\": \"ORD-2026-0001\",\n    \"status\": \"pending\",\n    \"total\": 450.0,\n    \"currency\": \"LYD\",\n    \"issued_at\": null,\n    \"items\": [\n      {\n        \"id\": \"01jy...\",\n        \"status\": \"pending\",\n        \"provider_reference\": \"AAJ6DU\",\n        \"ticket_number\": null\n      }\n    ]\n  }\n}"
             }
           ]
         },
@@ -546,7 +724,7 @@
                 "issue"
               ]
             },
-            "description": "Issue a ticket for an existing pending booking. `booking_id` is the order ID returned by the book step. `payment_type` is `airline_token` (default) or `cash`.\n\nRequires `issue` token ability."
+            "description": "Issue a ticket for a **draft** pending booking. `booking_id` is the order ID from the draft book step.\n\nFor `ticketing_mode: final` bookings, the ticket is already issued at book time — this endpoint is only needed for drafts.\n\n`payment_type`: `airline_token` (default) or `cash`.\n\nRequires `issue` token ability."
           },
           "response": [
             {
@@ -718,6 +896,156 @@
               "status": "Service Unavailable",
               "code": 503,
               "body": "{\n  \"success\": false,\n  \"message\": \"Airline refund request timed out. Please try again.\"\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "\ud83d\udd04 Change Segment",
+      "description": "Change a ticket segment on the **issuing airline only**.\n\n**Flow**:\n1. **Change Search** \u2192 saves `flight_uuid` + `flight_provider_id`\n2. **Fetch Results** (in Flights folder) \u2192 pick a new offer\n3. **Change Quote** \u2192 review fees (`outstanding_amount`)\n4. **Change Confirm** \u2192 apply change\n\nRequires `issue` ability. Set `order_id` and `item_id` from a booked order (auto-saved after Book, or from **Order Detail**).",
+      "item": [
+        {
+          "name": "1. Change Search",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var json = pm.response.json();",
+                  "if (json.success && json.data) {",
+                  "    if (json.data.uuid) pm.collectionVariables.set('flight_uuid', json.data.uuid);",
+                  "    if (json.data.provider_id) pm.collectionVariables.set('flight_provider_id', json.data.provider_id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"segment_line\": 1,\n  \"origin\": \"MJI\",\n  \"destination\": \"IST\",\n  \"date\": \"2026-06-20\",\n  \"cabin_class\": \"all\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/agency/{{tenant}}/api/v1/flights/{{order_id}}/items/{{item_id}}/change/search",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "agency",
+                "{{tenant}}",
+                "api",
+                "v1",
+                "flights",
+                "{{order_id}}",
+                "items",
+                "{{item_id}}",
+                "change",
+                "search"
+              ]
+            },
+            "description": "Start a change search locked to the ticket's issuing airline.\n\nReturns a new `uuid` \u2014 fetch offers with **2. Fetch Results** in the Flights folder using `?provider_id={{flight_provider_id}}`.\n\n**segment_line**: 1-based segment index on the ticket.\n\n**cabin_class**: `all` | `Y` | `C` | `F` (optional, default `all`)."
+          },
+          "response": [
+            {
+              "name": "200",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"success\": true,\n  \"message\": \"Change search created. Fetch offers with /flights/results/{uuid}?provider_id=1\",\n  \"data\": {\n    \"uuid\": \"...\",\n    \"provider_id\": 1,\n    \"airline_code\": \"YI\",\n    \"airline_name\": \"Yemenia Airways\",\n    \"search_params\": {\n      \"origin\": \"MJI\",\n      \"destination\": \"IST\",\n      \"date\": \"2026-06-20\",\n      \"locked_provider_id\": 1,\n      \"change_booking_id\": \"01jx...\",\n      \"change_ticket_id\": \"01jy...\"\n    }\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "2. Change Quote",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/agency/{{tenant}}/api/v1/flights/{{order_id}}/items/{{item_id}}/change-quote?segment_line=1&new_segment_code=500-MJI-IST-2026-06-20-Y",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "agency",
+                "{{tenant}}",
+                "api",
+                "v1",
+                "flights",
+                "{{order_id}}",
+                "items",
+                "{{item_id}}",
+                "change-quote"
+              ],
+              "query": [
+                {
+                  "key": "segment_line",
+                  "value": "1",
+                  "description": "1-based segment line on the ticket"
+                },
+                {
+                  "key": "new_segment_code",
+                  "value": "500-MJI-IST-2026-06-20-Y",
+                  "description": "Offer id from Fetch Results (change search)"
+                }
+              ]
+            },
+            "description": "Quote change fees before confirming. Read-only.\n\nPass `new_segment_code` from the selected offer's `id` field.\n\n`change_type` is `revalidation` (same route/class) or `reissue` (route/class change)."
+          },
+          "response": [
+            {
+              "name": "200",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"outstanding_amount\": 50,\n    \"currency\": \"LYD\",\n    \"change_type\": \"revalidation\"\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "3. Change Confirm",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"segment_line\": 1,\n  \"new_segment_code\": \"500-MJI-IST-2026-06-20-Y\",\n  \"outstanding_amount\": 50\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/agency/{{tenant}}/api/v1/flights/{{order_id}}/items/{{item_id}}/change-confirm",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "agency",
+                "{{tenant}}",
+                "api",
+                "v1",
+                "flights",
+                "{{order_id}}",
+                "items",
+                "{{item_id}}",
+                "change-confirm"
+              ]
+            },
+            "description": "Apply the segment change after the user accepts the quote.\n\nPass `outstanding_amount` from the quote response. Wallet deduction for change fees is not yet applied via API (same as web)."
+          },
+          "response": [
+            {
+              "name": "200",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"success\": true,\n  \"message\": \"Ticket changed successfully.\",\n  \"data\": {\n    \"change_type\": \"revalidation\",\n    \"order\": {\n      \"id\": \"01jx...\",\n      \"number\": \"ORD-2026-0001\",\n      \"status\": \"changed\"\n    },\n    \"item\": {\n      \"id\": \"01jy...\",\n      \"status\": \"changed\",\n      \"provider_reference\": \"AAJ6DU\",\n      \"change\": {\n        \"segment_line\": 1,\n        \"new_segment_code\": \"500-MJI-IST-2026-06-20-Y\",\n        \"change_type\": \"revalidation\",\n        \"outstanding_amount\": 50\n      }\n    }\n  }\n}"
             }
           ]
         }
@@ -1323,6 +1651,26 @@
       "item": [
         {
           "name": "Order List",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var json = pm.response.json();",
+                  "if (json.success && json.data && json.data.data && json.data.data[0]) {",
+                  "    var order = json.data.data[0];",
+                  "    pm.collectionVariables.set('order_id', order.id);",
+                  "    pm.collectionVariables.set('booking_id', order.id);",
+                  "    if (order.items && order.items[0]) {",
+                  "        pm.collectionVariables.set('item_id', order.items[0].id);",
+                  "        pm.collectionVariables.set('ticket_id', order.items[0].id);",
+                  "    }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
           "request": {
             "method": "GET",
             "url": {
@@ -1369,10 +1717,29 @@
         },
         {
           "name": "Order Detail",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var json = pm.response.json();",
+                  "if (json.success && json.data) {",
+                  "    pm.collectionVariables.set('order_id', json.data.id);",
+                  "    pm.collectionVariables.set('booking_id', json.data.id);",
+                  "    if (json.data.items && json.data.items[0]) {",
+                  "        pm.collectionVariables.set('item_id', json.data.items[0].id);",
+                  "        pm.collectionVariables.set('ticket_id', json.data.items[0].id);",
+                  "    }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
           "request": {
             "method": "GET",
             "url": {
-              "raw": "{{base_url}}/agency/{{tenant}}/api/v1/orders/{order_id}",
+              "raw": "{{base_url}}/agency/{{tenant}}/api/v1/orders/{{order_id}}",
               "host": [
                 "{{base_url}}"
               ],
@@ -1382,7 +1749,7 @@
                 "api",
                 "v1",
                 "orders",
-                "{order_id}"
+                "{{order_id}}"
               ]
             },
             "description": "Full order details with items, passengers, segments, and wallet transactions."
@@ -1393,7 +1760,7 @@
           "request": {
             "method": "GET",
             "url": {
-              "raw": "{{base_url}}/agency/{{tenant}}/api/v1/orders/{order_id}/flight-items/{item_id}/ticket-pdf",
+              "raw": "{{base_url}}/agency/{{tenant}}/api/v1/orders/{{order_id}}/flight-items/{{item_id}}/ticket-pdf",
               "host": [
                 "{{base_url}}"
               ],
@@ -1403,9 +1770,9 @@
                 "api",
                 "v1",
                 "orders",
-                "{order_id}",
+                "{{order_id}}",
                 "flight-items",
-                "{item_id}",
+                "{{item_id}}",
                 "ticket-pdf"
               ]
             },

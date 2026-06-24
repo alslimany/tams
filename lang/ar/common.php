@@ -299,6 +299,7 @@ return [
     'to' => 'إلى',
     'class' => 'الدرجة',
     'economy' => 'الإقتصادية',
+    'all_classes' => 'جميع الدرجات',
     'premium_economy' => 'الإقتصادية المميزة',
     'business' => 'الأعمال',
     'first_class' => 'الدرجة الأولى',

@@ -2,10 +2,12 @@
 
 declare(strict_types=1);
 
+use App\Http\Controllers\AirlineLogoController;
 use App\Http\Controllers\Api\V1\AirlineController;
 use App\Http\Controllers\Api\V1\ApiTokenController;
 use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\DashboardController;
+use App\Http\Controllers\Api\V1\FlightChangeController;
 use App\Http\Controllers\Api\V1\FlightController;
 use App\Http\Controllers\Api\V1\HotelController;
 use App\Http\Controllers\Api\V1\InsuranceController;
@@ -53,10 +55,13 @@ Route::middleware(['auth:sanctum', 'throttle:api', 'audit.api', 'idempotency'])-
         // Reference data
         Route::get('airports/search', [\App\Http\Controllers\AirportController::class, 'search']);
         Route::get('airlines', [AirlineController::class, 'index']);
+        Route::get('airlines/{code}/logo', [AirlineLogoController::class, 'show'])
+            ->where('code', '[A-Za-z0-9]+');
 
         // Flight results
         Route::get('flights/results/{uuid}', [FlightController::class, 'results']);
         Route::get('flights/calendar-hints', [BookingController::class, 'calendarHints']);
+        Route::post('flights/fare-rules', [FlightController::class, 'fareRules']);
 
         // Hotel reference
         Route::get('hotels/autocomplete', [HotelController::class, 'autocomplete']);
@@ -99,6 +104,10 @@ Route::middleware(['auth:sanctum', 'throttle:api', 'audit.api', 'idempotency'])-
 
     // ── Issue-gated routes (ability: issue OR *) ────────────────
     Route::middleware('ability:issue')->group(function (): void {
+        Route::post('flights/{order}/items/{item}/change/search', [FlightChangeController::class, 'search']);
+        Route::get('flights/{order}/items/{item}/change-quote', [FlightChangeController::class, 'changeQuote']);
+        Route::post('flights/{order}/items/{item}/change-confirm', [FlightChangeController::class, 'confirmChange']);
+
         Route::post('flights/{booking}/tickets/issue', [TicketController::class, 'issue']);
         Route::get('flights/{booking}/tickets/{ticket}/refund-quote', [TicketController::class, 'refundQuote']);
         Route::post('flights/{booking}/tickets/{ticket}/void', [TicketController::class, 'void']);

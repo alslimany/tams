@@ -292,6 +292,7 @@ return [
     'to' => 'To',
     'class' => 'Class',
     'economy' => 'Economy',
+    'all_classes' => 'All classes',
     'premium_economy' => 'Premium Economy',
     'business' => 'Business',
     'first_class' => 'First Class',

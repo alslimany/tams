@@ -21,6 +21,8 @@ use App\Models\User;
 use App\Services\AgencyNetwork\ProviderSourceResolver;
 use App\Services\AgencyNetwork\ProviderSourceSelector;
 use App\Services\Airline\AgencyProviderResolver;
+use App\Services\Airline\CabinClassFilter;
+use App\Services\Airline\FlightOfferPresenter;
 use App\Services\Airline\ProviderFactory;
 use App\Services\Airline\RoundTripPriceManager;
 use App\Services\Airline\Videcom\VidecomAncillaryCatalog;
@@ -100,7 +102,7 @@ class BookingController extends Controller
                 'is_return' => array_key_exists('is_return', $searchDefaults)
                     ? filter_var($searchDefaults['is_return'], FILTER_VALIDATE_BOOLEAN)
                     : true,
-                'cabin_class' => (string) ($searchDefaults['cabin_class'] ?? 'economy'),
+                'cabin_class' => (string) ($searchDefaults['cabin_class'] ?? 'all'),
             ],
             'searchDisplayMode' => tenant()->getInternal('search_display_mode') ?? 'per_offer',
         ]);
@@ -117,9 +119,11 @@ class BookingController extends Controller
             'children' => 'nullable|integer|min:0|max:9',
             'infants' => 'nullable|integer|min:0|max:9',
             'is_return' => 'nullable',
+            'cabin_class' => 'nullable|string|in:all,economy,premium_economy,business,first,Y,C,F,W',
         ]);
 
         $validated['is_return'] = filter_var($request->input('is_return'), FILTER_VALIDATE_BOOLEAN);
+        $validated['cabin_class'] = $validated['cabin_class'] ?? 'all';
 
         $searchUuid = (string) Str::uuid();
         Cache::put("flight_search_{$searchUuid}", $validated, now()->addMinutes(30));
@@ -199,7 +203,12 @@ class BookingController extends Controller
                     }
                 }
 
-                $flights = $providerFlights->sortBy('pricing.total')->values()->toArray();
+                $flights = app(FlightOfferPresenter::class)->presentMany(
+                    CabinClassFilter::filter(
+                        $providerFlights->sortBy('pricing.total')->values()->all(),
+                        (string) ($searchParams['cabin_class'] ?? 'all'),
+                    ),
+                );
             } catch (Exception $e) {
                 Log::error('Inertia partial flight fetch failed: '.$e->getMessage());
 
@@ -378,7 +387,12 @@ class BookingController extends Controller
 
             return response()->json([
                 'provider_id' => $validated['provider_id'],
-                'flights' => $flights->sortBy('pricing.total')->values(),
+                'flights' => app(FlightOfferPresenter::class)->presentMany(
+                    CabinClassFilter::filter(
+                        $flights->sortBy('pricing.total')->values()->all(),
+                        (string) ($searchParams['cabin_class'] ?? 'all'),
+                    ),
+                ),
             ]);
         } catch (Exception $e) {
             Log::error('Async flight fetch failed: '.$e->getMessage());
