@@ -3,7 +3,7 @@
 namespace App\Services\Airline\Videcom;
 
 use App\DTOs\Airline\FlightOption;
-use Carbon\Carbon;
+use App\Services\Airline\FlightDurationCalculator;
 use SimpleXMLElement;
 
 class VidecomResponseParser
@@ -38,7 +38,13 @@ class VidecomResponseParser
             foreach ($itin->flt as $flt) {
                 $departureTime = (string) $flt->time->ddaylcl.' '.(string) $flt->time->dtimlcl;
                 $arrivalTime = (string) $flt->time->adaylcl.' '.(string) $flt->time->atimlcl;
-                $duration = (int) ($flt->time->duration ?? 0);
+                $duration = app(FlightDurationCalculator::class)->minutesBetween(
+                    (string) $flt->dep,
+                    (string) $flt->arr,
+                    $departureTime,
+                    $arrivalTime,
+                    (int) ($flt->time->duration ?? 0),
+                );
 
                 // Videcom groups fltno and eqp under fltdet
                 $fltno = (string) ($flt->fltdet->fltno ?? $flt->fltno ?? '');
@@ -161,16 +167,12 @@ class VidecomResponseParser
                 $arrivalTime = str_replace('T', ' ', (string) ($segment->XSDArrivalDateTime ?? $segment->ArrivalDateTime ?? ''));
                 $aircraft = (string) ($segment->Equipment['AirEquipType'] ?? '');
 
-                // Compute duration in minutes from ISO timestamps
-                $duration = 0;
-
-                try {
-                    $depCarbon = Carbon::parse($departureTime);
-                    $arrCarbon = Carbon::parse($arrivalTime);
-                    $duration = (int) $depCarbon->diffInMinutes($arrCarbon);
-                } catch (\Throwable) {
-                    // Leave duration as 0 if parsing fails
-                }
+                $duration = app(FlightDurationCalculator::class)->minutesBetween(
+                    $dep,
+                    $arr,
+                    $departureTime,
+                    $arrivalTime,
+                );
 
                 if (! isset($segment->Availability->Class)) {
                     continue;

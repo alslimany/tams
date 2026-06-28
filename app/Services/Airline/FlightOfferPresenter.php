@@ -8,6 +8,10 @@ use App\Support\Iso8601Duration;
 
 class FlightOfferPresenter
 {
+    public function __construct(
+        private readonly FlightDurationCalculator $durationCalculator,
+    ) {}
+
     /**
      * @param  array<string, mixed>|FlightOption  $offer
      * @return array<string, mixed>
@@ -29,6 +33,8 @@ class FlightOfferPresenter
             $data['fare_id'] = $pricing['fare_id'];
         }
 
+        $data = $this->applyTimezoneAwareDurations($data);
+
         if ($forApi) {
             $data = $this->applyIso8601Durations($data);
         }
@@ -49,6 +55,59 @@ class FlightOfferPresenter
         }
 
         return $presented;
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @return array<string, mixed>
+     */
+    private function applyTimezoneAwareDurations(array $data): array
+    {
+        if (! is_array($data['segments'] ?? null)) {
+            return $data;
+        }
+
+        $airportCodes = [];
+        foreach ($data['segments'] as $segment) {
+            if (! is_array($segment)) {
+                continue;
+            }
+
+            if (! empty($segment['departure_airport'])) {
+                $airportCodes[] = (string) $segment['departure_airport'];
+            }
+
+            if (! empty($segment['arrival_airport'])) {
+                $airportCodes[] = (string) $segment['arrival_airport'];
+            }
+        }
+
+        $this->durationCalculator->preloadTimezones($airportCodes);
+
+        $totalMinutes = 0;
+
+        foreach ($data['segments'] as $index => $segment) {
+            if (! is_array($segment)) {
+                continue;
+            }
+
+            $minutes = $this->durationCalculator->minutesBetween(
+                (string) ($segment['departure_airport'] ?? $data['departure_airport'] ?? ''),
+                (string) ($segment['arrival_airport'] ?? $data['arrival_airport'] ?? ''),
+                (string) ($segment['departure_time'] ?? $data['departure_time'] ?? ''),
+                (string) ($segment['arrival_time'] ?? $data['arrival_time'] ?? ''),
+                isset($segment['duration']) ? (int) $segment['duration'] : null,
+            );
+
+            $data['segments'][$index]['duration'] = $minutes;
+            $totalMinutes += $minutes;
+        }
+
+        if ($totalMinutes > 0) {
+            $data['duration'] = $totalMinutes;
+        }
+
+        return $data;
     }
 
     /**
