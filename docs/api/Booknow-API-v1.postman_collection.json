@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Booknow API v1",
-    "description": "## Booknow REST API v1 \u2014 Mobile Application\n\n**Base URL**: `{{base_url}}/agency/{{tenant}}/api/v1`  \n**Auth**: Bearer token (set via `{{token}}` variable after Login)  \n**Content-Type**: `application/json`\n\n### Token Abilities\n| Ability | Scope |\n|---------|-------|\n| `read` | Results, orders, fare rules, reports, wallet |\n| `write` | Search, select, book |\n| `issue` | Issue ticket, void/refund, change segment |\n| `report` | Dashboard & reports |\n| `*` | Full access |\n\n### Quick Start\n1. Set `base_url` and `tenant` (e.g. `median`)\n2. Run **Login** \u2014 token is saved to `{{token}}` automatically\n3. Use flight/hotel flows; for changes use **Change Segment** folder\n\n### Recent Updates\n- Cabin filter: `cabin_class` = `all` | `Y` | `C` | `F`\n- Offers include `baggage`, `airline_logo_url`, `fare_id`\n- `POST /flights/fare-rules` for FN fare notes\n- `GET /airlines/{code}/logo` and `logo_url` on airlines list\n- Draft booking: `ticketing_mode: draft` then `POST .../tickets/issue`\n- Change segment: search \u2192 results \u2192 quote \u2192 confirm\n\n### Response Format\n```json\n{ \"success\": true|false, \"message\": \"...\", \"data\": {...} }\n```",
+    "description": "## Booknow REST API v1 \u2014 Mobile Application\n\n**Base URL**: `{{base_url}}/agency/{{tenant}}/api/v1`  \n**Auth**: Bearer token (set via `{{token}}` variable after Login)  \n**Content-Type**: `application/json`\n\n### Token Abilities\n| Ability | Scope |\n|---------|-------|\n| `read` | Results, seat map, fare rules, orders, reports, wallet |\n| `write` | Search, select, price, book |\n| `issue` | Issue ticket, void/refund, change segment |\n| `report` | Dashboard & reports |\n| `*` | Full access |\n\n### Quick Start\n1. Set `base_url` and `tenant` (e.g. `median`)\n2. Run **Login** \u2014 token is saved to `{{token}}` automatically\n3. Flights: Search \u2192 Results \u2192 Select \u2192 Seat Map \u2192 Price \u2192 Book\n4. For ticket changes use **Change Segment** folder\n\n### Recent Updates\n- Cabin filter: `cabin_class` = `all` | `Y` | `C` | `F`\n- Offers include `baggage`, `airline_logo_url`, `fare_id`, ISO8601 `duration` (`PT4H`, `PT2H10M`)\n- `POST /flights/fare-rules` \u2014 plain-text rules (no line numbers)\n- `POST /flights/seatmap` \u2014 interactive seat map with per-seat pricing\n- `POST /flights/price` \u2014 total with seat fees and ancillaries\n- `POST /flights/book` accepts `extras.seats` for seat assignment\n- `GET /airlines/{code}/logo` and `logo_url` on airlines list\n- Draft booking: `ticketing_mode: draft` then `POST .../tickets/issue`\n- Change segment: search \u2192 results \u2192 quote \u2192 confirm\n\n### Response Format\n```json\n{ \"success\": true|false, \"message\": \"...\", \"data\": {...} }\n```",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "auth": {
@@ -48,6 +48,10 @@
     },
     {
       "key": "ticket_id",
+      "value": ""
+    },
+    {
+      "key": "flight_grand_total",
       "value": ""
     }
   ],
@@ -400,14 +404,14 @@
                 }
               ]
             },
-            "description": "Fetch flight offers from a specific provider for the given search session.\n\nEach offer includes:\n- `baggage`: `{ hold_weight, hand_weight, hold_pieces }`\n- `airline_logo_url`\n- `fare_id` (use with **Fare Rules**)\n- `pricing.cabin_type` for cabin filtering\n\nDuring a **change search**, the session is locked to the issuing airline (`locked_provider_id`)."
+            "description": "Fetch flight offers from a specific provider for the given search session.\n\nEach offer includes:\n- `duration` and `segments[].duration` in ISO8601 format (e.g. `PT4H`, `PT2H10M`)\n- `baggage`: `{ hold_weight, hand_weight, hold_pieces }`\n- `airline_logo_url`\n- `fare_id` (use with **Fare Rules**)\n- `pricing.cabin_type` for cabin filtering\n\nDuring a **change search**, the session is locked to the issuing airline (`locked_provider_id`)."
           },
           "response": [
             {
               "name": "200",
               "status": "OK",
               "code": 200,
-              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"uuid\": \"...\",\n    \"provider_id\": 1,\n    \"airline_code\": \"YI\",\n    \"airline_name\": \"Yemenia Airways\",\n    \"offers\": [\n      {\n        \"id\": \"500-MJI-IST-2026-06-15-Y\",\n        \"flight_number\": \"YI500\",\n        \"airline_code\": \"YI\",\n        \"airline_name\": \"Oya (Economy Y)\",\n        \"departure_airport\": \"MJI\",\n        \"arrival_airport\": \"IST\",\n        \"departure_time\": \"2026-06-15 10:00\",\n        \"arrival_time\": \"2026-06-15 14:00\",\n        \"segments\": [{ \"class\": \"Y\", \"cabin_type\": \"Y\" }],\n        \"pricing\": {\n          \"currency\": \"LYD\",\n          \"total\": 450,\n          \"cabin_type\": \"Y\",\n          \"class_code\": \"Y\",\n          \"fare_id\": \"384\"\n        },\n        \"baggage\": {\n          \"hold_weight\": \"20K\",\n          \"hand_weight\": \"7K\",\n          \"hold_pieces\": \"1\"\n        },\n        \"airline_logo_url\": \"https://agency.atom.ly/agency/median/api/v1/airlines/YI/logo?variant=icon-transparent&radius=8\",\n        \"fare_id\": \"384\",\n        \"available_seats\": 5\n      }\n    ]\n  }\n}"
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"uuid\": \"...\",\n    \"provider_id\": 1,\n    \"airline_code\": \"YI\",\n    \"airline_name\": \"Yemenia Airways\",\n    \"offers\": [\n      {\n        \"id\": \"500-MJI-IST-2026-06-15-Y\",\n        \"flight_number\": \"YI500\",\n        \"airline_code\": \"YI\",\n        \"airline_name\": \"Oya (Economy Y)\",\n        \"departure_airport\": \"MJI\",\n        \"arrival_airport\": \"IST\",\n        \"departure_time\": \"2026-06-15 10:00\",\n        \"arrival_time\": \"2026-06-15 14:00\",\n        \"duration\": \"PT4H\",\n        \"segments\": [{ \"class\": \"Y\", \"cabin_type\": \"Y\", \"duration\": \"PT4H\" }],\n        \"pricing\": {\n          \"currency\": \"LYD\",\n          \"total\": 450,\n          \"cabin_type\": \"Y\",\n          \"class_code\": \"Y\",\n          \"fare_id\": \"384\"\n        },\n        \"baggage\": {\n          \"hold_weight\": \"20K\",\n          \"hand_weight\": \"7K\",\n          \"hold_pieces\": \"1\"\n        },\n        \"airline_logo_url\": \"https://agency.atom.ly/agency/median/api/v1/airlines/YI/logo?variant=icon-transparent&radius=8\",\n        \"fare_id\": \"384\",\n        \"available_seats\": 5\n      }\n    ]\n  }\n}"
             }
           ]
         },
@@ -439,7 +443,7 @@
                 "fare-rules"
               ]
             },
-            "description": "Fetch fare notes / ticket rules for a class using the Videcom FN command.\n\nPass `fare_id` from the selected offer's `pricing.fare_id` or top-level `fare_id`.\n\nRequires `read` ability."
+            "description": "Fetch fare notes / ticket rules for a class using the Videcom FN command.\n\nPass `fare_id` from the selected offer's `pricing.fare_id` or top-level `fare_id`.\n\n`rules` is returned as plain text with Videcom line numbers stripped.\n\nRequires `read` ability."
           },
           "response": [
             {
@@ -613,6 +617,20 @@
         },
         {
           "name": "5c. Price (with seats)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var json = pm.response.json();",
+                  "if (json.success && json.data && json.data.grand_total !== undefined) {",
+                  "    pm.collectionVariables.set('flight_grand_total', json.data.grand_total);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
           "request": {
             "method": "POST",
             "header": [
@@ -704,7 +722,7 @@
               "name": "201 \u2014 Booked",
               "status": "Created",
               "code": 201,
-              "body": "{\n  \"success\": true,\n  \"message\": \"Booking confirmed successfully.\",\n  \"data\": {\n    \"id\": \"uuid\",\n    \"number\": \"ORD-2026-0001\",\n    \"status\": \"confirmed\",\n    \"total\": 450.0,\n    \"currency\": \"LYD\",\n    \"issued_at\": \"2026-05-13T10:00:00.000Z\",\n    \"items\": [\n      {\n        \"id\": 1,\n        \"type\": \"flight\",\n        \"product_type\": \"ticket\",\n        \"provider_reference\": \"AAJ6DU\",\n        \"status\": \"confirmed\",\n        \"total\": 450.0,\n        \"currency\": \"LYD\"\n      }\n    ]\n  }\n}"
+              "body": "{\n  \"success\": true,\n  \"message\": \"Booking confirmed successfully.\",\n  \"data\": {\n    \"id\": \"uuid\",\n    \"number\": \"ORD-2026-0001\",\n    \"status\": \"confirmed\",\n    \"total\": 475.0,\n    \"currency\": \"LYD\",\n    \"issued_at\": \"2026-05-13T10:00:00.000Z\",\n    \"items\": [\n      {\n        \"id\": 1,\n        \"type\": \"flight\",\n        \"product_type\": \"ticket\",\n        \"provider_reference\": \"AAJ6DU\",\n        \"status\": \"confirmed\",\n        \"total\": 475.0,\n        \"currency\": \"LYD\"\n      }\n    ]\n  }\n}"
             },
             {
               "name": "402 \u2014 Insufficient Balance",
@@ -745,7 +763,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"uuid\": \"{{flight_uuid}}\",\n  \"ticketing_mode\": \"draft\",\n  \"passengers\": [\n    {\n      \"type\": \"adult\",\n      \"first_name\": \"John\",\n      \"last_name\": \"Doe\",\n      \"dob\": \"1990-01-15\",\n      \"gender\": \"M\",\n      \"passport_number\": \"A1234567\",\n      \"passport_expiry\": \"2028-06-01\",\n      \"passport_issue_country\": \"LBY\",\n      \"nationality\": \"LBY\"\n    }\n  ],\n  \"customer\": {\n    \"first_name\": \"John\",\n    \"last_name\": \"Doe\",\n    \"email\": \"john@example.com\",\n    \"phone\": \"+218911234567\"\n  }\n}"
+              "raw": "{\n  \"uuid\": \"{{flight_uuid}}\",\n  \"ticketing_mode\": \"draft\",\n  \"passengers\": [\n    {\n      \"type\": \"adult\",\n      \"first_name\": \"John\",\n      \"last_name\": \"Doe\",\n      \"dob\": \"1990-01-15\",\n      \"gender\": \"M\",\n      \"passport_number\": \"A1234567\",\n      \"passport_expiry\": \"2028-06-01\",\n      \"passport_issue_country\": \"LBY\",\n      \"nationality\": \"LBY\"\n    }\n  ],\n  \"customer\": {\n    \"first_name\": \"John\",\n    \"last_name\": \"Doe\",\n    \"email\": \"john@example.com\",\n    \"phone\": \"+218911234567\"\n  },\n  \"extras\": {\n    \"seats\": {\n      \"0\": { \"1\": \"12A\" }\n    }\n  }\n}"
             },
             "url": {
               "raw": "{{base_url}}/agency/{{tenant}}/api/v1/flights/book",
@@ -761,7 +779,7 @@
                 "book"
               ]
             },
-            "description": "Hold a PNR without issuing or charging wallet (`ticketing_mode: draft`).\n\nOrder status is `pending`. Finalize later with **7. Issue Ticket**.\n\nRequires `write` ability."
+            "description": "Hold a PNR without issuing or charging wallet (`ticketing_mode: draft`).\n\nOrder status is `pending`. Finalize later with **7. Issue Ticket**.\n\nSupports `extras.seats` (same format as **5c. Price**).\n\nRequires `write` ability."
           },
           "response": [
             {
