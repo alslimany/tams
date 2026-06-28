@@ -36,28 +36,6 @@ class HandleInertiaRequests extends Middleware
      */
     public function share(Request $request): array
     {
-        $agencySettings = null;
-
-        if (function_exists('tenant') && tenant()) {
-            try {
-                $settings = \App\Models\Tenant\AgencySetting::current();
-                $agencySettings = [
-                    'can_use_own_airline_credentials' => $settings->canUseOwnAirlineCredentials(),
-                    'force_use_default_agency' => $settings->isForcedToUseDefaultAgency(),
-                    'can_manage_providers' => ! $settings->isForcedToUseDefaultAgency()
-                        && $settings->canUseOwnAirlineCredentials(),
-                ];
-            } catch (\Throwable $e) {
-                // Table doesn't exist or other error - default to allowing own credentials
-                report($e);
-                $agencySettings = [
-                    'can_use_own_airline_credentials' => true,
-                    'force_use_default_agency' => false,
-                    'can_manage_providers' => true,
-                ];
-            }
-        }
-
         return [
             ...parent::share($request),
             'app' => [
@@ -65,8 +43,13 @@ class HandleInertiaRequests extends Middleware
             ],
             'csrf_token' => csrf_token(),
             'auth' => [
-                'user' => (function_exists('tenant') && tenant()) ? ($request->user() ?? []) : [],
-                'landlordUser' => auth('landlord')->user() ?? [],
+                // Deferred: tenancy is initialized by route middleware that runs
+                // after the web stack (where this middleware lives). Eager evaluation
+                // would always see tenant() as null and hide admin nav links.
+                'user' => fn () => (function_exists('tenant') && tenant())
+                    ? $request->user()
+                    : null,
+                'landlordUser' => fn () => auth('landlord')->user(),
             ],
             'flash' => [
                 'success' => fn () => $request->session()->get('success'),
@@ -75,12 +58,12 @@ class HandleInertiaRequests extends Middleware
                 'issue_command_preview' => fn () => $request->session()->get('issue_command_preview'),
                 'newToken' => fn () => $request->session()->get('newToken'),
             ],
-            'tenant' => [
+            'tenant' => fn () => [
                 'id' => function_exists('tenant') && tenant() ? tenant()->id : null,
                 'companyName' => function_exists('tenant') && tenant() ? tenant()->company_name : null,
                 'status' => function_exists('tenant') && tenant() ? tenant()->status : null,
             ],
-            'agencySettings' => $agencySettings,
+            'agencySettings' => fn () => $this->resolveAgencySettings(),
             'ziggy' => fn () => [
                 ...(new Ziggy)->toArray(),
                 'location' => $request->url(),
@@ -105,5 +88,34 @@ class HandleInertiaRequests extends Middleware
                 return array_merge($phpTranslations, ['common' => $commonTranslations]);
             },
         ];
+    }
+
+    /**
+     * @return array{can_use_own_airline_credentials: bool, force_use_default_agency: bool, can_manage_providers: bool}|null
+     */
+    private function resolveAgencySettings(): ?array
+    {
+        if (! function_exists('tenant') || ! tenant()) {
+            return null;
+        }
+
+        try {
+            $settings = \App\Models\Tenant\AgencySetting::current();
+
+            return [
+                'can_use_own_airline_credentials' => $settings->canUseOwnAirlineCredentials(),
+                'force_use_default_agency' => $settings->isForcedToUseDefaultAgency(),
+                'can_manage_providers' => ! $settings->isForcedToUseDefaultAgency()
+                    && $settings->canUseOwnAirlineCredentials(),
+            ];
+        } catch (\Throwable $e) {
+            report($e);
+
+            return [
+                'can_use_own_airline_credentials' => true,
+                'force_use_default_agency' => false,
+                'can_manage_providers' => true,
+            ];
+        }
     }
 }

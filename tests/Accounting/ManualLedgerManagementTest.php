@@ -325,3 +325,58 @@ test('an account with posted transactions cannot be deleted', function () {
     });
     tenancy()->end();
 });
+
+test('admin can attach a pdf to a manual journal entry', function () {
+    $code = uniqueExpenseCode();
+    $admin = acctAdmin();
+
+    $this->actingAs($admin)->post(tenantRoute('accounting.ledger.coa.store'), [
+        'code' => $code, 'name' => 'Rent', 'type' => 'expense', 'parent' => '6000',
+    ])->assertSessionHas('success');
+
+    $file = \Illuminate\Http\UploadedFile::fake()->create('rent-invoice.pdf', 100, 'application/pdf');
+
+    $this->actingAs($admin)->post(tenantRoute('accounting.ledger.journal.store'), [
+        'transDate' => postingDate(),
+        'description' => 'Office rent with invoice',
+        'journal' => 'GEN',
+        'lines' => [
+            ['accountCode' => $code, 'debit' => 500, 'credit' => null],
+            ['accountCode' => '1110', 'debit' => null, 'credit' => 500],
+        ],
+        'attachment' => $file,
+    ])->assertSessionHas('success');
+
+    acctTenant()->run(function () use ($code) {
+        $uuid = LedgerAccount::where('code', $code)->value('ledgerUuid');
+        $entry = JournalEntry::whereHas('details', fn ($q) => $q->where('ledgerUuid', $uuid))->latest('journalEntryId')->first();
+        $extra = json_decode($entry->extra, true);
+
+        expect($extra['attachment']['original_name'] ?? null)->toBe('rent-invoice.pdf')
+            ->and($extra['attachment']['path'] ?? null)->not->toBeNull()
+            ->and(\Illuminate\Support\Facades\Storage::disk('local')->exists($extra['attachment']['path']))->toBeTrue();
+    });
+    tenancy()->end();
+});
+
+test('journal entry attachment rejects unsupported file types', function () {
+    $code = uniqueExpenseCode();
+    $admin = acctAdmin();
+
+    $this->actingAs($admin)->post(tenantRoute('accounting.ledger.coa.store'), [
+        'code' => $code, 'name' => 'Supplies', 'type' => 'expense', 'parent' => '6000',
+    ])->assertSessionHas('success');
+
+    $file = \Illuminate\Http\UploadedFile::fake()->create('notes.docx', 50, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+
+    $this->actingAs($admin)->post(tenantRoute('accounting.ledger.journal.store'), [
+        'transDate' => postingDate(),
+        'description' => 'Invalid attachment type',
+        'journal' => 'GEN',
+        'lines' => [
+            ['accountCode' => $code, 'debit' => 100, 'credit' => null],
+            ['accountCode' => '1110', 'debit' => null, 'credit' => 100],
+        ],
+        'attachment' => $file,
+    ])->assertSessionHasErrors('attachment');
+});

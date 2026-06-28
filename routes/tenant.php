@@ -211,56 +211,57 @@ Route::prefix(config('tenancy.tenant_path_prefix', 'agency').'/{tenant}')->group
                 Route::post('settings/api-tokens', [ApiTokenController::class, 'store'])->name('settings.api-tokens.store');
                 Route::delete('settings/api-tokens/{tokenId}', [ApiTokenController::class, 'destroy'])->name('settings.api-tokens.destroy');
             });
-        });
 
-        // Accounting
-        Route::prefix('accounting')->name('accounting.')->middleware('role:admin')->group(function (): void {
-            Route::get('/', [AccountingDashboardController::class, 'index'])->name('dashboard');
+            // Accounting
+            Route::prefix('accounting')->name('accounting.')->middleware('role:admin')->group(function (): void {
+                Route::get('/', [AccountingDashboardController::class, 'index'])->name('dashboard');
 
-            // Wallets
-            Route::get('/wallets', [WalletLedgerController::class, 'index'])->name('wallets.index');
-            Route::get('/wallets/{wallet}', [WalletLedgerController::class, 'show'])->name('wallets.show');
-            Route::post('/wallets/{wallet}/deposit', [WalletLedgerController::class, 'deposit'])->name('wallets.deposit');
+                // Wallets
+                Route::get('/wallets', [WalletLedgerController::class, 'index'])->name('wallets.index');
+                Route::get('/wallets/{wallet}', [WalletLedgerController::class, 'show'])->name('wallets.show');
+                Route::post('/wallets/{wallet}/deposit', [WalletLedgerController::class, 'deposit'])->name('wallets.deposit');
 
-            // Provider wallets
-            Route::get('/providers', [ProviderWalletController::class, 'index'])->name('providers.index');
-            Route::get('/providers/{provider}', [ProviderWalletController::class, 'show'])->name('providers.show');
+                // Provider wallets
+                Route::get('/providers', [ProviderWalletController::class, 'index'])->name('providers.index');
+                Route::get('/providers/{provider}', [ProviderWalletController::class, 'show'])->name('providers.show');
 
-            // Ledger
-            Route::get('/ledger/journal', [LedgerController::class, 'journalEntries'])->name('ledger.journal');
-            Route::post('/ledger/journal', [LedgerController::class, 'storeJournalEntry'])->name('ledger.journal.store');
-            Route::get('/ledger/journal/{id}', [LedgerController::class, 'showJournalEntry'])->name('ledger.journal.show');
-            Route::put('/ledger/journal/{id}', [LedgerController::class, 'updateJournalEntry'])->name('ledger.journal.update');
-            Route::delete('/ledger/journal/{id}', [LedgerController::class, 'destroyJournalEntry'])->name('ledger.journal.destroy');
-            Route::get('/ledger/trial-balance', [LedgerController::class, 'trialBalance'])->name('ledger.trial-balance');
-            Route::get('/ledger/chart-of-accounts', [LedgerController::class, 'chartOfAccounts'])->name('ledger.coa');
-            Route::post('/ledger/chart-of-accounts', [LedgerController::class, 'storeChartOfAccount'])->name('ledger.coa.store');
-            Route::put('/ledger/chart-of-accounts/{code}', [LedgerController::class, 'updateChartOfAccount'])->name('ledger.coa.update');
-            Route::delete('/ledger/chart-of-accounts/{code}', [LedgerController::class, 'destroyChartOfAccount'])->name('ledger.coa.destroy');
-            Route::get('/ledger/accounts/{code}', [LedgerController::class, 'accountDetail'])->name('ledger.account');
+                // Ledger
+                Route::get('/ledger/journal', [LedgerController::class, 'journalEntries'])->name('ledger.journal');
+                Route::post('/ledger/journal', [LedgerController::class, 'storeJournalEntry'])->name('ledger.journal.store');
+                Route::get('/ledger/journal/{id}', [LedgerController::class, 'showJournalEntry'])->name('ledger.journal.show');
+                Route::get('/ledger/journal/{id}/attachment', [LedgerController::class, 'downloadJournalEntryAttachment'])->name('ledger.journal.attachment');
+                Route::put('/ledger/journal/{id}', [LedgerController::class, 'updateJournalEntry'])->name('ledger.journal.update');
+                Route::delete('/ledger/journal/{id}', [LedgerController::class, 'destroyJournalEntry'])->name('ledger.journal.destroy');
+                Route::get('/ledger/trial-balance', [LedgerController::class, 'trialBalance'])->name('ledger.trial-balance');
+                Route::get('/ledger/chart-of-accounts', [LedgerController::class, 'chartOfAccounts'])->name('ledger.coa');
+                Route::post('/ledger/chart-of-accounts', [LedgerController::class, 'storeChartOfAccount'])->name('ledger.coa.store');
+                Route::put('/ledger/chart-of-accounts/{code}', [LedgerController::class, 'updateChartOfAccount'])->name('ledger.coa.update');
+                Route::delete('/ledger/chart-of-accounts/{code}', [LedgerController::class, 'destroyChartOfAccount'])->name('ledger.coa.destroy');
+                Route::get('/ledger/accounts/{code}', [LedgerController::class, 'accountDetail'])->name('ledger.account');
 
-            // Issuance history
-            Route::get('/issuances', [IssuanceHistoryController::class, 'index'])->name('issuances.index');
+                // Issuance history
+                Route::get('/issuances', [IssuanceHistoryController::class, 'index'])->name('issuances.index');
 
-            // Settlement
-            Route::get('/settlement', [SettlementLedgerController::class, 'index'])->name('settlement.index');
-            Route::get('/settlement/aging', [SettlementLedgerController::class, 'aging'])->name('settlement.aging');
-            Route::get('/settlement/{batch}', [SettlementLedgerController::class, 'batch'])->name('settlement.batch');
-            Route::post('/settlement/run', [SettlementLedgerController::class, 'run'])->name('settlement.run');
+                // Settlement
+                Route::get('/settlement', [SettlementLedgerController::class, 'index'])->name('settlement.index');
+                Route::get('/settlement/aging', [SettlementLedgerController::class, 'aging'])->name('settlement.aging');
+                Route::get('/settlement/{batch}', [SettlementLedgerController::class, 'batch'])->name('settlement.batch');
+                Route::post('/settlement/run', [SettlementLedgerController::class, 'run'])->name('settlement.run');
 
-            // Cancellations
-            Route::get('/cancellations', [CancellationAuditController::class, 'index'])->name('cancellations.index');
+                // Cancellations
+                Route::get('/cancellations', [CancellationAuditController::class, 'index'])->name('cancellations.index');
 
-            // Reports
-            Route::get('/reports', [AccountingReportController::class, 'index'])->name('reports.index');
-            Route::get('/reports/revenue', [AccountingReportController::class, 'revenue'])->name('reports.revenue');
-            Route::get('/reports/gross-margin', [AccountingReportController::class, 'grossMargin'])->name('reports.gross-margin');
-            Route::get('/reports/vat', [AccountingReportController::class, 'vat'])->name('reports.vat');
-            Route::get('/reports/reconciliation', [AccountingReportController::class, 'reconciliation'])->name('reports.reconciliation');
+                // Reports
+                Route::get('/reports', [AccountingReportController::class, 'index'])->name('reports.index');
+                Route::get('/reports/revenue', [AccountingReportController::class, 'revenue'])->name('reports.revenue');
+                Route::get('/reports/gross-margin', [AccountingReportController::class, 'grossMargin'])->name('reports.gross-margin');
+                Route::get('/reports/vat', [AccountingReportController::class, 'vat'])->name('reports.vat');
+                Route::get('/reports/reconciliation', [AccountingReportController::class, 'reconciliation'])->name('reports.reconciliation');
 
-            // Settings
-            Route::get('/settings', [AccountingSettingsController::class, 'index'])->name('settings.index');
-            Route::put('/settings', [AccountingSettingsController::class, 'update'])->name('settings.update');
+                // Settings
+                Route::get('/settings', [AccountingSettingsController::class, 'index'])->name('settings.index');
+                Route::put('/settings', [AccountingSettingsController::class, 'update'])->name('settings.update');
+            });
         });
 
         require __DIR__.'/settings.php';

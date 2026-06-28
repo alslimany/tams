@@ -1,29 +1,15 @@
 import React from 'react';
 import { Head, Link, router } from '@inertiajs/react';
-import { ChevronDownIcon, ChevronRightIcon, Plus, Pencil, Eye, Trash2 } from 'lucide-react';
+import { ChevronDownIcon, ChevronRightIcon, Plus, Pencil, Eye, Trash2, FileText } from 'lucide-react';
 import TenantLayout from '@/Layouts/TenantLayout';
 import AccountingLayout from '@/Layouts/AccountingLayout';
 import AmountDisplay from '@/Components/Accounting/AmountDisplay';
+import JournalEntryFormDialog from '@/Components/Accounting/JournalEntryFormDialog';
 import { Alert, AlertDescription } from '@/Components/ui/alert';
 import { Badge } from '@/Components/ui/Badge';
 import { Button } from '@/Components/ui/Button';
 import { Card } from '@/Components/ui/Card';
 import { Input } from '@/Components/ui/Input';
-import { Label } from '@/Components/ui/Label';
-import {
-    Select,
-    SelectContent,
-    SelectItem,
-    SelectTrigger,
-    SelectValue,
-} from '@/Components/ui/Select';
-import {
-    Sheet,
-    SheetContent,
-    SheetHeader,
-    SheetTitle,
-    SheetFooter,
-} from '@/Components/ui/sheet';
 import {
     Dialog,
     DialogContent,
@@ -59,440 +45,6 @@ const JOURNAL_COLORS_DARK = {
     STL: 'bg-gray-100 text-gray-800',
     GEN: 'bg-slate-100 text-slate-800',
 };
-
-const emptyLine = { accountCode: undefined, debit: '', credit: '' };
-
-// ─── Journal Entry Form Sheet (Create / Edit) ──────────────────────────────
-
-function JournalEntryFormSheet({
-    open,
-    onClose,
-    mode,
-    entry,
-    accounts,
-    journalOptions,
-    formEntryId,
-}) {
-    const [transDate, setTransDate] = React.useState('');
-    const [description, setDescription] = React.useState('');
-    const [journal, setJournal] = React.useState('GEN');
-    const [lines, setLines] = React.useState([{ ...emptyLine }]);
-    const [error, setError] = React.useState('');
-    const [submitting, setSubmitting] = React.useState(false);
-    const [accountFilter, setAccountFilter] = React.useState('');
-
-    const isEdit = mode === 'edit';
-
-    // Pre-fill form when opening in edit mode, reset when creating
-    React.useEffect(() => {
-        if (!open) return;
-        setAccountFilter('');
-
-        if (isEdit && entry) {
-            setTransDate(entry.date || '');
-            setDescription(entry.description || '');
-            setJournal(entry.journal || 'GEN');
-            setLines(
-                entry.lines.map((line) => ({
-                    accountCode: line.accountCode || '',
-                    debit: line.debit != null ? String(line.debit) : '',
-                    credit: line.credit != null ? String(line.credit) : '',
-                })),
-            );
-        } else {
-            setTransDate('');
-            setDescription('');
-            setJournal('GEN');
-            setLines([{ ...emptyLine }]);
-        }
-        setError('');
-        setSubmitting(false);
-    }, [open, isEdit, entry]);
-
-    const filteredAccounts = React.useMemo(() => {
-        if (!accountFilter || !accounts) return accounts ?? [];
-        const lower = accountFilter.toLowerCase();
-        return accounts.filter(
-            (a) =>
-                a.code.toLowerCase().includes(lower) ||
-                a.name.toLowerCase().includes(lower),
-        );
-    }, [accounts, accountFilter]);
-
-    function updateLine(index, field, value) {
-        setLines((prev) =>
-            prev.map((line, i) => {
-                if (i !== index) return line;
-                const next = { ...line, [field]: value };
-                // Enforce mutual exclusivity: only one of debit/credit
-                if (field === 'debit' && value !== '') {
-                    next.credit = '';
-                }
-                if (field === 'credit' && value !== '') {
-                    next.debit = '';
-                }
-                return next;
-            }),
-        );
-    }
-
-    function addLine() {
-        setLines((prev) => [...prev, { ...emptyLine }]);
-    }
-
-    function removeLine(index) {
-        if (lines.length <= 2) return;
-        setLines((prev) => prev.filter((_, i) => i !== index));
-    }
-
-    function handleSubmit(e) {
-        e.preventDefault();
-        setError('');
-        setSubmitting(true);
-
-        const parsedLines = lines.map((line) => ({
-            accountCode: line.accountCode,
-            debit: line.debit !== '' ? parseFloat(line.debit) : null,
-            credit: line.credit !== '' ? parseFloat(line.credit) : null,
-        }));
-
-        // Validate: every line must have an account and an amount
-        for (let i = 0; i < parsedLines.length; i++) {
-            const l = parsedLines[i];
-            if (!l.accountCode) {
-                setError(`Line ${i + 1}: Please select an account.`);
-                setSubmitting(false);
-                return;
-            }
-        }
-
-        // Must have at least two lines with amounts
-        const linesWithAmount = parsedLines.filter(
-            (l) => l.debit !== null || l.credit !== null,
-        );
-        if (linesWithAmount.length < 2) {
-            setError('A journal entry requires at least two lines with amounts.');
-            setSubmitting(false);
-            return;
-        }
-
-        const totalDebit = linesWithAmount.reduce(
-            (sum, l) => sum + (l.debit || 0),
-            0,
-        );
-        const totalCredit = linesWithAmount.reduce(
-            (sum, l) => sum + (l.credit || 0),
-            0,
-        );
-
-        if (Math.abs(totalDebit - totalCredit) > 0.001) {
-            setError(
-                `Debits (${totalDebit.toFixed(3)}) must equal credits (${totalCredit.toFixed(3)}). Difference: ${Math.abs(totalDebit - totalCredit).toFixed(3)}`,
-            );
-            setSubmitting(false);
-            return;
-        }
-
-        const payload = {
-            transDate,
-            description,
-            journal,
-            lines: linesWithAmount.map((l) => ({
-                accountCode: l.accountCode,
-                debit: l.debit,
-                credit: l.credit,
-            })),
-        };
-
-        const options = {
-            onSuccess: () => {
-                setSubmitting(false);
-                onClose();
-            },
-            onError: (err) => {
-                setError(
-                    typeof err === 'string'
-                        ? err
-                        : err?.message || 'An error occurred.',
-                );
-                setSubmitting(false);
-            },
-        };
-
-        if (isEdit) {
-            router.put(
-                route('accounting.ledger.journal.update', formEntryId),
-                payload,
-                options,
-            );
-        } else {
-            router.post(
-                route('accounting.ledger.journal.store'),
-                payload,
-                options,
-            );
-        }
-    }
-
-    const runningDebit = lines.reduce(
-        (sum, l) => sum + (parseFloat(l.debit) || 0),
-        0,
-    );
-    const runningCredit = lines.reduce(
-        (sum, l) => sum + (parseFloat(l.credit) || 0),
-        0,
-    );
-    const isBalanced =
-        lines.length >= 2 && Math.abs(runningDebit - runningCredit) < 0.001;
-
-    return (
-        <Sheet open={open} onOpenChange={(v) => !v && onClose()}>
-            <SheetContent
-                className="w-full sm:max-w-xl overflow-y-auto"
-                showCloseButton={false}
-            >
-                <SheetHeader>
-                    <SheetTitle>
-                        {isEdit ? 'Edit Journal Entry' : 'New Journal Entry'}
-                    </SheetTitle>
-                </SheetHeader>
-
-                <form onSubmit={handleSubmit} className="mt-6 space-y-5">
-                    {error && (
-                        <Alert variant="destructive">
-                            <AlertDescription>{error}</AlertDescription>
-                        </Alert>
-                    )}
-
-                    <div>
-                        <Label htmlFor="je-date">Date</Label>
-                        <Input
-                            id="je-date"
-                            type="date"
-                            value={transDate}
-                            onChange={(e) => setTransDate(e.target.value)}
-                            required
-                            className="mt-1"
-                        />
-                    </div>
-
-                    <div>
-                        <Label htmlFor="je-journal">Journal Type</Label>
-                        <Select value={journal} onValueChange={setJournal}>
-                            <SelectTrigger id="je-journal" className="mt-1 w-full">
-                                <SelectValue placeholder="Select journal type…" />
-                            </SelectTrigger>
-                            <SelectContent>
-                                {journalOptions.map((opt) => (
-                                    <SelectItem key={opt.value} value={opt.value}>
-                                        {opt.label}
-                                    </SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
-                    </div>
-
-                    <div>
-                        <Label htmlFor="je-description">Description</Label>
-                        <textarea
-                            id="je-description"
-                            value={description}
-                            onChange={(e) => setDescription(e.target.value)}
-                            required
-                            rows={3}
-                            className="mt-1 w-full rounded-md border border-input bg-transparent px-2.5 py-1.5 text-sm shadow-xs transition-[color,box-shadow] outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
-                        />
-                    </div>
-
-                    {/* ── Lines Section ── */}
-                    <div>
-                        <Label className="mb-2 block">Lines</Label>
-
-                        <div className="space-y-3">
-                            {lines.map((line, index) => (
-                                <div
-                                    key={index}
-                                    className="grid grid-cols-12 gap-2 items-start rounded-md border p-3"
-                                >
-                                    {/* Account select */}
-                                    <div className="col-span-5">
-                                        <Label className="text-xs text-muted-foreground mb-1 block">
-                                            Account
-                                        </Label>
-                                        <Select
-                                            value={line.accountCode || undefined}
-                                            onValueChange={(v) =>
-                                                updateLine(index, 'accountCode', v)
-                                            }
-                                        >
-                                            <SelectTrigger className="w-full text-xs h-8">
-                                                <SelectValue placeholder="Select account…" />
-                                            </SelectTrigger>
-                                            <SelectContent className="max-h-60">
-                                                {/* Search filter inside dropdown */}
-                                                <div
-                                                    className="sticky top-0 bg-popover px-2 pt-2 pb-1.5 border-b z-10"
-                                                    onPointerDown={(e) =>
-                                                        e.stopPropagation()
-                                                    }
-                                                >
-                                                    <input
-                                                        type="text"
-                                                        placeholder="Search accounts…"
-                                                        value={accountFilter}
-                                                        onChange={(e) =>
-                                                            setAccountFilter(
-                                                                e.target.value,
-                                                            )
-                                                        }
-                                                        className="w-full rounded-md border border-input bg-transparent px-2 py-1 text-xs outline-none focus-visible:border-ring"
-                                                        onPointerDown={(e) =>
-                                                            e.stopPropagation()
-                                                        }
-                                                        onKeyDown={(e) =>
-                                                            e.stopPropagation()
-                                                        }
-                                                    />
-                                                </div>
-                                                {filteredAccounts.length === 0 ? (
-                                                    <div className="px-3 py-6 text-center text-xs text-muted-foreground">
-                                                        No accounts found.
-                                                    </div>
-                                                ) : (
-                                                    filteredAccounts.map((acc) => (
-                                                        <SelectItem
-                                                            key={acc.code}
-                                                            value={acc.code}
-                                                        >
-                                                            <span className="font-mono text-xs text-muted-foreground mr-2">
-                                                                {acc.code}
-                                                            </span>
-                                                            {acc.name}
-                                                        </SelectItem>
-                                                    ))
-                                                )}
-                                            </SelectContent>
-                                        </Select>
-                                    </div>
-
-                                    {/* Debit */}
-                                    <div className="col-span-2.5">
-                                        <Label className="text-xs text-muted-foreground mb-1 block">
-                                            Debit
-                                        </Label>
-                                        <Input
-                                            type="number"
-                                            step="0.001"
-                                            min="0"
-                                            value={line.debit}
-                                            onChange={(e) =>
-                                                updateLine(index, 'debit', e.target.value)
-                                            }
-                                            disabled={line.credit !== ''}
-                                            className="h-8 text-xs"
-                                            placeholder="0.000"
-                                        />
-                                    </div>
-
-                                    {/* Credit */}
-                                    <div className="col-span-2.5">
-                                        <Label className="text-xs text-muted-foreground mb-1 block">
-                                            Credit
-                                        </Label>
-                                        <Input
-                                            type="number"
-                                            step="0.001"
-                                            min="0"
-                                            value={line.credit}
-                                            onChange={(e) =>
-                                                updateLine(index, 'credit', e.target.value)
-                                            }
-                                            disabled={line.debit !== ''}
-                                            className="h-8 text-xs"
-                                            placeholder="0.000"
-                                        />
-                                    </div>
-
-                                    {/* Remove button */}
-                                    <div className="col-span-2 flex items-end justify-center pb-0.5">
-                                        {lines.length > 2 && (
-                                            <Button
-                                                type="button"
-                                                variant="ghost"
-                                                size="icon-xs"
-                                                onClick={() => removeLine(index)}
-                                                className="text-muted-foreground hover:text-destructive"
-                                            >
-                                                <Trash2 className="size-3" />
-                                            </Button>
-                                        )}
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-
-                        <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={addLine}
-                            className="mt-3"
-                        >
-                            <Plus className="size-3.5 mr-1" />
-                            Add Line
-                        </Button>
-                    </div>
-
-                    {/* Running totals */}
-                    {lines.length > 0 && (
-                        <div
-                            className={`flex gap-4 text-xs rounded-md p-3 ${
-                                isBalanced
-                                    ? 'bg-green-50 text-green-800 dark:bg-green-950/20 dark:text-green-300'
-                                    : 'bg-muted/30 text-muted-foreground'
-                            }`}
-                        >
-                            <span>
-                                Total Debit:{' '}
-                                <span className="font-mono font-medium text-foreground">
-                                    {runningDebit.toFixed(3)}
-                                </span>
-                            </span>
-                            <span>
-                                Total Credit:{' '}
-                                <span className="font-mono font-medium text-foreground">
-                                    {runningCredit.toFixed(3)}
-                                </span>
-                            </span>
-                            {lines.length >= 2 && (
-                                <span className="ml-auto">
-                                    {isBalanced ? '✓ Balanced' : '⚠ Unbalanced'}
-                                </span>
-                            )}
-                        </div>
-                    )}
-
-                    <SheetFooter>
-                        <Button
-                            type="button"
-                            variant="outline"
-                            onClick={onClose}
-                        >
-                            Cancel
-                        </Button>
-                        <Button type="submit" disabled={submitting}>
-                            {submitting
-                                ? 'Saving…'
-                                : isEdit
-                                  ? 'Update Entry'
-                                  : 'Create Entry'}
-                        </Button>
-                    </SheetFooter>
-                </form>
-            </SheetContent>
-        </Sheet>
-    );
-}
 
 // ─── Journal Entry View Dialog ─────────────────────────────────────────────
 
@@ -590,6 +142,24 @@ function JournalEntryViewDialog({ open, onClose, entryId }) {
                             <dd className="col-span-2">
                                 {entry.description || '—'}
                             </dd>
+                            {entry.attachment && (
+                                <>
+                                    <dt className="text-muted-foreground col-span-2 mt-1">
+                                        Attachment
+                                    </dt>
+                                    <dd className="col-span-2">
+                                        <a
+                                            href={entry.attachment.download_url}
+                                            className="inline-flex items-center gap-2 text-sm text-primary hover:underline"
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                        >
+                                            <FileText className="size-4 shrink-0" />
+                                            {entry.attachment.original_name}
+                                        </a>
+                                    </dd>
+                                </>
+                            )}
                         </dl>
 
                         <Table>
@@ -1107,8 +677,8 @@ export default function JournalEntries({
                 </Card>
             </AccountingLayout>
 
-            {/* Create / Edit Sheet */}
-            <JournalEntryFormSheet
+            {/* Create / Edit Dialog */}
+            <JournalEntryFormDialog
                 open={sheetOpen}
                 onClose={closeSheet}
                 mode={sheetMode}

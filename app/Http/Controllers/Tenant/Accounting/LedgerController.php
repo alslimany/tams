@@ -13,6 +13,7 @@ use Abivia\Ledger\Models\LedgerAccount;
 use Abivia\Ledger\Models\SubJournal;
 use App\Http\Controllers\Controller;
 use App\Models\Tenant\ChartOfAccount;
+use App\Services\Accounting\JournalEntryAttachmentService;
 use App\Services\Accounting\LedgerQueryService;
 use App\Services\Accounting\Reports\TrialBalanceReport;
 use Carbon\Carbon;
@@ -20,8 +21,10 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Date;
+use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class LedgerController extends Controller
 {
@@ -50,6 +53,7 @@ class LedgerController extends Controller
     public function __construct(
         private readonly LedgerQueryService $query,
         private readonly TrialBalanceReport $trialBalance,
+        private readonly JournalEntryAttachmentService $attachments,
     ) {}
 
     // ─── Journal Entries ───────────────────────────────────────────────────
@@ -91,6 +95,8 @@ class LedgerController extends Controller
         });
 
         $accounts = LedgerAccount::with('names')
+            ->where('category', false)
+            ->where('code', '!=', '')
             ->orderBy('code')
             ->get()
             ->map(function (LedgerAccount $account) {
@@ -128,6 +134,7 @@ class LedgerController extends Controller
             'lines.*.accountCode' => ['required', 'string', 'exists:ledger_accounts,code'],
             'lines.*.debit' => ['nullable', 'numeric', 'min:0'],
             'lines.*.credit' => ['nullable', 'numeric', 'min:0'],
+            'attachment' => $this->attachmentValidationRules(),
         ]);
 
         $totalDebit = round(collect($validated['lines'])->sum('debit'), 3);
@@ -153,7 +160,11 @@ class LedgerController extends Controller
                 ])->all(),
             ]);
 
-            (new JournalEntryController)->add($message);
+            $journalEntry = (new JournalEntryController)->add($message);
+
+            if ($request->hasFile('attachment')) {
+                $this->persistAttachment($journalEntry, $request->file('attachment'));
+            }
         } catch (\Abivia\Ledger\Exceptions\Breaker $e) {
             return back()
                 ->with('error', 'Could not post entry: '.implode(' ', $e->getErrors()))
@@ -184,6 +195,8 @@ class LedgerController extends Controller
             'lines.*.accountCode' => ['required', 'string', 'exists:ledger_accounts,code'],
             'lines.*.debit' => ['nullable', 'numeric', 'min:0'],
             'lines.*.credit' => ['nullable', 'numeric', 'min:0'],
+            'attachment' => $this->attachmentValidationRules(),
+            'remove_attachment' => ['sometimes', 'boolean'],
         ]);
 
         $totalDebit = round(collect($validated['lines'])->sum('debit'), 3);
@@ -192,6 +205,12 @@ class LedgerController extends Controller
         if (abs($totalDebit - $totalCredit) > 0.001) {
             return back()->with('error', 'Debits and credits must balance.')->withInput();
         }
+
+        if ($request->boolean('remove_attachment')) {
+            $this->attachments->remove($entry);
+        }
+
+        $extra = $this->manualExtraForUpdate($entry, $request->boolean('remove_attachment'));
 
         $originalDateClass = get_class(Date::now());
         Date::use(Carbon::class);
@@ -202,7 +221,7 @@ class LedgerController extends Controller
                 'revision' => $entry->revisionHash,
                 'description' => $validated['description'],
                 'transDate' => Carbon::parse($validated['transDate'])->toDateTimeString(),
-                'extra' => json_encode(['source' => 'manual'], JSON_THROW_ON_ERROR),
+                'extra' => json_encode($extra, JSON_THROW_ON_ERROR),
                 'details' => collect($validated['lines'])->map(fn (array $line): array => [
                     'code' => $line['accountCode'],
                     'debit' => ! empty($line['debit']) ? (string) $line['debit'] : null,
@@ -211,6 +230,11 @@ class LedgerController extends Controller
             ], Message::OP_UPDATE);
 
             (new JournalEntryController)->update($message);
+
+            if ($request->hasFile('attachment')) {
+                $entry->refresh();
+                $this->persistAttachment($entry, $request->file('attachment'));
+            }
         } catch (\Abivia\Ledger\Exceptions\Breaker $e) {
             return back()
                 ->with('error', 'Could not update entry: '.implode(' ', $e->getErrors()))
@@ -220,6 +244,13 @@ class LedgerController extends Controller
         }
 
         return back()->with('success', 'Journal entry updated successfully.');
+    }
+
+    public function downloadJournalEntryAttachment(int $id): StreamedResponse
+    {
+        $entry = JournalEntry::findOrFail($id);
+
+        return $this->attachments->download($entry);
     }
 
     public function destroyJournalEntry(int $id): RedirectResponse
@@ -233,6 +264,8 @@ class LedgerController extends Controller
         if ($entry->locked) {
             return back()->with('error', 'This journal entry is locked and cannot be deleted.');
         }
+
+        $this->attachments->remove($entry);
 
         $originalDateClass = get_class(Date::now());
         Date::use(Carbon::class);
@@ -499,6 +532,8 @@ class LedgerController extends Controller
         $extra = is_string($entry->extra) ? json_decode($entry->extra, true) : ($entry->extra ?? []);
         $journal = $subJournalMap[$entry->subJournalUuid] ?? ($extra['journal'] ?? 'GEN');
 
+        $attachment = $this->attachments->attachmentFromExtra($entry);
+
         return [
             'id' => $entry->journalEntryId,
             'date' => $entry->transDate->toDateString(),
@@ -513,6 +548,53 @@ class LedgerController extends Controller
             'lines' => $lines,
             'orderReference' => $extra['order_id'] ?? null,
             'walletTxReference' => $extra['wallet_tx_id'] ?? null,
+            'attachment' => $attachment !== null ? [
+                'original_name' => $attachment['original_name'] ?? 'attachment',
+                'mime_type' => $attachment['mime_type'] ?? null,
+                'size' => $attachment['size'] ?? null,
+                'download_url' => route('accounting.ledger.journal.attachment', $entry->journalEntryId),
+            ] : null,
         ];
+    }
+
+    /**
+     * @return list<string|Rule>
+     */
+    private function attachmentValidationRules(): array
+    {
+        return [
+            'nullable',
+            'file',
+            'max:'.JournalEntryAttachmentService::MAX_SIZE_KB,
+            'mimetypes:'.implode(',', JournalEntryAttachmentService::ALLOWED_MIMES),
+        ];
+    }
+
+    private function persistAttachment(JournalEntry $entry, \Illuminate\Http\UploadedFile $file): void
+    {
+        $attachmentMeta = $this->attachments->store($entry, $file);
+        $extra = $this->attachments->mergeAttachmentIntoExtra($entry, $attachmentMeta);
+        $extra['source'] = 'manual';
+
+        JournalEntry::where('journalEntryId', $entry->journalEntryId)
+            ->update(['extra' => json_encode($extra, JSON_THROW_ON_ERROR)]);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function manualExtraForUpdate(JournalEntry $entry, bool $removeAttachment): array
+    {
+        $extra = ['source' => 'manual'];
+
+        if (! $removeAttachment) {
+            $existing = $this->attachments->attachmentFromExtra($entry);
+
+            if ($existing !== null) {
+                $extra['attachment'] = $existing;
+            }
+        }
+
+        return $extra;
     }
 }
