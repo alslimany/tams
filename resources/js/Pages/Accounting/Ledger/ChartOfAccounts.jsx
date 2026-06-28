@@ -142,7 +142,8 @@ export default function ChartOfAccounts({ accounts, view }) {
     // Add form state
     const [addCode, setAddCode] = React.useState('');
     const [addName, setAddName] = React.useState('');
-    const [addParentUuid, setAddParentUuid] = React.useState('');
+    const [addType, setAddType] = React.useState('expense');
+    const [addParent, setAddParent] = React.useState('');
 
     // Edit form state
     const [editName, setEditName] = React.useState('');
@@ -165,19 +166,25 @@ export default function ChartOfAccounts({ accounts, view }) {
     function openAddModal() {
         setAddCode('');
         setAddName('');
-        setAddParentUuid('');
+        setAddType('expense');
+        setAddParent('');
         setAddModalOpen(true);
     }
 
     function handleAddSubmit(e) {
         e.preventDefault();
-        router.post(route('accounting.ledger.coa.store'), {
-            code: addCode,
-            name: addName,
-            parent_uuid: addParentUuid || null,
-        }, {
-            onSuccess: () => setAddModalOpen(false),
-        });
+        router.post(
+            route('accounting.ledger.coa.store'),
+            {
+                code: addCode,
+                name: addName,
+                type: addType,
+                parent: addParent || null,
+            },
+            {
+                onSuccess: () => setAddModalOpen(false),
+            },
+        );
     }
 
     function openEditModal(account) {
@@ -422,15 +429,34 @@ export default function ChartOfAccounts({ accounts, view }) {
                                 id="add-name"
                                 value={addName}
                                 onChange={(e) => setAddName(e.target.value)}
-                                placeholder="e.g. Cash"
+                                placeholder="e.g. Rent Expense"
                                 required
                             />
                         </div>
                         <div className="space-y-2">
+                            <Label htmlFor="add-type">Type</Label>
+                            <Select value={addType} onValueChange={setAddType}>
+                                <SelectTrigger id="add-type" className="w-full">
+                                    <SelectValue placeholder="Select type" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {TYPE_ORDER.map((type) => (
+                                        <SelectItem key={type} value={type}>
+                                            {TYPE_LABELS[type]}
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                            <p className="text-xs text-muted-foreground">
+                                Assets &amp; expenses are debit accounts; liabilities,
+                                equity &amp; revenue are credit accounts.
+                            </p>
+                        </div>
+                        <div className="space-y-2">
                             <Label htmlFor="add-parent">Parent Account</Label>
                             <Select
-                                value={addParentUuid}
-                                onValueChange={(value) => setAddParentUuid(value === '__none__' ? '' : value)}
+                                value={addParent}
+                                onValueChange={(value) => setAddParent(value === '__none__' ? '' : value)}
                             >
                                 <SelectTrigger id="add-parent" className="w-full">
                                     <SelectValue placeholder="None (top-level)" />
@@ -438,7 +464,7 @@ export default function ChartOfAccounts({ accounts, view }) {
                                 <SelectContent>
                                     <SelectItem value="__none__">None (top-level)</SelectItem>
                                     {accounts.map((account) => (
-                                        <SelectItem key={account.uuid} value={account.uuid}>
+                                        <SelectItem key={account.uuid} value={account.code}>
                                             {account.code} — {account.name}
                                         </SelectItem>
                                     ))}

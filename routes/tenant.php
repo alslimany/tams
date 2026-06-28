@@ -231,6 +231,7 @@ Route::prefix(config('tenancy.tenant_path_prefix', 'agency').'/{tenant}')->group
             Route::post('/ledger/journal', [LedgerController::class, 'storeJournalEntry'])->name('ledger.journal.store');
             Route::get('/ledger/journal/{id}', [LedgerController::class, 'showJournalEntry'])->name('ledger.journal.show');
             Route::put('/ledger/journal/{id}', [LedgerController::class, 'updateJournalEntry'])->name('ledger.journal.update');
+            Route::delete('/ledger/journal/{id}', [LedgerController::class, 'destroyJournalEntry'])->name('ledger.journal.destroy');
             Route::get('/ledger/trial-balance', [LedgerController::class, 'trialBalance'])->name('ledger.trial-balance');
             Route::get('/ledger/chart-of-accounts', [LedgerController::class, 'chartOfAccounts'])->name('ledger.coa');
             Route::post('/ledger/chart-of-accounts', [LedgerController::class, 'storeChartOfAccount'])->name('ledger.coa.store');

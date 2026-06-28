@@ -322,7 +322,7 @@ function JournalEntryFormSheet({
                                         <Select
                                             value={line.accountCode || undefined}
                                             onValueChange={(v) =>
-                                                updateLine(i, { accountCode: v })
+                                                updateLine(index, 'accountCode', v)
                                             }
                                         >
                                             <SelectTrigger className="w-full text-xs h-8">
@@ -726,6 +726,19 @@ export default function JournalEntries({
         setViewEntryId(null);
     }
 
+    function handleDelete(entry) {
+        if (
+            !window.confirm(
+                `Delete journal entry #${entry.id}? This reverses its balance impact and cannot be undone.`,
+            )
+        ) {
+            return;
+        }
+        router.delete(route('accounting.ledger.journal.destroy', entry.id), {
+            preserveScroll: true,
+        });
+    }
+
     return (
         <TenantLayout>
             <Head title={t('accounting.nav.journal')} />
@@ -924,16 +937,36 @@ export default function JournalEntries({
                                                     >
                                                         <Eye className="size-3.5" />
                                                     </Button>
-                                                    <Button
-                                                        variant="ghost"
-                                                        size="icon-xs"
-                                                        onClick={() =>
-                                                            openEditSheet(entry)
-                                                        }
-                                                        title="Edit entry"
-                                                    >
-                                                        <Pencil className="size-3.5" />
-                                                    </Button>
+                                                    {entry.isManual &&
+                                                        !entry.isLocked && (
+                                                            <>
+                                                                <Button
+                                                                    variant="ghost"
+                                                                    size="icon-xs"
+                                                                    onClick={() =>
+                                                                        openEditSheet(
+                                                                            entry,
+                                                                        )
+                                                                    }
+                                                                    title="Edit entry"
+                                                                >
+                                                                    <Pencil className="size-3.5" />
+                                                                </Button>
+                                                                <Button
+                                                                    variant="ghost"
+                                                                    size="icon-xs"
+                                                                    className="text-muted-foreground hover:text-destructive"
+                                                                    onClick={() =>
+                                                                        handleDelete(
+                                                                            entry,
+                                                                        )
+                                                                    }
+                                                                    title="Delete entry"
+                                                                >
+                                                                    <Trash2 className="size-3.5" />
+                                                                </Button>
+                                                            </>
+                                                        )}
                                                     {entry.orderReference && (
                                                         <Link
                                                             href={route(
