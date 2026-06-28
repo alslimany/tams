@@ -20,6 +20,7 @@ use App\Services\Airline\ProviderFactory;
 use App\Services\GlobalCache\GlobalFlightCacheSettingsService;
 use App\Services\GlobalCache\RouteAvailabilityService;
 use App\Services\Orders\OrderNumberGenerator;
+use App\Support\FareRulesFormatter;
 use Exception;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -138,7 +139,7 @@ class FlightController extends Controller
             'provider_id' => $providerId,
             'airline_code' => $providerConfig->airline_code,
             'airline_name' => $providerConfig->airline_name,
-            'offers' => $this->flightOfferPresenter->presentMany($flights),
+            'offers' => $this->flightOfferPresenter->presentMany($flights, forApi: true),
         ]);
     }
 
@@ -160,7 +161,7 @@ class FlightController extends Controller
 
         try {
             $provider = ProviderFactory::make($providerConfig);
-            $rules = $provider->getFareRules($validated['fare_id']);
+            $rules = FareRulesFormatter::toPlainText($provider->getFareRules($validated['fare_id']));
 
             return $this->success([
                 'fare_id' => $validated['fare_id'],
@@ -552,6 +553,6 @@ class FlightController extends Controller
             return (float) data_get($offer, 'pricing.total', 0);
         })->values()->all();
 
-        return $this->flightOfferPresenter->presentMany($sorted);
+        return $sorted;
     }
 }

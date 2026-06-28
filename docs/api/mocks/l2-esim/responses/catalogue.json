@@ -1,0 +1,61 @@
+{
+  "bundles": [
+    {
+      "name": "esim_1GB_30D_LY_U",
+      "description": "Libya 1GB — 30 Days (Unthrottled)",
+      "groups": ["Standard eSIM Bundles"],
+      "countries": [
+        {
+          "name": "Libya",
+          "region": "Africa",
+          "iso": "LY"
+        }
+      ],
+      "dataAmount": 1024,
+      "duration": 30,
+      "speed": ["4G", "5G"],
+      "autostart": true,
+      "roamingEnabled": [],
+      "unlimited": false,
+      "price": 15.0
+    },
+    {
+      "name": "esim_3GB_30D_LY_U",
+      "description": "Libya 3GB — 30 Days (Unthrottled)",
+      "groups": ["Standard eSIM Bundles"],
+      "countries": [
+        {
+          "name": "Libya",
+          "region": "Africa",
+          "iso": "LY"
+        }
+      ],
+      "dataAmount": 3072,
+      "duration": 30,
+      "speed": ["4G"],
+      "autostart": true,
+      "roamingEnabled": [],
+      "unlimited": false,
+      "price": 35.0
+    },
+    {
+      "name": "esim_UNL_7D_LY_U",
+      "description": "Libya Unlimited — 7 Days",
+      "groups": ["Standard eSIM Bundles"],
+      "countries": [
+        {
+          "name": "Libya",
+          "region": "Africa",
+          "iso": "LY"
+        }
+      ],
+      "dataAmount": -1,
+      "duration": 7,
+      "speed": ["4G", "5G"],
+      "autostart": true,
+      "roamingEnabled": [],
+      "unlimited": true,
+      "price": 42.5
+    }
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "orderReference": "a91c4f12-8d6e-4b2a-9f01-2c8e7d5a6b10",
+  "valid": true,
+  "assigned": false,
+  "currency": "USD",
+  "total": 15.0,
+  "createdDate": "2026-06-17T10:30:00.153875019Z",
+  "order": [
+    {
+      "type": "bundle",
+      "item": "esim_1GB_30D_LY_U",
+      "quantity": 1,
+      "subTotal": 15.0,
+      "pricePerUnit": 15.0,
+      "AllowReassign": false,
+      "esims": []
+    }
+  ]
+}

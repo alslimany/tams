@@ -1,0 +1,16 @@
+{
+  "iccid": "8944538532008160222",
+  "alertType": "Utilisation",
+  "bundle": {
+    "id": "215009266",
+    "reference": "3a6e2e40-c674-45e9-b289-b35027bf72a9-0",
+    "name": "esim_1GB_30D_LY_U",
+    "description": "Libya 1GB — 30 Days (Unthrottled)",
+    "initialQuantity": 1073741824,
+    "remainingQuantity": 214748365,
+    "unit": "BYTES",
+    "startTime": "2026-06-17T11:00:00Z",
+    "endTime": "2026-07-17T11:00:00Z",
+    "unlimited": false
+  }
+}

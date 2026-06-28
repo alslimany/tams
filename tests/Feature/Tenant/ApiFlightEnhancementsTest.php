@@ -65,7 +65,7 @@ function mockFlightOffersForCabinFilter(): void
         arrival_airport: 'IST',
         departure_time: '2026-06-15 10:00',
         arrival_time: '2026-06-15 14:00',
-        segments: [['class' => 'Y', 'cabin_type' => 'Y']],
+        segments: [['class' => 'Y', 'cabin_type' => 'Y', 'duration' => 240]],
         pricing: ['currency' => 'LYD', 'total' => 400, 'cabin_type' => 'Y', 'hold_weight' => '20K', 'hand_weight' => '7K', 'hold_pieces' => '1', 'fare_id' => '384'],
         available_seats: 5,
     );
@@ -79,7 +79,7 @@ function mockFlightOffersForCabinFilter(): void
         arrival_airport: 'IST',
         departure_time: '2026-06-15 10:00',
         arrival_time: '2026-06-15 14:00',
-        segments: [['class' => 'C', 'cabin_type' => 'C']],
+        segments: [['class' => 'C', 'cabin_type' => 'C', 'duration' => 240]],
         pricing: ['currency' => 'LYD', 'total' => 900, 'cabin_type' => 'C'],
         available_seats: 2,
     );
@@ -118,7 +118,32 @@ test('flight results include baggage and airline logo url', function () {
         ->assertJsonPath('data.offers.0.baggage.hold_weight', '20K')
         ->assertJsonPath('data.offers.0.baggage.hand_weight', '7K')
         ->assertJsonPath('data.offers.0.fare_id', '384')
+        ->assertJsonPath('data.offers.0.duration', 'PT4H')
+        ->assertJsonPath('data.offers.0.segments.0.duration', 'PT4H')
         ->assertJsonStructure(['data' => ['offers' => [['airline_logo_url']]]]);
+});
+
+test('flight results return iso8601 duration format', function () {
+    global $state;
+
+    mockFlightOffersForCabinFilter();
+
+    $search = $this->withToken($state['token'])
+        ->postJson($state['apiUrl'].'/flights/search', [
+            'origin' => 'MJI',
+            'destination' => 'IST',
+            'date' => '2026-06-15',
+            'adults' => 1,
+            'cabin_class' => 'all',
+        ]);
+
+    $uuid = $search->json('data.uuid');
+
+    $this->withToken($state['token'])
+        ->getJson($state['apiUrl'].'/flights/results/'.$uuid.'?provider_id='.$state['providerId'])
+        ->assertOk()
+        ->assertJsonPath('data.offers.0.duration', 'PT4H')
+        ->assertJsonPath('data.offers.0.segments.0.duration', 'PT4H');
 });
 
 test('flight results filter by cabin class Y', function () {
@@ -153,7 +178,7 @@ test('fare rules endpoint returns rules text', function () {
     {
         public function getFareRules(string $fareId): string
         {
-            return "RULE 1: Non refundable for fare {$fareId}";
+            return "1. Non refundable for fare {$fareId}\n2. Changes permitted with fee";
         }
     });
 
@@ -166,7 +191,7 @@ test('fare rules endpoint returns rules text', function () {
     $response->assertOk()
         ->assertJsonPath('success', true)
         ->assertJsonPath('data.fare_id', '384')
-        ->assertJsonPath('data.rules', 'RULE 1: Non refundable for fare 384');
+        ->assertJsonPath('data.rules', "Non refundable for fare 384\nChanges permitted with fee");
 });
 
 test('airlines index includes logo url', function () {
