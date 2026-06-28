@@ -15,6 +15,7 @@ use App\Models\Tenant\Order;
 use App\Models\User;
 use App\Services\Airline\AgencyProviderResolver;
 use App\Services\Airline\CabinClassFilter;
+use App\Services\Airline\FlightBookingPricing;
 use App\Services\Airline\FlightOfferPresenter;
 use App\Services\Airline\ProviderFactory;
 use App\Services\GlobalCache\GlobalFlightCacheSettingsService;
@@ -41,6 +42,7 @@ class FlightController extends Controller
         protected GlobalFlightCacheSettingsService $globalFlightCacheSettingsService,
         protected OrderNumberGenerator $orderNumberGenerator,
         protected FlightOfferPresenter $flightOfferPresenter,
+        protected FlightBookingPricing $flightBookingPricing,
     ) {}
 
     /**
@@ -231,11 +233,130 @@ class FlightController extends Controller
     }
 
     /**
+     * Fetch the interactive seat map for a flight segment.
+     */
+    public function seatmap(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'provider_id' => ['required', 'integer'],
+            'flight_number' => ['required', 'string', 'max:20'],
+            'date' => ['required', 'date'],
+        ]);
+
+        $providerConfig = $this->resolveProvider((int) $validated['provider_id']);
+
+        if (! $providerConfig) {
+            return $this->error('Provider not found.', 404);
+        }
+
+        try {
+            $provider = ProviderFactory::make($providerConfig);
+
+            if (! method_exists($provider, 'getSeatMap')) {
+                return $this->error('Seat maps are not supported for this provider.', 422);
+            }
+
+            $seatMap = $provider->getSeatMap(
+                $validated['flight_number'],
+                $validated['date'],
+            );
+
+            return $this->success($seatMap);
+        } catch (Exception $e) {
+            Log::error('API seat map fetch failed: '.$e->getMessage(), [
+                'provider_id' => $validated['provider_id'],
+                'flight_number' => $validated['flight_number'],
+            ]);
+
+            return $this->error('Failed to fetch seat map: '.$e->getMessage(), 422);
+        }
+    }
+
+    /**
+     * Price a selected flight including seats and ancillary services.
+     */
+    public function price(Request $request): JsonResponse
+    {
+        $validated = $request->validate(array_merge([
+            'uuid' => ['required', 'string'],
+            'passengers' => ['required', 'array', 'min:1'],
+            'passengers.*.type' => ['nullable', 'string', 'in:adult,child,infant'],
+        ], $this->extrasValidationRules()));
+
+        $searchParams = Cache::get("flight_search_{$validated['uuid']}");
+        $cachedOffer = is_array($searchParams) ? ($searchParams['selected_offer'] ?? null) : null;
+
+        if (! $cachedOffer) {
+            return $this->error('No flight selected or session expired. Please select a flight first.', 410);
+        }
+
+        $providerConfig = $this->resolveProvider((int) $cachedOffer['provider_id']);
+
+        if (! $providerConfig) {
+            return $this->error('Provider not found.', 404);
+        }
+
+        $flight = $cachedOffer['flight'];
+        $passengers = $validated['passengers'];
+        $extras = $validated['extras'] ?? [];
+
+        try {
+            $provider = ProviderFactory::make($providerConfig);
+            $pricingSummary = $this->flightBookingPricing->summarize(
+                $provider,
+                $flight,
+                $passengers,
+                $extras,
+                is_array($searchParams) ? $searchParams : [],
+            );
+
+            $mappedItinerary = $this->flightBookingPricing->mapItinerary(
+                $flight,
+                (string) ($cachedOffer['reservation_type'] ?? 'NN'),
+            );
+
+            $providerPricingVerified = false;
+
+            if (method_exists($provider, 'getPricing')) {
+                $fareResponse = $provider->getPricing($mappedItinerary, $passengers);
+                $providerPricingVerified = $this->isProviderResponseSuccessful($fareResponse);
+            }
+
+            Cache::put(
+                "flight_search_{$validated['uuid']}",
+                array_merge(is_array($searchParams) ? $searchParams : [], [
+                    'passengers' => $passengers,
+                    'extras' => $pricingSummary['extras'],
+                ]),
+                now()->addMinutes(60),
+            );
+
+            return $this->success([
+                'uuid' => $validated['uuid'],
+                'currency' => $pricingSummary['currency'],
+                'base_fare' => $pricingSummary['base_fare'],
+                'seats_total' => $pricingSummary['seats']['total'],
+                'ancillary_total' => $pricingSummary['ancillaries']['total'],
+                'grand_total' => $pricingSummary['grand_total'],
+                'seats' => $pricingSummary['seats'],
+                'ancillaries' => $pricingSummary['ancillaries'],
+                'provider_pricing_verified' => $providerPricingVerified,
+            ], 'Price calculated successfully.');
+        } catch (Exception $e) {
+            Log::error('API flight price failed: '.$e->getMessage(), [
+                'uuid' => $validated['uuid'],
+            ]);
+
+            return $this->error('Failed to calculate price: '.$e->getMessage(), 422);
+        }
+    }
+
+    /**
      * Book a flight — finalize with passengers and issue ticket.
      */
     public function book(Request $request): JsonResponse
     {
-        $validated = $request->validate([
+        $validated = $request->validate(array_merge([
             'uuid' => ['required', 'string'],
             'passengers' => ['required', 'array', 'min:1'],
             'passengers.*.type' => ['nullable', 'string', 'in:adult,child,infant'],
@@ -253,7 +374,7 @@ class FlightController extends Controller
             'customer.email' => ['nullable', 'email'],
             'customer.phone' => ['nullable', 'string'],
             'ticketing_mode' => ['nullable', 'string', 'in:final,draft'],
-        ], [
+        ], $this->extrasValidationRules()), [
             'passengers.*.first_name.alpha' => 'Passenger first name must contain letters only.',
             'passengers.*.last_name.alpha' => 'Passenger last name must contain letters only.',
         ]);
@@ -270,6 +391,7 @@ class FlightController extends Controller
         $reservationType = $cachedOffer['reservation_type'] ?? 'NN';
         $passengers = $validated['passengers'];
         $customer = $validated['customer'];
+        $extras = $validated['extras'] ?? $searchParams['extras'] ?? [];
 
         $providerConfig = $this->resolveProvider($providerId);
 
@@ -280,25 +402,18 @@ class FlightController extends Controller
         $provider = ProviderFactory::make($providerConfig);
         $providerConfig->update(['last_used_at' => now()]);
 
-        // Build itinerary for the provider
-        $itinerary = $flight['segments'] ?? [$flight];
-        $mappedItinerary = array_map(function ($segment): array {
-            return [
-                'flt_no' => $segment['flight_number'] ?? '000',
-                'class' => $segment['class'] ?? 'Y',
-                'date' => $segment['departure_time'] ?? now(),
-                'origin' => $segment['departure_airport'] ?? 'XXX',
-                'dest' => $segment['arrival_airport'] ?? 'XXX',
-            ];
-        }, $itinerary);
+        $pricingSummary = $this->flightBookingPricing->summarize(
+            $provider,
+            $flight,
+            $passengers,
+            $extras,
+            is_array($searchParams) ? $searchParams : [],
+        );
 
-        $pricing = $flight['pricing'] ?? [];
-        $totalPrice = is_array($pricing) && array_is_list($pricing)
-            ? (float) collect($pricing)->sum(fn (array $p): float => (float) ($p['total'] ?? 0))
-            : (float) ($pricing['total'] ?? 0);
-        $currency = is_array($pricing) && array_is_list($pricing)
-            ? (string) ($pricing[0]['currency'] ?? 'USD')
-            : (string) ($pricing['currency'] ?? 'USD');
+        $mappedItinerary = $this->flightBookingPricing->mapItinerary($flight, $reservationType);
+        $totalPrice = $pricingSummary['grand_total'];
+        $currency = $pricingSummary['currency'];
+        $extras = $pricingSummary['extras'];
 
         $issuer = $request->user();
         if (! $issuer instanceof User) {
@@ -330,6 +445,7 @@ class FlightController extends Controller
             'passengers' => $passengers,
             'contact' => $customer,
             'itinerary' => $mappedItinerary,
+            'extras' => $extras,
             'reservation_type' => $reservationType,
             'ticketing_mode' => $isDraft ? 'draft' : 'final',
         ];
@@ -359,7 +475,7 @@ class FlightController extends Controller
         }
 
         // Create order in database
-        $order = DB::transaction(function () use ($isDraft, $providerConfig, $totalPrice, $currency, $pnr, $flight, $passengers, $customer, $issuer, $cachedOffer): Order {
+        $order = DB::transaction(function () use ($isDraft, $providerConfig, $totalPrice, $currency, $pnr, $flight, $passengers, $customer, $issuer, $cachedOffer, $pricingSummary, $extras): Order {
             $order = Order::query()->create([
                 'owner_type' => get_class($issuer),
                 'owner_id' => $issuer->id,
@@ -390,6 +506,14 @@ class FlightController extends Controller
                     'segments' => $flight['segments'] ?? [$flight],
                     'passengers' => $passengers,
                     'customer' => $customer,
+                    'seats' => $extras['seats'] ?? [],
+                    'selected_services' => $extras['selected_services'] ?? [],
+                    'pricing_summary' => [
+                        'base_fare' => $pricingSummary['base_fare'],
+                        'seats_total' => $pricingSummary['seats']['total'],
+                        'ancillary_total' => $pricingSummary['ancillaries']['total'],
+                        'grand_total' => $pricingSummary['grand_total'],
+                    ],
                     'ticketing_mode' => $isDraft ? 'draft' : 'final',
                 ],
                 'product_details' => [
@@ -554,5 +678,23 @@ class FlightController extends Controller
         })->values()->all();
 
         return $sorted;
+    }
+
+    /**
+     * @return array<string, array<int, string>>
+     */
+    protected function extrasValidationRules(): array
+    {
+        return [
+            'extras' => ['nullable', 'array'],
+            'extras.seats' => ['nullable', 'array'],
+            'extras.seats.*' => ['nullable', 'array'],
+            'extras.seats.*.*' => ['nullable', 'string', 'max:12'],
+            'extras.selected_services' => ['nullable', 'array'],
+            'extras.selected_services.*.code' => ['nullable', 'string', 'max:50'],
+            'extras.selected_services.*.quantity' => ['nullable', 'integer', 'min:0'],
+            'extras.selected_services.*.passengers' => ['nullable', 'array'],
+            'extras.selected_services.*.passengers.*' => ['integer', 'min:0'],
+        ];
     }
 }

@@ -62,6 +62,7 @@ Route::middleware(['auth:sanctum', 'throttle:api', 'audit.api', 'idempotency'])-
         Route::get('flights/results/{uuid}', [FlightController::class, 'results']);
         Route::get('flights/calendar-hints', [BookingController::class, 'calendarHints']);
         Route::post('flights/fare-rules', [FlightController::class, 'fareRules']);
+        Route::post('flights/seatmap', [FlightController::class, 'seatmap']);
 
         // Hotel reference
         Route::get('hotels/autocomplete', [HotelController::class, 'autocomplete']);
@@ -91,6 +92,7 @@ Route::middleware(['auth:sanctum', 'throttle:api', 'audit.api', 'idempotency'])-
         Route::post('flights/search', [FlightController::class, 'search']);
         Route::post('flights/return-options', [BookingController::class, 'getReturnOptions']);
         Route::post('flights/select', [FlightController::class, 'select']);
+        Route::post('flights/price', [FlightController::class, 'price']);
         Route::post('flights/book', [FlightController::class, 'book']);
 
         Route::post('hotels/search', [HotelController::class, 'search']);

@@ -318,7 +318,7 @@
     },
     {
       "name": "\u2708\ufe0f Flights",
-      "description": "Flight search, pricing, and booking flow.\n\n**Book flow**: Search \u2192 Results \u2192 (Fare Rules) \u2192 Select \u2192 Book (`ticketing_mode: final` or `draft`)\n\n**Draft flow**: Book with `ticketing_mode: draft` \u2192 Issue Ticket\n\n**Change flow**: See **Change Segment** folder",
+      "description": "Flight search, pricing, and booking flow.\n\n**Book flow**: Search \u2192 Results \u2192 (Fare Rules) \u2192 Select \u2192 Seatmap \u2192 Price \u2192 Book (`ticketing_mode: final` or `draft`)\n\n**Seat flow**: **5b. Seat Map** \u2192 pick seats \u2192 **5c. Price** (with `extras.seats`) \u2192 **6. Book** (same `extras.seats`)\n\n**Draft flow**: Book with `ticketing_mode: draft` \u2192 Issue Ticket\n\n**Change flow**: See **Change Segment** folder",
       "item": [
         {
           "name": "1. Search Flights",
@@ -573,6 +573,84 @@
           ]
         },
         {
+          "name": "5b. Seat Map",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"provider_id\": {{flight_provider_id}},\n  \"flight_number\": \"500\",\n  \"date\": \"2026-06-15\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/agency/{{tenant}}/api/v1/flights/seatmap",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "agency",
+                "{{tenant}}",
+                "api",
+                "v1",
+                "flights",
+                "seatmap"
+              ]
+            },
+            "description": "Fetch interactive seat map for a flight segment.\n\nUse `flight_number` and `date` from the selected offer segment. Each seat includes `code`, `price`, `is_occupied`, and grid position.\n\nRequires `read` ability."
+          },
+          "response": [
+            {
+              "name": "200",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"grid\": { \"max_row\": 30, \"max_col\": 6 },\n    \"cabins\": [{ \"class\": \"Y\", \"seats\": 150 }],\n    \"seats\": [\n      {\n        \"row\": 12,\n        \"col\": 1,\n        \"code\": \"12A\",\n        \"price\": 25.0,\n        \"is_occupied\": false,\n        \"is_aisle\": false\n      }\n    ]\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "5c. Price (with seats)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"uuid\": \"{{flight_uuid}}\",\n  \"passengers\": [\n    {\n      \"type\": \"adult\",\n      \"first_name\": \"John\",\n      \"last_name\": \"Doe\"\n    }\n  ],\n  \"extras\": {\n    \"seats\": {\n      \"0\": { \"1\": \"12A\" }\n    }\n  }\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/agency/{{tenant}}/api/v1/flights/price",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "agency",
+                "{{tenant}}",
+                "api",
+                "v1",
+                "flights",
+                "price"
+              ]
+            },
+            "description": "Calculate total price for the selected flight including seat fees and ancillary services.\n\n**extras.seats format**: `{ passengerIndex: { segmentNumber: seatCode } }`\n- `passengerIndex`: 0-based\n- `segmentNumber`: 1-based\n\nExample: `\"0\": { \"1\": \"12A\" }` = passenger 1, segment 1, seat 12A.\n\nRequires `write` ability. Call after **Select Flight**."
+          },
+          "response": [
+            {
+              "name": "200",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"success\": true,\n  \"message\": \"Price calculated successfully.\",\n  \"data\": {\n    \"uuid\": \"...\",\n    \"currency\": \"LYD\",\n    \"base_fare\": 450.0,\n    \"seats_total\": 25.0,\n    \"ancillary_total\": 0.0,\n    \"grand_total\": 475.0,\n    \"seats\": {\n      \"lines\": [\n        { \"passenger_index\": 0, \"segment\": 1, \"seat\": \"12A\", \"price\": 25.0 }\n      ],\n      \"total\": 25.0\n    },\n    \"ancillaries\": { \"lines\": [], \"total\": 0.0 },\n    \"provider_pricing_verified\": true\n  }\n}"
+            }
+          ]
+        },
+        {
           "name": "6. Book Flight \u2014 Issue Ticket",
           "event": [
             {
@@ -603,7 +681,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"uuid\": \"{{flight_uuid}}\",\n  \"ticketing_mode\": \"final\",\n  \"passengers\": [\n    {\n      \"type\": \"adult\",\n      \"first_name\": \"John\",\n      \"last_name\": \"Doe\",\n      \"dob\": \"1990-01-15\",\n      \"gender\": \"M\",\n      \"passport_number\": \"A1234567\",\n      \"passport_expiry\": \"2028-06-01\",\n      \"passport_issue_country\": \"LBY\",\n      \"nationality\": \"LBY\"\n    }\n  ],\n  \"customer\": {\n    \"first_name\": \"John\",\n    \"last_name\": \"Doe\",\n    \"email\": \"john@example.com\",\n    \"phone\": \"+218911234567\"\n  }\n}"
+              "raw": "{\n  \"uuid\": \"{{flight_uuid}}\",\n  \"ticketing_mode\": \"final\",\n  \"passengers\": [\n    {\n      \"type\": \"adult\",\n      \"first_name\": \"John\",\n      \"last_name\": \"Doe\",\n      \"dob\": \"1990-01-15\",\n      \"gender\": \"M\",\n      \"passport_number\": \"A1234567\",\n      \"passport_expiry\": \"2028-06-01\",\n      \"passport_issue_country\": \"LBY\",\n      \"nationality\": \"LBY\"\n    }\n  ],\n  \"customer\": {\n    \"first_name\": \"John\",\n    \"last_name\": \"Doe\",\n    \"email\": \"john@example.com\",\n    \"phone\": \"+218911234567\"\n  },\n  \"extras\": {\n    \"seats\": {\n      \"0\": { \"1\": \"12A\" }\n    }\n  }\n}"
             },
             "url": {
               "raw": "{{base_url}}/agency/{{tenant}}/api/v1/flights/book",
@@ -619,7 +697,7 @@
                 "book"
               ]
             },
-            "description": "Finalize booking and issue ticket immediately (`ticketing_mode: final`, default). Creates order, charges wallet, and issues e-ticket. Must call **Select Flight** first.\n\nFor hold-only PNR without payment, use **6b. Book Flight \u2014 Draft Reservation**."
+            "description": "Finalize booking and issue ticket immediately (`ticketing_mode: final`, default). Creates order, charges wallet, and issues e-ticket. Must call **Select Flight** first.\n\nPass `extras.seats` (same format as **5c. Price**) to assign seats during booking.\n\nFor hold-only PNR without payment, use **6b. Book Flight \u2014 Draft Reservation**."
           },
           "response": [
             {
