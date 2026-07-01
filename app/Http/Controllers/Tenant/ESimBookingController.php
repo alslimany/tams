@@ -2,35 +2,31 @@
 
 namespace App\Http\Controllers\Tenant;
 
-use App\Actions\Finance\CreateOrderFromESimPurchase;
-use App\Actions\Finance\ProcessESimProviderWalletTransactions;
-use App\DTOs\ESim\ESimOrderRequest;
-use App\Exceptions\InsufficientWalletBalanceException;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Tenant\ESim\ESimBookRequest;
 use App\Http\Requests\Tenant\ESim\ESimSearchRequest;
-use App\Models\Airport;
 use App\Models\Country;
 use App\Models\Tenant\Order;
 use App\Models\Tenant\OrderItem;
 use App\Models\Tenant\TenantEsimProvider;
 use App\Models\User;
 use App\Services\ESim\ESimApiException;
+use App\Services\ESim\ESimBookingService;
+use App\Services\ESim\ESimCatalogueService;
 use App\Services\ESim\ESimProviderManager;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
-use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Str;
 use Inertia\Inertia;
 use Inertia\Response;
+use RuntimeException;
 use Throwable;
 
 class ESimBookingController extends Controller
 {
     public function __construct(
         protected ESimProviderManager $providerManager,
-        protected CreateOrderFromESimPurchase $createOrderFromESimPurchase,
-        protected ProcessESimProviderWalletTransactions $esimProviderWalletTransactions,
+        protected ESimBookingService $bookingService,
+        protected ESimCatalogueService $catalogueService,
     ) {}
 
     public function index(): Response
@@ -66,16 +62,14 @@ class ESimBookingController extends Controller
     public function search(ESimSearchRequest $request): RedirectResponse
     {
         $validated = $request->validated();
-        $uuid = (string) Str::uuid();
-
-        Cache::put($this->searchCacheKey($uuid), $validated, now()->addMinutes(60));
+        $uuid = $this->bookingService->startSearch((string) $validated['country']);
 
         return redirect()->route('esim.results', $uuid);
     }
 
     public function results(string $uuid): Response|RedirectResponse
     {
-        $search = $this->pullSearch($uuid);
+        $search = $this->bookingService->getSearch($uuid);
 
         if ($search === null) {
             return redirect()->route('esim.index')->with('error', 'eSIM search expired. Please search again.');
@@ -96,25 +90,12 @@ class ESimBookingController extends Controller
 
     public function packages(string $uuid): JsonResponse
     {
-        $search = $this->pullSearch($uuid);
-
-        if ($search === null) {
-            return response()->json(['message' => 'eSIM search expired. Please search again.'], 404);
-        }
-
         try {
-            $filters = array_filter([
-                'country' => (string) ($search['country'] ?? ''),
-            ], fn (mixed $v): bool => $v !== null && $v !== '');
-
-            $packages = $this->providerManager->provider()->catalogue($filters);
-            $providerSource = $this->providerManager->activeProviderSource();
-
             return response()->json([
-                'packages' => array_map(fn ($pkg): array => array_merge($pkg->toArray(), [
-                    'provider_source' => $providerSource,
-                ]), $packages),
+                'packages' => $this->bookingService->packagesForSearch($uuid),
             ]);
+        } catch (RuntimeException $exception) {
+            return response()->json(['message' => $exception->getMessage()], 404);
         } catch (Throwable $exception) {
             report($exception);
 
@@ -124,103 +105,52 @@ class ESimBookingController extends Controller
 
     public function networks(string $uuid): JsonResponse
     {
-        $search = $this->pullSearch($uuid);
-
-        if ($search === null) {
-            return response()->json(['networks' => []]);
-        }
-
-        $iso = strtoupper((string) ($search['country'] ?? ''));
-
-        if ($iso === '') {
-            return response()->json(['networks' => []]);
-        }
-
-        try {
-            $networks = $this->providerManager->provider()->networks($iso);
-
-            return response()->json(['networks' => $networks]);
-        } catch (Throwable $exception) {
-            report($exception);
-
-            return response()->json(['networks' => []]);
-        }
+        return response()->json([
+            'networks' => $this->bookingService->networksForSearch($uuid),
+        ]);
     }
 
     public function airportPackages(string $iata): JsonResponse
     {
-        $airport = Airport::where('iata_code', strtoupper($iata))->first();
-
-        if ($airport === null) {
-            return response()->json(['packages' => []]);
-        }
-
-        $iso = strtoupper($airport->getTranslation('country', 'en'));
-
-        if ($iso === '') {
-            return response()->json(['packages' => []]);
-        }
-
         try {
-            $packages = Cache::remember(
-                "esim_airport_packages_{$iso}",
-                now()->addMinutes(30),
-                fn (): array => $this->providerManager->provider()->catalogue(['country' => $iso])
-            );
-
-            $providerSource = $this->providerManager->activeProviderSource();
+            $payload = $this->catalogueService->packagesForAirport($iata);
 
             return response()->json([
-                'packages' => array_map(fn ($pkg): array => array_merge($pkg->toArray(), [
-                    'provider_source' => $providerSource,
-                ]), $packages),
-                'country_iso' => $iso,
+                'packages' => $payload['packages'],
+                'country_iso' => $payload['airport']['country_iso'] ?? null,
+                'airport' => $payload['airport'],
             ]);
         } catch (Throwable $exception) {
             report($exception);
 
-            return response()->json(['packages' => [], 'country_iso' => $iso]);
+            return response()->json([
+                'packages' => [],
+                'country_iso' => null,
+                'airport' => null,
+            ]);
         }
     }
 
     public function select(string $uuid): RedirectResponse
     {
-        $search = $this->pullSearch($uuid);
-
-        if ($search === null) {
-            return redirect()->route('esim.index')->with('error', 'eSIM search expired. Please search again.');
-        }
-
         $packageId = (string) request()->input('package_id', '');
 
-        if ($packageId === '') {
-            return back()->with('error', 'Please select a package.');
-        }
-
         try {
-            $packageData = $this->resolvePackageData($packageId, $search);
+            $bookingUuid = $this->bookingService->selectPackage($uuid, $packageId);
+        } catch (RuntimeException $exception) {
+            return redirect()->route('esim.index')->with('error', $exception->getMessage());
         } catch (Throwable $exception) {
             report($exception);
 
             return back()->with('error', $exception->getMessage() ?: 'Unable to load package details.');
         }
 
-        $bookingUuid = (string) Str::uuid();
-        $providerSource = $this->providerManager->activeProviderSource();
-
-        Cache::put($this->bookingCacheKey($bookingUuid), [
-            'search' => $search,
-            'package' => $packageData,
-            'provider_source' => $providerSource,
-            'created_at' => now()->toISOString(),
-        ], now()->addMinutes(60));
-
         return redirect()->route('esim.checkout', $bookingUuid);
     }
 
     public function checkout(string $uuid): Response|RedirectResponse
     {
-        $booking = $this->pullBooking($uuid);
+        $booking = $this->bookingService->getBooking($uuid);
 
         if ($booking === null) {
             return redirect()->route('esim.index')->with('error', 'Selected eSIM package expired. Please search again.');
@@ -236,74 +166,21 @@ class ESimBookingController extends Controller
     public function book(ESimBookRequest $request): RedirectResponse
     {
         $validated = $request->validated();
-        $cached = $this->pullBooking((string) $validated['booking_uuid']);
-
-        if ($cached === null) {
-            return redirect()->route('esim.index')->with('error', 'Selected eSIM package expired. Please search again.');
-        }
-
-        $packageData = $cached['package'];
-        $providerSource = is_array($cached['provider_source'] ?? null) ? $cached['provider_source'] : [];
-        $esimProvider = $this->providerManager->activeProvider();
-
-        if (! $esimProvider instanceof TenantEsimProvider) {
-            return back()->with('error', 'eSIM provider is not configured.');
-        }
-
-        $currency = strtoupper((string) ($packageData['currency'] ?? 'USD'));
-        $amount = round((float) ($packageData['price'] ?? 0), 2);
-
-        try {
-            $this->esimProviderWalletTransactions->assertCanWithdrawForSource($providerSource, $esimProvider, $currency, $amount);
-        } catch (InsufficientWalletBalanceException $exception) {
-            return back()->with('error', $exception->getMessage());
-        }
-
-        // Validate real-time L2 API balance before placing the order
-        try {
-            $providerOrg = $this->providerManager->provider()->organization();
-            $apiBalance = (float) ($providerOrg['balance'] ?? 0);
-
-            if ($apiBalance < $amount) {
-                return back()->with('error', "Insufficient provider balance. Required: \${$amount} {$currency}, available: \${$apiBalance} {$currency}.");
-            }
-        } catch (Throwable $exception) {
-            report($exception);
-
-            return back()->with('error', 'Unable to verify provider balance. Please try again.');
-        }
-
         $issuer = $request->user();
 
         if (! $issuer instanceof User) {
             return back()->with('error', 'Authentication is required to purchase eSIM.');
         }
 
-        $customerData = [
-            'name' => (string) ($validated['customer']['name'] ?? ''),
-            'email' => (string) ($validated['customer']['email'] ?? ''),
-        ];
-
         try {
-            $orderRequest = new ESimOrderRequest(
-                packageId: (string) ($packageData['id'] ?? ''),
-                quantity: 1,
-                customerEmail: $customerData['email'],
-                customerName: $customerData['name'],
+            $order = $this->bookingService->purchase(
+                $issuer,
+                (string) $validated['booking_uuid'],
+                [
+                    'name' => (string) ($validated['customer']['name'] ?? ''),
+                    'email' => (string) ($validated['customer']['email'] ?? ''),
+                ],
             );
-
-            $orderResult = $this->providerManager->provider()->processOrder($orderRequest);
-
-            $order = $this->createOrderFromESimPurchase->execute(
-                userId: $issuer->id,
-                orderResult: $orderResult,
-                packageData: $packageData,
-                customerData: $customerData,
-                providerSource: $providerSource,
-                esimProvider: $esimProvider,
-            );
-
-            $this->esimProviderWalletTransactions->execute($order, $esimProvider);
         } catch (Throwable $exception) {
             report($exception);
 
@@ -333,7 +210,6 @@ class ESimBookingController extends Controller
             return back()->with('error', $exception instanceof ESimApiException ? $exception->getMessage() : 'Unable to delete eSIM from provider. Please try again.');
         }
 
-        // Refund the provider wallet
         $walletTransactionUuid = data_get($item->item_details, 'provider_wallet_transaction_id');
         $esimProvider = $this->providerManager->activeProvider();
 
@@ -362,59 +238,5 @@ class ESimBookingController extends Controller
         ]);
 
         return back()->with('success', 'eSIM refunded successfully.');
-    }
-
-    /**
-     * @param  array<string, mixed>  $search
-     * @return array<string, mixed>
-     */
-    protected function resolvePackageData(string $packageId, array $search): array
-    {
-        $filters = array_filter([
-            'country' => (string) ($search['country'] ?? ''),
-        ], fn (mixed $v): bool => $v !== null && $v !== '');
-
-        $packages = $this->providerManager->provider()->catalogue($filters);
-
-        foreach ($packages as $pkg) {
-            if ($pkg->id === $packageId) {
-                return $pkg->toArray();
-            }
-        }
-
-        // Fallback: fetch bundle details directly
-        $bundle = $this->providerManager->provider()->bundles($packageId);
-
-        return array_merge($bundle, ['id' => $packageId]);
-    }
-
-    /**
-     * @return array<string, mixed>|null
-     */
-    protected function pullSearch(string $uuid): ?array
-    {
-        $payload = Cache::get($this->searchCacheKey($uuid));
-
-        return is_array($payload) ? $payload : null;
-    }
-
-    /**
-     * @return array<string, mixed>|null
-     */
-    protected function pullBooking(string $uuid): ?array
-    {
-        $payload = Cache::get($this->bookingCacheKey($uuid));
-
-        return is_array($payload) ? $payload : null;
-    }
-
-    protected function searchCacheKey(string $uuid): string
-    {
-        return 'esim_search_'.$uuid;
-    }
-
-    protected function bookingCacheKey(string $uuid): string
-    {
-        return 'esim_booking_'.$uuid;
     }
 }

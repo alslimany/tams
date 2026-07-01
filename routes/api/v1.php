@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\V1\AirlineController;
 use App\Http\Controllers\Api\V1\ApiTokenController;
 use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\DashboardController;
+use App\Http\Controllers\Api\V1\ESimController;
 use App\Http\Controllers\Api\V1\FlightChangeController;
 use App\Http\Controllers\Api\V1\FlightController;
 use App\Http\Controllers\Api\V1\HotelController;
@@ -74,6 +75,13 @@ Route::middleware(['auth:sanctum', 'throttle:api', 'audit.api', 'idempotency'])-
         Route::get('insurance/travel/references', [TravelInsuranceController::class, 'references']);
         Route::get('insurance/orange/references', [OrangeInsuranceController::class, 'references']);
 
+        // eSIM catalogue
+        Route::get('esim/countries', [ESimController::class, 'countries']);
+        Route::get('esim/results/{uuid}/packages', [ESimController::class, 'packages']);
+        Route::get('esim/results/{uuid}/networks', [ESimController::class, 'networks']);
+        Route::get('esim/airport/{iata}/packages', [ESimController::class, 'airportPackages'])
+            ->where('iata', '[A-Za-z]{3}');
+
         // Orders
         Route::get('orders', [OrderController::class, 'index']);
         Route::get('orders/{order}', [OrderController::class, 'show']);
@@ -102,10 +110,15 @@ Route::middleware(['auth:sanctum', 'throttle:api', 'audit.api', 'idempotency'])-
         Route::post('insurance/compulsory/price', [InsuranceController::class, 'compulsoryPrice']);
         Route::post('insurance/travel/price', [TravelInsuranceController::class, 'price']);
         Route::post('insurance/orange/price', [OrangeInsuranceController::class, 'price']);
+
+        Route::post('esim/search', [ESimController::class, 'search']);
+        Route::post('esim/select', [ESimController::class, 'select']);
+        Route::post('esim/book', [ESimController::class, 'book']);
     });
 
     // ── Issue-gated routes (ability: issue OR *) ────────────────
     Route::middleware('ability:issue')->group(function (): void {
+        Route::post('orders/{order}/esim-items/{item}/refund', [ESimController::class, 'refund']);
         Route::post('flights/{order}/items/{item}/change/search', [FlightChangeController::class, 'search']);
         Route::get('flights/{order}/items/{item}/change-quote', [FlightChangeController::class, 'changeQuote']);
         Route::post('flights/{order}/items/{item}/change-confirm', [FlightChangeController::class, 'confirmChange']);

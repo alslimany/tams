@@ -36,7 +36,7 @@ beforeEach(function () {
         'provider_type' => 'l2',
         'name' => 'L2 Travel eSIM',
         'credentials' => [
-            'base_url' => 'https://l2travelesim.com/api/v2',
+            'base_url' => 'https://l2travelesim.com',
             'api_key' => 'test-api-key',
             'client_secret' => 'test-client-secret',
         ],
@@ -50,6 +50,51 @@ beforeEach(function () {
     $state['baseUrl'] = 'http://'.$tenant->domains->first()->domain;
 });
 
+function fakeTenantL2EsimApi(): void
+{
+    Http::fake([
+        'https://l2travelesim.com/api/whitelabel/v2/catalogue' => Http::response([
+            'bundles' => [
+                [
+                    'name' => 'esim_1GB_30D_LY_U',
+                    'description' => 'Libya 1GB 30 Days',
+                    'countries' => [['name' => 'Libya', 'iso' => 'LY']],
+                    'dataAmount' => 1024,
+                    'duration' => 30,
+                    'speed' => ['4G'],
+                    'unlimited' => false,
+                    'price' => 15.00,
+                ],
+                [
+                    'name' => 'esim_3GB_30D_LY_U',
+                    'description' => 'Libya 3GB 30 Days',
+                    'countries' => [['name' => 'Libya', 'iso' => 'LY']],
+                    'dataAmount' => 3072,
+                    'duration' => 30,
+                    'speed' => ['4G'],
+                    'unlimited' => false,
+                    'price' => 35.00,
+                ],
+            ],
+        ], 200),
+        'https://l2travelesim.com/api/whitelabel/v2/organization' => Http::response([
+            'balance' => 500,
+        ], 200),
+        'https://l2travelesim.com/api/whitelabel/v2/processOrders' => Http::response([
+            'orderReference' => 'L2-ORDER-001',
+            'assigned' => true,
+            'valid' => true,
+            'order' => [[
+                'esims' => [[
+                    'iccid' => '8988247000100000001',
+                    'matchingId' => 'MATCH-ID-001',
+                    'smdpAddress' => 'smdp.example.com',
+                ]],
+            ]],
+        ], 200),
+    ]);
+}
+
 afterEach(function () {
     global $state;
 
@@ -60,35 +105,7 @@ afterEach(function () {
 test('esim full flow searches, selects, and books a package creating order and deducting wallet', function () {
     global $state;
 
-    Http::fake([
-        'https://l2travelesim.com/api/v2/packages*' => Http::response([
-            [
-                'id' => 'PKG-LY-1GB',
-                'name' => 'Libya 1GB 30 Days',
-                'country' => 'Libya',
-                'data_mb' => 1024,
-                'validity' => 30,
-                'price' => 15.00,
-                'currency' => 'USD',
-            ],
-            [
-                'id' => 'PKG-LY-3GB',
-                'name' => 'Libya 3GB 30 Days',
-                'country' => 'Libya',
-                'data_mb' => 3072,
-                'validity' => 30,
-                'price' => 35.00,
-                'currency' => 'USD',
-            ],
-        ], 200),
-        'https://l2travelesim.com/api/v2/orders' => Http::response([
-            'order_id' => 'L2-ORDER-001',
-            'iccid' => '8988247000100000001',
-            'activation_code' => 'LPA:1$smdp.example.com$MATCH-ID-001',
-            'qr_code_url' => 'https://qr.example.com/esim-001.png',
-            'status' => 'active',
-        ], 200),
-    ]);
+    fakeTenantL2EsimApi();
 
     $this->actingAs($state['admin']);
 
@@ -97,31 +114,25 @@ test('esim full flow searches, selects, and books a package creating order and d
     $wallet = $provider->getOrCreateCurrencyWallet('USD');
     $wallet->depositFloat(500, ['type' => 'test_provider_fund']);
 
-    // Fund the admin user's wallet (ProcessWalletTransactions resolves the first admin/manager)
-    $adminWallet = $state['admin']->getOrCreateCurrencyWallet('USD');
-    $adminWallet->depositFloat(500, ['type' => 'test_user_fund']);
-
     // Step 1: Search
     $searchResponse = $this->post($state['baseUrl'].route('esim.search', [], false), [
-        'country' => 'Libya',
-        'data_mb' => 1024,
-        'validity_days' => 30,
+        'country' => 'LY',
     ]);
 
     $searchResponse->assertRedirect();
     $searchUuid = Str::afterLast((string) $searchResponse->headers->get('Location'), '/');
 
     // Step 2: Get packages
-    $packagesResponse = $this->getJson($state['baseUrl'].route('esim.packages', ['uuid' => $searchUuid], false))
+    $this->getJson($state['baseUrl'].route('esim.packages', ['uuid' => $searchUuid], false))
         ->assertSuccessful()
-        ->assertJsonPath('packages.0.id', 'PKG-LY-1GB')
+        ->assertJsonPath('packages.0.id', 'esim_1GB_30D_LY_U')
         ->assertJsonPath('packages.0.name', 'Libya 1GB 30 Days')
         ->assertJsonPath('packages.0.price', 15)
-        ->assertJsonPath('packages.1.id', 'PKG-LY-3GB');
+        ->assertJsonPath('packages.1.id', 'esim_3GB_30D_LY_U');
 
     // Step 3: Select a package
     $selectResponse = $this->post($state['baseUrl'].route('esim.select', ['uuid' => $searchUuid], false), [
-        'package_id' => 'PKG-LY-1GB',
+        'package_id' => 'esim_1GB_30D_LY_U',
     ]);
 
     $selectResponse->assertRedirect();
@@ -146,22 +157,21 @@ test('esim full flow searches, selects, and books a package creating order and d
     expect((string) $item->product_type)->toBe('esim')
         ->and(data_get($item->item_details, 'provider_order_id'))->toBe('L2-ORDER-001')
         ->and(data_get($item->item_details, 'iccid'))->toBe('8988247000100000001')
-        ->and(data_get($item->item_details, 'activation_code'))->toBe('LPA:1$smdp.example.com$MATCH-ID-001')
-        ->and(data_get($item->item_details, 'qr_code_url'))->toBe('https://qr.example.com/esim-001.png')
+        ->and(data_get($item->item_details, 'activation_code'))->toBe('MATCH-ID-001')
         ->and(data_get($item->item_details, 'customer.name'))->toBe('Ahmed Ali')
         ->and(data_get($item->item_details, 'customer.email'))->toBe('ahmed@example.com')
         ->and(data_get($item->item_details, 'package_name'))->toBe('Libya 1GB 30 Days')
-        ->and(data_get($item->item_details, 'country'))->toBe('Libya')
+        ->and(data_get($item->item_details, 'country'))->toBe('LY')
         ->and((float) $item->net_fare)->toBe(15.00)
         ->and($item->wallet_transaction_id)->not->toBeNull();
 
-    // In the direct/own-source flow, the deduction comes from the admin user's wallet
-    $adminWallet->refresh();
-    expect(round((float) $adminWallet->balanceFloat, 2))->toBe(485.0);
+    // In the direct/own-source flow, the deduction comes from the provider wallet
+    $wallet->refresh();
+    expect(round((float) $wallet->balanceFloat, 2))->toBe(485.0);
 
     expect(WalletTransaction::query()
         ->where('uuid', (string) $item->wallet_transaction_id)
-        ->where('wallet_id', $adminWallet->id)
+        ->where('wallet_id', $wallet->id)
         ->exists())->toBeTrue();
 });
 
@@ -169,11 +179,17 @@ test('esim booking fails early when provider wallet is insufficient', function (
     global $state;
 
     Http::fake([
-        'https://l2travelesim.com/api/v2/orders' => Http::response([
-            'order_id' => 'L2-ORDER-SHOULD-NOT-HAPPEN',
-            'iccid' => '000',
-            'activation_code' => 'LPA:1$smdp.example.com$NONE',
-            'status' => 'active',
+        'https://l2travelesim.com/api/whitelabel/v2/processOrders' => Http::response([
+            'orderReference' => 'L2-ORDER-SHOULD-NOT-HAPPEN',
+            'assigned' => true,
+            'valid' => true,
+            'order' => [[
+                'esims' => [[
+                    'iccid' => '000',
+                    'matchingId' => 'NONE',
+                    'smdpAddress' => 'smdp.example.com',
+                ]],
+            ]],
         ], 200),
     ]);
 
@@ -181,11 +197,11 @@ test('esim booking fails early when provider wallet is insufficient', function (
 
     $bookingUuid = (string) Str::uuid();
     Cache::put('esim_booking_'.$bookingUuid, [
-        'search' => ['country' => 'Libya', 'data_mb' => 1024, 'validity_days' => 30],
+        'search' => ['country' => 'LY'],
         'package' => [
-            'id' => 'PKG-LY-1GB',
+            'id' => 'esim_1GB_30D_LY_U',
             'name' => 'Libya 1GB 30 Days',
-            'country' => 'Libya',
+            'country' => 'LY',
             'data_mb' => 1024,
             'validity_days' => 30,
             'price' => 15.00,
@@ -207,7 +223,7 @@ test('esim booking fails early when provider wallet is insufficient', function (
 
     $response->assertRedirect();
 
-    Http::assertNotSent(fn ($request) => str_contains($request->url(), '/orders'));
+    Http::assertNotSent(fn ($request) => str_contains($request->url(), '/processOrders'));
     expect(Order::query()->count())->toBe(0);
 });
 
@@ -220,9 +236,9 @@ test('esim booking fails when provider is not configured', function () {
 
     $bookingUuid = (string) Str::uuid();
     Cache::put('esim_booking_'.$bookingUuid, [
-        'search' => ['country' => 'Libya'],
+        'search' => ['country' => 'LY'],
         'package' => [
-            'id' => 'PKG-LY-1GB',
+            'id' => 'esim_1GB_30D_LY_U',
             'name' => 'Libya 1GB 30 Days',
             'price' => 15.00,
             'currency' => 'USD',
@@ -251,9 +267,7 @@ test('esim search redirects to results page with uuid', function () {
     $this->actingAs($state['admin']);
 
     $searchResponse = $this->post($state['baseUrl'].route('esim.search', [], false), [
-        'country' => 'Tunisia',
-        'data_mb' => 512,
-        'validity_days' => 7,
+        'country' => 'TN',
     ]);
 
     $searchResponse->assertRedirect();
@@ -268,9 +282,7 @@ test('esim results page renders with search uuid', function () {
 
     $searchUuid = (string) Str::uuid();
     Cache::put('esim_search_'.$searchUuid, [
-        'country' => 'Tunisia',
-        'data_mb' => 512,
-        'validity_days' => 7,
+        'country' => 'TN',
     ], now()->addMinutes(60));
 
     $this->get($state['baseUrl'].route('esim.results', ['uuid' => $searchUuid], false))
@@ -288,11 +300,11 @@ test('esim checkout page renders with booking uuid and package details', functio
 
     $bookingUuid = (string) Str::uuid();
     Cache::put('esim_booking_'.$bookingUuid, [
-        'search' => ['country' => 'Libya', 'data_mb' => 1024, 'validity_days' => 30],
+        'search' => ['country' => 'LY'],
         'package' => [
-            'id' => 'PKG-LY-1GB',
+            'id' => 'esim_1GB_30D_LY_U',
             'name' => 'Libya 1GB 30 Days',
-            'country' => 'Libya',
+            'country' => 'LY',
             'data_mb' => 1024,
             'validity_days' => 30,
             'price' => 15.00,
@@ -308,7 +320,7 @@ test('esim checkout page renders with booking uuid and package details', functio
         ->assertInertia(fn ($page) => $page
             ->component('Tenant/ESim/Checkout')
             ->where('bookingUuid', $bookingUuid)
-            ->where('package.id', 'PKG-LY-1GB')
+            ->where('package.id', 'esim_1GB_30D_LY_U')
             ->where('package.name', 'Libya 1GB 30 Days')
             ->where('package.price', 15)
         );

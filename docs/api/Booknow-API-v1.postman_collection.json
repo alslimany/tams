@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Booknow API v1",
-    "description": "## Booknow REST API v1 \u2014 Mobile Application\n\n**Base URL**: `{{base_url}}/agency/{{tenant}}/api/v1`  \n**Auth**: Bearer token (set via `{{token}}` variable after Login)  \n**Content-Type**: `application/json`\n\n### Token Abilities\n| Ability | Scope |\n|---------|-------|\n| `read` | Results, seat map, fare rules, orders, reports, wallet |\n| `write` | Search, select, price, book |\n| `issue` | Issue ticket, void/refund, change segment |\n| `report` | Dashboard & reports |\n| `*` | Full access |\n\n### Quick Start\n1. Set `base_url` and `tenant` (e.g. `median`)\n2. Run **Login** \u2014 token is saved to `{{token}}` automatically\n3. Flights: Search \u2192 Results \u2192 Select \u2192 Seat Map \u2192 Price \u2192 Book\n4. For ticket changes use **Change Segment** folder\n\n### Recent Updates\n- Cabin filter: `cabin_class` = `all` | `Y` | `C` | `F`\n- Offers include `baggage`, `airline_logo_url`, `fare_id`, ISO8601 `duration` (`PT4H`, `PT2H10M`)\n- `POST /flights/fare-rules` \u2014 plain-text rules (no line numbers)\n- `POST /flights/seatmap` \u2014 interactive seat map with per-seat pricing\n- `POST /flights/price` \u2014 total with seat fees and ancillaries\n- `POST /flights/book` accepts `extras.seats` for seat assignment\n- `GET /airlines/{code}/logo` and `logo_url` on airlines list\n- Draft booking: `ticketing_mode: draft` then `POST .../tickets/issue`\n- Change segment: search \u2192 results \u2192 quote \u2192 confirm\n\n### Response Format\n```json\n{ \"success\": true|false, \"message\": \"...\", \"data\": {...} }\n```",
+    "description": "## Booknow REST API v1 \u2014 Mobile Application\n\n**Base URL**: `{{base_url}}/agency/{{tenant}}/api/v1`  \n**Auth**: Bearer token (set via `{{token}}` variable after Login)  \n**Content-Type**: `application/json`\n\n### Token Abilities\n| Ability | Scope |\n|---------|-------|\n| `read` | Results, seat map, fare rules, orders, reports, wallet, eSIM catalogue |\n| `write` | Search, select, price, book (flights, hotels, insurance, eSIM) |\n| `issue` | Issue ticket, void/refund, change segment, eSIM refund |\n| `report` | Dashboard & reports |\n| `*` | Full access |\n\n### Quick Start\n1. Set `base_url` and `tenant` (e.g. `median`)\n2. Run **Login** \u2014 token is saved to `{{token}}` automatically\n3. Flights: Search \u2192 Results \u2192 Select \u2192 Seat Map \u2192 Price \u2192 Book\n4. eSIM upsell during flight booking: **Airport Packages** with destination IATA\n5. eSIM standalone: Search \u2192 Packages \u2192 Select \u2192 Book\n6. For ticket changes use **Change Segment** folder\n\n### Recent Updates\n- **eSIM API** \u2014 full catalogue and booking flow\n- `GET /esim/airport/{iata}/packages` \u2014 destination airport bundles for flight-booking upsell\n- `POST /esim/search` \u2192 `GET /esim/results/{uuid}/packages` \u2192 `POST /esim/select` \u2192 `POST /esim/book`\n- `POST /orders/{order}/esim-items/{item}/refund` \u2014 refund issued eSIM (requires `issue`)\n- Orders list filter: `product_type=esim`\n- Cabin filter: `cabin_class` = `all` | `Y` | `C` | `F`\n- Offers include `baggage`, `airline_logo_url`, `fare_id`, ISO8601 `duration` (`PT4H`, `PT2H10M`)\n- `POST /flights/fare-rules` \u2014 plain-text rules (no line numbers)\n- `POST /flights/seatmap` \u2014 interactive seat map with per-seat pricing\n- `POST /flights/price` \u2014 total with seat fees and ancillaries\n- `POST /flights/book` accepts `extras.seats` for seat assignment\n- Draft booking: `ticketing_mode: draft` then `POST .../tickets/issue`\n- Change segment: search \u2192 results \u2192 quote \u2192 confirm\n\n### Response Format\n```json\n{ \"success\": true|false, \"message\": \"...\", \"data\": {...} }\n```",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "auth": {
@@ -53,6 +53,23 @@
     {
       "key": "flight_grand_total",
       "value": ""
+    },
+    {
+      "key": "destination_iata",
+      "value": "TUN",
+      "description": "Destination airport IATA for eSIM upsell during flight booking"
+    },
+    {
+      "key": "esim_search_uuid",
+      "value": ""
+    },
+    {
+      "key": "esim_booking_uuid",
+      "value": ""
+    },
+    {
+      "key": "esim_package_id",
+      "value": "esim_1GB_30D_TN_U"
     }
   ],
   "item": [
@@ -1743,6 +1760,394 @@
       ]
     },
     {
+      "name": "\ud83d\udcf1 eSIM",
+      "description": "eSIM catalogue and booking.\n\n**Flight upsell flow** (during flight booking): pass the destination airport IATA to **Airport Packages** \u2192 show bundles \u2192 if user picks one, run **Search** \u2192 **Select** \u2192 **Book**.\n\n**Standalone flow**: **List Countries** \u2192 **Search** \u2192 **Packages** \u2192 **Select** \u2192 **Book**\n\n**Abilities**: `read` for catalogue/airport packages; `write` for search/select/book; `issue` for refund.\n\nSearch and booking sessions expire after 60 minutes. Airport packages are cached ~30 minutes per country.",
+      "item": [
+        {
+          "name": "Airport Packages \u2014 Flight Upsell",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var json = pm.response.json();",
+                  "if (json.success && json.data && json.data.packages && json.data.packages[0]) {",
+                  "    pm.collectionVariables.set('esim_package_id', json.data.packages[0].id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/agency/{{tenant}}/api/v1/esim/airport/{{destination_iata}}/packages",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "agency",
+                "{{tenant}}",
+                "api",
+                "v1",
+                "esim",
+                "airport",
+                "{{destination_iata}}",
+                "packages"
+              ]
+            },
+            "description": "Get eSIM bundles for a **destination airport IATA** code. Use this during flight booking to upsell eSIMs to the traveller.\n\nSet `{{destination_iata}}` from the selected flight's arrival airport (e.g. `TUN`, `IST`).\n\nThe airport is resolved to a country ISO2 code, then packages are returned from the eSIM provider catalogue.\n\nRequires `read` ability."
+          },
+          "response": [
+            {
+              "name": "200",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"success\": true,\n  \"message\": \"Success.\",\n  \"data\": {\n    \"airport\": {\n      \"iata\": \"TUN\",\n      \"name\": \"Tunis Carthage International Airport\",\n      \"city\": \"Tunis\",\n      \"country_iso\": \"TN\",\n      \"country\": {\n        \"alpha2\": \"TN\",\n        \"name_en\": \"Tunisia\"\n      }\n    },\n    \"packages\": [\n      {\n        \"id\": \"esim_1GB_30D_TN_U\",\n        \"name\": \"Tunisia 1GB 30 Days\",\n        \"price\": 12.5,\n        \"currency\": \"USD\",\n        \"data_amount\": \"1GB\",\n        \"duration_days\": 30,\n        \"speed\": [\"4G\"],\n        \"unlimited\": false,\n        \"countries\": [{ \"iso\": \"TN\", \"name\": \"Tunisia\" }]\n      }\n    ]\n  }\n}"
+            },
+            {
+              "name": "404 \u2014 Airport Not Found",
+              "status": "Not Found",
+              "code": 404,
+              "body": "{\n  \"success\": false,\n  \"message\": \"Airport not found.\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "List Countries",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/agency/{{tenant}}/api/v1/esim/countries",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "agency",
+                "{{tenant}}",
+                "api",
+                "v1",
+                "esim",
+                "countries"
+              ]
+            },
+            "description": "List all countries available for eSIM purchase, plus featured countries for homepage/upsell UI.\n\nRequires `read` ability."
+          },
+          "response": [
+            {
+              "name": "200",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"countries\": [\n      {\n        \"alpha2\": \"TN\",\n        \"name_en\": \"Tunisia\",\n        \"name_ar\": \"\u062a\u0648\u0646\u0633\",\n        \"name_fr\": \"Tunisie\",\n        \"esim_featured\": true\n      }\n    ],\n    \"featured_countries\": [\n      { \"alpha2\": \"TN\", \"name_en\": \"Tunisia\", \"name_ar\": \"\u062a\u0648\u0646\u0633\", \"name_fr\": \"Tunisie\" }\n    ]\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "1. Search \u2014 Start Country Search",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var json = pm.response.json();",
+                  "if (json.success && json.data && json.data.uuid) {",
+                  "    pm.collectionVariables.set('esim_search_uuid', json.data.uuid);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"country\": \"TN\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/agency/{{tenant}}/api/v1/esim/search",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "agency",
+                "{{tenant}}",
+                "api",
+                "v1",
+                "esim",
+                "search"
+              ]
+            },
+            "description": "Start an eSIM catalogue search for a destination country.\n\n**country**: ISO 3166-1 alpha-2 code (e.g. `TN`, `LY`, `TR`).\n\nReturns a `uuid` valid for 60 minutes. Use with **2. Packages** and **3. Networks**.\n\nDuring flight upsell, derive the country from the destination airport or use **Airport Packages** directly.\n\nRequires `write` ability."
+          },
+          "response": [
+            {
+              "name": "200",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"success\": true,\n  \"message\": \"eSIM search started.\",\n  \"data\": {\n    \"uuid\": \"550e8400-e29b-41d4-a716-446655440000\",\n    \"country\": \"TN\",\n    \"expires_in_minutes\": 60\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "2. Packages \u2014 Search Results",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var json = pm.response.json();",
+                  "if (json.success && json.data && json.data.packages && json.data.packages[0]) {",
+                  "    pm.collectionVariables.set('esim_package_id', json.data.packages[0].id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/agency/{{tenant}}/api/v1/esim/results/{{esim_search_uuid}}/packages",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "agency",
+                "{{tenant}}",
+                "api",
+                "v1",
+                "esim",
+                "results",
+                "{{esim_search_uuid}}",
+                "packages"
+              ]
+            },
+            "description": "Fetch eSIM packages for a cached search session.\n\nUse `package.id` from the response in **4. Select Package**.\n\nReturns `410` if the search session expired.\n\nRequires `read` ability."
+          },
+          "response": [
+            {
+              "name": "200",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"packages\": [\n      {\n        \"id\": \"esim_1GB_30D_TN_U\",\n        \"name\": \"Tunisia 1GB 30 Days\",\n        \"price\": 12.5,\n        \"currency\": \"USD\",\n        \"data_amount\": \"1GB\",\n        \"duration_days\": 30,\n        \"speed\": [\"4G\"],\n        \"unlimited\": false\n      }\n    ]\n  }\n}"
+            },
+            {
+              "name": "410 \u2014 Search Expired",
+              "status": "Gone",
+              "code": 410,
+              "body": "{\n  \"success\": false,\n  \"message\": \"eSIM search expired. Please search again.\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "3. Networks \u2014 Carrier Coverage",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/agency/{{tenant}}/api/v1/esim/results/{{esim_search_uuid}}/networks",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "agency",
+                "{{tenant}}",
+                "api",
+                "v1",
+                "esim",
+                "results",
+                "{{esim_search_uuid}}",
+                "networks"
+              ]
+            },
+            "description": "Fetch carrier network coverage for a cached search session.\n\nRequires `read` ability."
+          },
+          "response": [
+            {
+              "name": "200",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"networks\": [\n      { \"name\": \"Ooredoo Tunisia\", \"brandName\": \"Ooredoo\", \"speed\": [\"4G\"] }\n    ]\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "4. Select Package",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var json = pm.response.json();",
+                  "if (json.success && json.data && json.data.booking_uuid) {",
+                  "    pm.collectionVariables.set('esim_booking_uuid', json.data.booking_uuid);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"search_uuid\": \"{{esim_search_uuid}}\",\n  \"package_id\": \"{{esim_package_id}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/agency/{{tenant}}/api/v1/esim/select",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "agency",
+                "{{tenant}}",
+                "api",
+                "v1",
+                "esim",
+                "select"
+              ]
+            },
+            "description": "Select a package from a search session. Returns a `booking_uuid` valid for 60 minutes.\n\n**search_uuid**: from **1. Search**  \n**package_id**: from **2. Packages** or **Airport Packages**\n\nRequires `write` ability."
+          },
+          "response": [
+            {
+              "name": "200",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"success\": true,\n  \"message\": \"eSIM package selected. Proceed to book with customer details.\",\n  \"data\": {\n    \"booking_uuid\": \"660e8400-e29b-41d4-a716-446655440001\",\n    \"package\": { \"id\": \"esim_1GB_30D_TN_U\", \"name\": \"Tunisia 1GB 30 Days\", \"price\": 12.5, \"currency\": \"USD\" },\n    \"search\": { \"country\": \"TN\" },\n    \"expires_in_minutes\": 60\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "5. Book \u2014 Purchase eSIM",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var json = pm.response.json();",
+                  "if (json.success && json.data && json.data.order) {",
+                  "    pm.collectionVariables.set('order_id', json.data.order.id);",
+                  "    pm.collectionVariables.set('booking_id', json.data.order.id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"booking_uuid\": \"{{esim_booking_uuid}}\",\n  \"customer\": {\n    \"name\": \"Ahmed Ali\",\n    \"email\": \"ahmed@example.com\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/agency/{{tenant}}/api/v1/esim/book",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "agency",
+                "{{tenant}}",
+                "api",
+                "v1",
+                "esim",
+                "book"
+              ]
+            },
+            "description": "Purchase the selected eSIM and create an issued order.\n\nMust call **4. Select Package** first. Charges the tenant eSIM provider wallet.\n\n**customer.name** and **customer.email** are required \u2014 the eSIM activation details are delivered to this email.\n\nRequires `write` ability."
+          },
+          "response": [
+            {
+              "name": "201 \u2014 Purchased",
+              "status": "Created",
+              "code": 201,
+              "body": "{\n  \"success\": true,\n  \"message\": \"eSIM purchased successfully.\",\n  \"data\": {\n    \"order\": {\n      \"id\": \"01jx...\",\n      \"number\": \"ORD-2026-0042\",\n      \"status\": \"issued\",\n      \"grand_total\": 12.5,\n      \"currency\": \"USD\"\n    },\n    \"esim\": {\n      \"iccid\": \"8988247000100000999\",\n      \"activation_code\": \"MATCH-API-001\",\n      \"lpa_string\": \"LPA:1$smdp.example.com$MATCH-API-001\",\n      \"qr_code_url\": null,\n      \"status\": \"issued\",\n      \"provider_order_id\": \"L2-API-001\"\n    },\n    \"package\": { \"name\": \"Tunisia 1GB 30 Days\", \"country\": \"TN\" }\n  }\n}"
+            },
+            {
+              "name": "422 \u2014 Insufficient Balance",
+              "status": "Unprocessable Entity",
+              "code": 422,
+              "body": "{\n  \"success\": false,\n  \"message\": \"Insufficient provider balance. Required: $12.5 USD, available: $0 USD.\"\n}"
+            },
+            {
+              "name": "410 \u2014 Booking Expired",
+              "status": "Gone",
+              "code": 410,
+              "body": "{\n  \"success\": false,\n  \"message\": \"Selected eSIM package expired. Please search again.\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "6. Refund eSIM",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            },
+            "url": {
+              "raw": "{{base_url}}/agency/{{tenant}}/api/v1/orders/{{order_id}}/esim-items/{{item_id}}/refund",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "agency",
+                "{{tenant}}",
+                "api",
+                "v1",
+                "orders",
+                "{{order_id}}",
+                "esim-items",
+                "{{item_id}}",
+                "refund"
+              ]
+            },
+            "description": "Refund an **issued** eSIM order item. Deletes the eSIM from the provider and credits the provider wallet.\n\nSet `order_id` and `item_id` from **5. Book** response or **Order Detail**.\n\nOnly items with status `issued` can be refunded.\n\nRequires `issue` ability."
+          },
+          "response": [
+            {
+              "name": "200 \u2014 Refunded",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"success\": true,\n  \"message\": \"eSIM refunded successfully.\",\n  \"data\": {\n    \"order_id\": \"01jx...\",\n    \"item_id\": \"01jy...\",\n    \"iccid\": \"8988247000100000999\",\n    \"status\": \"refunded\"\n  }\n}"
+            },
+            {
+              "name": "422 \u2014 Not Issued",
+              "status": "Unprocessable Entity",
+              "code": 422,
+              "body": "{\n  \"success\": false,\n  \"message\": \"Only issued eSIMs can be refunded.\"\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
       "name": "\ud83d\udce6 Orders",
       "item": [
         {
@@ -1789,7 +2194,7 @@
                 {
                   "key": "product_type",
                   "value": "flight",
-                  "description": "flight | insurance | hotel"
+                  "description": "flight | insurance | hotel | esim"
                 },
                 {
                   "key": "status",

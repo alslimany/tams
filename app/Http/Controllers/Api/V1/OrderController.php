@@ -18,7 +18,7 @@ class OrderController extends Controller
     {
         $validated = $request->validate([
             'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
-            'product_type' => ['nullable', 'string', 'in:flight,insurance,hotel'],
+            'product_type' => ['nullable', 'string', 'in:flight,insurance,hotel,esim'],
             'status' => ['nullable', 'string'],
             'date_from' => ['nullable', 'date'],
             'date_to' => ['nullable', 'date'],
