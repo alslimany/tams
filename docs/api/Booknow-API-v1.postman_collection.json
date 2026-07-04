@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Booknow API v1",
-    "description": "## Booknow REST API v1 \u2014 Mobile Application\n\n**Base URL**: `{{base_url}}/agency/{{tenant}}/api/v1`  \n**Auth**: Bearer token (set via `{{token}}` variable after Login)  \n**Content-Type**: `application/json`\n\n### Token Abilities\n| Ability | Scope |\n|---------|-------|\n| `read` | Results, seat map, fare rules, orders, reports, wallet, eSIM catalogue |\n| `write` | Search, select, price, book (flights, hotels, insurance, eSIM) |\n| `issue` | Issue ticket, void/refund, change segment, eSIM refund |\n| `report` | Dashboard & reports |\n| `*` | Full access |\n\n### Quick Start\n1. Set `base_url` and `tenant` (e.g. `median`)\n2. Run **Login** \u2014 token is saved to `{{token}}` automatically\n3. Flights: Search \u2192 Results \u2192 Select \u2192 Seat Map \u2192 Price \u2192 Book\n4. eSIM upsell during flight booking: **Airport Packages** with destination IATA\n5. eSIM standalone: Search \u2192 Packages \u2192 Select \u2192 Book\n6. For ticket changes use **Change Segment** folder\n\n### Recent Updates\n- **eSIM API** \u2014 full catalogue and booking flow\n- `GET /esim/airport/{iata}/packages` \u2014 destination airport bundles for flight-booking upsell\n- `POST /esim/search` \u2192 `GET /esim/results/{uuid}/packages` \u2192 `POST /esim/select` \u2192 `POST /esim/book`\n- `POST /orders/{order}/esim-items/{item}/refund` \u2014 refund issued eSIM (requires `issue`)\n- Orders list filter: `product_type=esim`\n- Cabin filter: `cabin_class` = `all` | `Y` | `C` | `F`\n- Offers include `baggage`, `airline_logo_url`, `fare_id`, ISO8601 `duration` (`PT4H`, `PT2H10M`)\n- `POST /flights/fare-rules` \u2014 plain-text rules (no line numbers)\n- `POST /flights/seatmap` \u2014 interactive seat map with per-seat pricing\n- `POST /flights/price` \u2014 total with seat fees and ancillaries\n- `POST /flights/book` accepts `extras.seats` for seat assignment\n- Draft booking: `ticketing_mode: draft` then `POST .../tickets/issue`\n- Change segment: search \u2192 results \u2192 quote \u2192 confirm\n\n### Response Format\n```json\n{ \"success\": true|false, \"message\": \"...\", \"data\": {...} }\n```",
+    "description": "## Booknow REST API v1 \u2014 Mobile Application\n\n**Base URL**: `{{base_url}}/agency/{{tenant}}/api/v1`  \n**Auth**: Bearer token (set via `{{token}}` variable after Login)  \n**Content-Type**: `application/json`\n\n### Token Abilities\n| Ability | Scope |\n|---------|-------|\n| `read` | Results, seat map, fare rules, orders, reports, wallet, eSIM catalogue |\n| `write` | Search, select, price, book (flights, hotels, insurance, eSIM) |\n| `issue` | Issue ticket, void/refund, change segment, eSIM refund |\n| `report` | Dashboard & reports |\n| `*` | Full access |\n\n### Quick Start\n1. Set `base_url` and `tenant` (e.g. `median`)\n2. Run **Login** \u2014 token is saved to `{{token}}` automatically\n3. Flights: Search \u2192 Results \u2192 Select \u2192 Seat Map \u2192 Price \u2192 Book\n4. eSIM upsell during flight booking: **Airport Packages** with destination IATA\n5. eSIM standalone: Search \u2192 Packages \u2192 Select \u2192 Book\n6. For ticket changes use **Change Segment** folder\n\n### Recent Updates\n- **eSIM API** \u2014 full catalogue and booking flow\n- `GET /esim/airport/{iata}/packages` \u2014 destination airport bundles for flight-booking upsell\n- `POST /esim/search` \u2192 `GET /esim/results/{uuid}/packages` \u2192 `POST /esim/select` \u2192 `POST /esim/book`\n- `POST /orders/{order}/esim-items/{item}/refund` \u2014 refund issued eSIM (requires `issue`)\n- Orders list filter: `product_type=esim`\n- Cabin filter: `cabin_class` = `all` | `Y` | `C` | `F`\n- Offers include `baggage`, `airline_logo_url`, `fare_id`, ISO8601 `duration` (`PT4H`, `PT2H10M`)\n- `POST /flights/open-reservation-availability` \u2014 check if open reservation (QQ) is allowed for an offer\n- `POST /flights/fare-rules` \u2014 plain-text rules (no line numbers)\n- `POST /flights/seatmap` \u2014 interactive seat map with per-seat pricing\n- `POST /flights/price` \u2014 total with seat fees and ancillaries\n- `POST /flights/book` accepts `extras.seats` for seat assignment\n- Draft booking: `ticketing_mode: draft` then `POST .../tickets/issue`\n- Change segment: search \u2192 results \u2192 quote \u2192 confirm\n\n### Response Format\n```json\n{ \"success\": true|false, \"message\": \"...\", \"data\": {...} }\n```",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "auth": {
@@ -339,7 +339,7 @@
     },
     {
       "name": "\u2708\ufe0f Flights",
-      "description": "Flight search, pricing, and booking flow.\n\n**Book flow**: Search \u2192 Results \u2192 (Fare Rules) \u2192 Select \u2192 Seatmap \u2192 Price \u2192 Book (`ticketing_mode: final` or `draft`)\n\n**Seat flow**: **5b. Seat Map** \u2192 pick seats \u2192 **5c. Price** (with `extras.seats`) \u2192 **6. Book** (same `extras.seats`)\n\n**Draft flow**: Book with `ticketing_mode: draft` \u2192 Issue Ticket\n\n**Change flow**: See **Change Segment** folder",
+      "description": "Flight search, pricing, and booking flow.\n\n**Book flow**: Search \u2192 Results \u2192 (Open Reservation check) \u2192 (Fare Rules) \u2192 Select \u2192 Seatmap \u2192 Price \u2192 Book (`ticketing_mode: final` or `draft`)\n\n**Open reservation**: After **2. Fetch Results**, call **2c. Open Reservation Availability** per offer. If `allowed: true`, pass `reservation_type: QQ` in **5. Select Flight**.\n\n**Seat flow**: **5b. Seat Map** \u2192 pick seats \u2192 **5c. Price** (with `extras.seats`) \u2192 **6. Book** (same `extras.seats`)\n\n**Draft flow**: Book with `ticketing_mode: draft` \u2192 Issue Ticket\n\n**Change flow**: See **Change Segment** folder",
       "item": [
         {
           "name": "1. Search Flights",
@@ -468,6 +468,57 @@
               "status": "OK",
               "code": 200,
               "body": "{\n  \"success\": true,\n  \"data\": {\n    \"fare_id\": \"384\",\n    \"rules\": \"CHANGES: Permitted with penalty...\\nREFUNDS: Non-refundable...\"\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "2c. Open Reservation Availability",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"provider_id\": {{flight_provider_id}},\n  \"flight\": {\n    \"flight_number\": \"YI500\",\n    \"departure_airport\": \"MJI\",\n    \"arrival_airport\": \"IST\",\n    \"departure_time\": \"2026-06-15T10:00:00\",\n    \"arrival_time\": \"2026-06-15T14:00:00\",\n    \"class\": \"Y\",\n    \"pricing\": {\n      \"total\": 450,\n      \"currency\": \"LYD\",\n      \"class_code\": \"Y\",\n      \"cabin_type\": \"Y\"\n    }\n  }\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/agency/{{tenant}}/api/v1/flights/open-reservation-availability",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "agency",
+                "{{tenant}}",
+                "api",
+                "v1",
+                "flights",
+                "open-reservation-availability"
+              ]
+            },
+            "description": "Check whether **open reservation** (Videcom `QQ`) is available for a flight offer before selection.\n\nCall once per offer after **2. Fetch Results**. Pass the full offer object (or at minimum `flight_number`, airports, `departure_time`, and class/`pricing.class_code`).\n\nIf `data.allowed` is `true`, the mobile app may show an \"Open Reservation\" option and pass `reservation_type: \"QQ\"` in **5. Select Flight**.\n\nOptional `provider_selector` for agency-network / default-agency supply routing (same as web UI).\n\nRequires `read` ability."
+          },
+          "response": [
+            {
+              "name": "200 \u2014 Allowed",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"allowed\": true\n  }\n}"
+            },
+            {
+              "name": "200 \u2014 Not Allowed",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"allowed\": false\n  }\n}"
+            },
+            {
+              "name": "404 \u2014 Provider Not Found",
+              "status": "Not Found",
+              "code": 404,
+              "body": "{\n  \"success\": false,\n  \"message\": \"Provider not found.\"\n}"
             }
           ]
         },

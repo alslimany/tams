@@ -12,7 +12,9 @@ use App\Exceptions\InsufficientWalletBalanceException;
 use App\Http\Controllers\Api\Controller;
 use App\Http\Controllers\Concerns\ExtractsPnrLocator;
 use App\Models\Tenant\Order;
+use App\Models\TenantProvider;
 use App\Models\User;
+use App\Services\AgencyNetwork\ProviderSourceResolver;
 use App\Services\Airline\AgencyProviderResolver;
 use App\Services\Airline\CabinClassFilter;
 use App\Services\Airline\FlightBookingPricing;
@@ -38,6 +40,7 @@ class FlightController extends Controller
 
     public function __construct(
         protected AgencyProviderResolver $providerResolver,
+        protected ProviderSourceResolver $providerSourceResolver,
         protected RouteAvailabilityService $routeAvailabilityService,
         protected GlobalFlightCacheSettingsService $globalFlightCacheSettingsService,
         protected OrderNumberGenerator $orderNumberGenerator,
@@ -230,6 +233,46 @@ class FlightController extends Controller
         );
 
         return $this->success($selectedOffer, 'Flight selected. Proceed to book with passengers.');
+    }
+
+    /**
+     * Check whether open reservation (QQ) is available for a flight offer.
+     */
+    public function openReservationAvailability(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'provider_id' => ['required', 'integer'],
+            'provider_selector' => ['nullable', 'string'],
+            'flight' => ['required', 'array'],
+        ]);
+
+        $providerConfig = $this->resolveSelectedProvider(
+            (int) $validated['provider_id'],
+            $validated['provider_selector'] ?? null,
+        );
+
+        if (! $providerConfig) {
+            return $this->error('Provider not found.', 404);
+        }
+
+        try {
+            $provider = ProviderFactory::make($providerConfig);
+            $segment = $this->flightBookingPricing->mapItinerary($validated['flight'], 'QQ')[0] ?? [];
+
+            $allowed = is_object($provider) && is_callable([$provider, 'canBookOpenReservation'])
+                ? (bool) call_user_func([$provider, 'canBookOpenReservation'], $segment)
+                : false;
+
+            return $this->success([
+                'allowed' => $allowed,
+            ]);
+        } catch (Exception $e) {
+            Log::error('API open reservation availability check failed: '.$e->getMessage(), [
+                'provider_id' => $validated['provider_id'],
+            ]);
+
+            return $this->error('Failed to check open reservation availability: '.$e->getMessage(), 422);
+        }
     }
 
     /**
@@ -592,6 +635,19 @@ class FlightController extends Controller
     protected function resolveProvider(int $providerId): mixed
     {
         return $this->providerResolver->getAllActiveProviders()->firstWhere('id', $providerId);
+    }
+
+    protected function resolveSelectedProvider(int $providerId, ?string $providerSelector = null): ?TenantProvider
+    {
+        if (is_string($providerSelector) && $providerSelector !== '') {
+            $resolved = $this->providerSourceResolver->resolve($providerSelector);
+
+            if (($resolved['provider'] ?? null) instanceof TenantProvider) {
+                return $resolved['provider'];
+            }
+        }
+
+        return $this->providerResolver->findProviderById($providerId);
     }
 
     protected function isProviderResponseSuccessful(mixed $response): bool

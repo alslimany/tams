@@ -64,6 +64,7 @@ Route::middleware(['auth:sanctum', 'throttle:api', 'audit.api', 'idempotency'])-
         Route::get('flights/calendar-hints', [BookingController::class, 'calendarHints']);
         Route::post('flights/fare-rules', [FlightController::class, 'fareRules']);
         Route::post('flights/seatmap', [FlightController::class, 'seatmap']);
+        Route::post('flights/open-reservation-availability', [FlightController::class, 'openReservationAvailability']);
 
         // Hotel reference
         Route::get('hotels/autocomplete', [HotelController::class, 'autocomplete']);
