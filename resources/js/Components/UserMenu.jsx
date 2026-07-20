@@ -18,11 +18,20 @@ import {
     LogOut,
     Package,
     Globe,
+    Check,
 } from 'lucide-react';
+
+import { switchLocale } from '@/lib/i18n';
+
+const languages = [
+    { code: 'en', label: 'English' },
+    { code: 'ar', label: 'العربية' },
+    { code: 'fr', label: 'Français' },
+];
 
 export default function UserMenu() {
     const { props } = usePage();
-    const { t } = useTranslation();
+    const { t, locale } = useTranslation();
     const user = props.auth?.user;
     const landlordUser = props.auth?.landlordUser;
 
@@ -33,9 +42,12 @@ export default function UserMenu() {
         router.post(route('logout'));
     };
 
-    const handleLanguageSwitch = (locale) => {
-        // Use GET request with query parameter - no CSRF issues
-        window.location.href = route('language.switch') + '?locale=' + locale;
+    const handleLanguageSwitch = (nextLocale) => {
+        if (nextLocale === locale) {
+            return;
+        }
+
+        switchLocale(nextLocale);
     };
 
     const getUserInitials = (user) => {
@@ -105,27 +117,21 @@ export default function UserMenu() {
                     <DropdownMenuLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
                         {t('common.language')}
                     </DropdownMenuLabel>
-                    <DropdownMenuItem
-                        onClick={() => handleLanguageSwitch('en')}
-                        className="cursor-pointer"
-                    >
-                        <Globe className="mr-2 h-4 w-4" />
-                        <span>English</span>
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                        onClick={() => handleLanguageSwitch('ar')}
-                        className="cursor-pointer"
-                    >
-                        <Globe className="mr-2 h-4 w-4" />
-                        <span>العربية</span>
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                        onClick={() => handleLanguageSwitch('fr')}
-                        className="cursor-pointer"
-                    >
-                        <Globe className="mr-2 h-4 w-4" />
-                        <span>Français</span>
-                    </DropdownMenuItem>
+                    {languages.map((language) => (
+                        <DropdownMenuItem
+                            key={language.code}
+                            onClick={() => handleLanguageSwitch(language.code)}
+                            className="cursor-pointer justify-between"
+                        >
+                            <span className="flex items-center">
+                                <Globe className="mr-2 h-4 w-4" />
+                                <span>{language.label}</span>
+                            </span>
+                            {locale === language.code && (
+                                <Check className="h-4 w-4 text-primary" aria-hidden="true" />
+                            )}
+                        </DropdownMenuItem>
+                    ))}
                 </DropdownMenuGroup>
 
                 <DropdownMenuSeparator />

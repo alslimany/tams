@@ -47,6 +47,7 @@ class ESimConfigController extends Controller
                     'api_key' => (string) data_get($configured?->credentials ?? [], 'api_key', ''),
                     'client_secret' => (string) data_get($configured?->credentials ?? [], 'client_secret', ''),
                     'commission_esim' => (float) ($configured?->commission_esim ?? 0),
+                    'usd_to_lyd_rate' => $configured?->usdToLydRate(),
                     'currency' => $currency,
                     'remaining_balance' => round((float) ($configured?->getBalance($currency) ?? 0), 2),
                     'requires_initial_balance' => $configured !== null && (float) $configured->getBalance($currency) <= 0,
@@ -71,6 +72,7 @@ class ESimConfigController extends Controller
             'client_secret' => ['required', 'string', 'max:4000'],
             'is_active' => ['required', 'boolean'],
             'commission_esim' => ['required', 'numeric', 'min:0', 'max:100'],
+            'usd_to_lyd_rate' => ['nullable', 'numeric', 'gt:0', 'max:999999.9999'],
             'initial_balance' => ['nullable', 'numeric', 'min:0'],
         ]);
 
@@ -95,6 +97,7 @@ class ESimConfigController extends Controller
                     'client_secret' => $validated['client_secret'],
                 ],
                 'commission_esim' => $validated['commission_esim'],
+                'usd_to_lyd_rate' => $validated['usd_to_lyd_rate'] ?? null,
             ]
         );
 

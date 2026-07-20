@@ -21,7 +21,7 @@ class ProviderWalletController extends Controller
                 $currency = $wallet->meta['currency'] ?? 'LYD';
 
                 $todayCount = Transaction::where('wallet_id', $wallet->id)
-                    ->whereDate('confirmed_at', Carbon::today())
+                    ->whereDate('created_at', Carbon::today())
                     ->count();
 
                 return [
@@ -56,13 +56,13 @@ class ProviderWalletController extends Controller
             $currency = $wallet->meta['currency'] ?? 'LYD';
 
             // Transactions (paginated per wallet)
-            $query = Transaction::where('wallet_id', $wallet->id)->latest('confirmed_at');
+            $query = Transaction::where('wallet_id', $wallet->id)->latest('created_at');
 
             if ($request->filled('from')) {
-                $query->whereDate('confirmed_at', '>=', $request->string('from'));
+                $query->whereDate('created_at', '>=', $request->string('from'));
             }
             if ($request->filled('to')) {
-                $query->whereDate('confirmed_at', '<=', $request->string('to'));
+                $query->whereDate('created_at', '<=', $request->string('to'));
             }
 
             $transactions = $query->paginate(25)->through(function (Transaction $tx) use ($wallet) {
@@ -74,7 +74,7 @@ class ProviderWalletController extends Controller
                     'type' => $tx->type,
                     'amount' => abs((float) $tx->amount / (10 ** $wallet->decimal_places)),
                     'meta' => $meta,
-                    'confirmedAt' => $tx->confirmed_at?->toIso8601String(),
+                    'confirmedAt' => $tx->created_at->toIso8601String(),
                     'createdAt' => $tx->created_at->toIso8601String(),
                     'journalEntryReference' => $meta['journal_entry_id'] ?? null,
                     'orderReference' => $meta['order_id'] ?? null,
@@ -85,7 +85,7 @@ class ProviderWalletController extends Controller
             $balanceHistory = collect(range(29, 0))->map(function (int $daysAgo) use ($wallet) {
                 $date = Carbon::now()->subDays($daysAgo)->toDateString();
                 $sum = Transaction::where('wallet_id', $wallet->id)
-                    ->whereDate('confirmed_at', '<=', $date)
+                    ->whereDate('created_at', '<=', $date)
                     ->sum('amount');
 
                 return [

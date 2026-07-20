@@ -1,4 +1,5 @@
 import React from 'react';
+import { createPortal } from 'react-dom';
 import { CheckIcon, ChevronDownIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -32,10 +33,11 @@ export default function AccountCombobox({
     );
 
     const [query, setQuery] = React.useState('');
-    const [dropdownStyle, setDropdownStyle] = React.useState({});
+    const [dropdownStyle, setDropdownStyle] = React.useState(null);
     const [highlightedIndex, setHighlightedIndex] = React.useState(-1);
     const inputRef = React.useRef(null);
     const containerRef = React.useRef(null);
+    const dropdownRef = React.useRef(null);
     const listRef = React.useRef(null);
 
     const selectedAccount = React.useMemo(
@@ -98,6 +100,7 @@ export default function AccountCombobox({
         setOpen(false);
         setQuery('');
         setHighlightedIndex(-1);
+        setDropdownStyle(null);
     }, [setOpen]);
 
     const selectAccount = React.useCallback(
@@ -109,20 +112,33 @@ export default function AccountCombobox({
     );
 
     React.useEffect(() => {
-        const handleClickOutside = (event) => {
-            if (
-                containerRef.current &&
-                !containerRef.current.contains(event.target) &&
-                !listRef.current?.contains(event.target)
-            ) {
-                closeDropdown();
-            }
-        };
-        document.addEventListener('mousedown', handleClickOutside);
-        return () => document.removeEventListener('mousedown', handleClickOutside);
-    }, [closeDropdown]);
+        if (!open) {
+            return;
+        }
 
-    React.useEffect(() => {
+        const handlePointerDownOutside = (event) => {
+            const target = event.target;
+            if (!(target instanceof Node)) {
+                return;
+            }
+
+            if (containerRef.current?.contains(target)) {
+                return;
+            }
+
+            if (dropdownRef.current?.contains(target)) {
+                return;
+            }
+
+            closeDropdown();
+        };
+
+        document.addEventListener('pointerdown', handlePointerDownOutside, true);
+
+        return () => document.removeEventListener('pointerdown', handlePointerDownOutside, true);
+    }, [open, closeDropdown]);
+
+    React.useLayoutEffect(() => {
         if (!open) {
             return;
         }
@@ -191,6 +207,69 @@ export default function AccountCombobox({
         }
     };
 
+    const stopDropdownPointerEvent = (event) => {
+        event.stopPropagation();
+    };
+
+    const dropdown =
+        open && dropdownStyle ? (
+            <div
+                ref={dropdownRef}
+                data-account-combobox-dropdown=""
+                style={dropdownStyle}
+                className="pointer-events-auto"
+                onPointerDown={stopDropdownPointerEvent}
+                onMouseDown={stopDropdownPointerEvent}
+                onWheel={stopDropdownPointerEvent}
+            >
+                <ul
+                    ref={listRef}
+                    id={id ? `${id}-listbox` : undefined}
+                    role="listbox"
+                    className="max-h-60 overflow-y-auto overscroll-contain rounded-md border bg-popover p-1 text-popover-foreground shadow-md"
+                >
+                    {filtered.length === 0 ? (
+                        <li className="px-3 py-6 text-center text-xs text-muted-foreground">
+                            No accounts found.
+                        </li>
+                    ) : (
+                        filtered.map((account, index) => {
+                            const isSelected = value === account.code;
+                            const isHighlighted = index === highlightedIndex;
+
+                            return (
+                                <li
+                                    key={account.code}
+                                    role="option"
+                                    aria-selected={isSelected}
+                                    className={cn(
+                                        'flex cursor-pointer items-center justify-between gap-2 rounded-sm px-2 py-2 text-sm',
+                                        isHighlighted
+                                            ? 'bg-accent text-accent-foreground'
+                                            : 'hover:bg-accent hover:text-accent-foreground',
+                                    )}
+                                    onMouseEnter={() => setHighlightedIndex(index)}
+                                    onMouseDown={(event) => {
+                                        event.preventDefault();
+                                        event.stopPropagation();
+                                        selectAccount(account);
+                                    }}
+                                >
+                                    <span className="min-w-0 truncate">
+                                        <span className="mr-2 font-mono text-xs text-muted-foreground">
+                                            {account.code}
+                                        </span>
+                                        {account.name}
+                                    </span>
+                                    {isSelected && <CheckIcon className="size-4 shrink-0" />}
+                                </li>
+                            );
+                        })
+                    )}
+                </ul>
+            </div>
+        ) : null;
+
     return (
         <div ref={containerRef} className={cn('relative', className)}>
             <div className="relative">
@@ -220,53 +299,9 @@ export default function AccountCombobox({
                 <ChevronDownIcon className="pointer-events-none absolute top-2.5 right-2.5 size-4 text-muted-foreground" />
             </div>
 
-            {open && (
-                <ul
-                    ref={listRef}
-                    id={id ? `${id}-listbox` : undefined}
-                    role="listbox"
-                    style={dropdownStyle}
-                    className="max-h-60 overflow-y-auto rounded-md border bg-popover p-1 text-popover-foreground shadow-md"
-                >
-                    {filtered.length === 0 ? (
-                        <li className="px-3 py-6 text-center text-xs text-muted-foreground">
-                            No accounts found.
-                        </li>
-                    ) : (
-                        filtered.map((account, index) => {
-                            const isSelected = value === account.code;
-                            const isHighlighted = index === highlightedIndex;
-
-                            return (
-                                <li
-                                    key={account.code}
-                                    role="option"
-                                    aria-selected={isSelected}
-                                    className={cn(
-                                        'flex cursor-pointer items-center justify-between gap-2 rounded-sm px-2 py-2 text-sm',
-                                        isHighlighted
-                                            ? 'bg-accent text-accent-foreground'
-                                            : 'hover:bg-accent hover:text-accent-foreground',
-                                    )}
-                                    onMouseDown={(event) => event.preventDefault()}
-                                    onMouseEnter={() => setHighlightedIndex(index)}
-                                    onClick={() => selectAccount(account)}
-                                >
-                                    <span className="min-w-0 truncate">
-                                        <span className="mr-2 font-mono text-xs text-muted-foreground">
-                                            {account.code}
-                                        </span>
-                                        {account.name}
-                                    </span>
-                                    {isSelected && (
-                                        <CheckIcon className="size-4 shrink-0" />
-                                    )}
-                                </li>
-                            );
-                        })
-                    )}
-                </ul>
-            )}
+            {typeof document !== 'undefined' && dropdown
+                ? createPortal(dropdown, document.body)
+                : null}
         </div>
     );
 }

@@ -86,7 +86,7 @@ class InitializeTenantLedger
             ['code' => '2300', 'credit' => true, 'name' => 'Commission Payable'],
             ['code' => '3100', 'credit' => true, 'name' => 'Revenue - Flights'],
             ['code' => '3190', 'credit' => true, 'name' => 'Revenue - Other'],
-            ['code' => '6100', 'debit' => true, 'name' => 'Commission Expense'],
+            ['code' => '7500', 'debit' => true, 'name' => 'Commission Expense'],
         ]);
     }
 

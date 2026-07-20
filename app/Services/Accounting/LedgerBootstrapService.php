@@ -17,6 +17,10 @@ use RuntimeException;
 
 class LedgerBootstrapService
 {
+    public function __construct(
+        private readonly CoaSettingsSyncService $coaSettingsSync,
+    ) {}
+
     /**
      * Bootstrap the Chart of Accounts for the given tenant.
      *
@@ -58,7 +62,10 @@ class LedgerBootstrapService
             if (LedgerAccount::hasRoot()) {
                 $this->createJournals($journalsData);
 
-                return $this->addMissingAccounts($templateData);
+                $result = $this->addMissingAccounts($templateData);
+                $this->coaSettingsSync->syncFromLedger(markSystem: true);
+
+                return $result;
             }
 
             $templateData['transDate'] = Carbon::now()->toDateTimeString();
@@ -70,6 +77,8 @@ class LedgerBootstrapService
             // has a bug accessing SubJournal objects as arrays when journals are included
             // in the Create message).
             $this->createJournals($journalsData);
+
+            $this->coaSettingsSync->syncFromLedger(markSystem: true);
 
             $accountCount = count($templateData['accounts'] ?? []);
 

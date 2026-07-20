@@ -28,7 +28,7 @@ class WalletLedgerController extends Controller
             };
 
             $lastTx = Transaction::where('wallet_id', $wallet->id)
-                ->latest('confirmed_at')
+                ->latest('created_at')
                 ->first();
 
             return [
@@ -39,7 +39,7 @@ class WalletLedgerController extends Controller
                 'balance' => (float) $wallet->balance / (10 ** $wallet->decimal_places),
                 'currency' => 'LYD',
                 'ledgerAccount' => $ledgerAccount,
-                'lastActivityAt' => $lastTx?->confirmed_at?->toIso8601String(),
+                'lastActivityAt' => $lastTx?->created_at?->toIso8601String(),
                 'transactionCount' => Transaction::where('wallet_id', $wallet->id)->count(),
             ];
         })->sortBy(fn ($w) => match ($w['type']) {
@@ -69,16 +69,16 @@ class WalletLedgerController extends Controller
 
         // Transactions (paginated)
         $query = Transaction::where('wallet_id', $wallet->id)
-            ->latest('confirmed_at');
+            ->latest('created_at');
 
         if ($request->filled('type')) {
             $query->where('type', $request->string('type'));
         }
         if ($request->filled('from')) {
-            $query->whereDate('confirmed_at', '>=', $request->string('from'));
+            $query->whereDate('created_at', '>=', $request->string('from'));
         }
         if ($request->filled('to')) {
-            $query->whereDate('confirmed_at', '<=', $request->string('to'));
+            $query->whereDate('created_at', '<=', $request->string('to'));
         }
 
         $paginated = $query->paginate(25)->through(function (Transaction $tx) use ($wallet) {
@@ -91,7 +91,7 @@ class WalletLedgerController extends Controller
                 'type' => $tx->type,
                 'amount' => abs($amount),
                 'meta' => $meta,
-                'confirmedAt' => $tx->confirmed_at?->toIso8601String(),
+                'confirmedAt' => $tx->created_at->toIso8601String(),
                 'createdAt' => $tx->created_at->toIso8601String(),
                 'journalEntryReference' => $meta['journal_entry_id'] ?? null,
                 'orderReference' => $meta['order_id'] ?? null,
@@ -102,7 +102,7 @@ class WalletLedgerController extends Controller
         $balanceHistory = collect(range(29, 0))->map(function (int $daysAgo) use ($wallet) {
             $date = Carbon::now()->subDays($daysAgo)->toDateString();
             $balance = Transaction::where('wallet_id', $wallet->id)
-                ->whereDate('confirmed_at', '<=', $date)
+                ->whereDate('created_at', '<=', $date)
                 ->sum('amount');
 
             return [

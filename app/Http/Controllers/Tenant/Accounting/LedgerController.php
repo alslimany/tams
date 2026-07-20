@@ -13,6 +13,9 @@ use Abivia\Ledger\Models\LedgerAccount;
 use Abivia\Ledger\Models\SubJournal;
 use App\Http\Controllers\Controller;
 use App\Models\Tenant\ChartOfAccount;
+use App\Models\Tenant\CoaSetting;
+use App\Services\Accounting\AccountNumberingService;
+use App\Services\Accounting\CoaAccountLifecycleService;
 use App\Services\Accounting\JournalEntryAttachmentService;
 use App\Services\Accounting\LedgerQueryService;
 use App\Services\Accounting\Reports\TrialBalanceReport;
@@ -39,21 +42,24 @@ class LedgerController extends Controller
         '3' => 'equity',
         '4' => 'revenue',
         '5' => 'expense',
-        '6' => 'expense',
-        '7' => 'asset',
+        '6' => 'purchase',
+        '7' => 'expense',
+        '8' => 'asset',
     ];
 
     /**
-     * Account types that increase with a debit (assets, expenses).
+     * Account types that increase with a debit (assets, expenses, purchases).
      *
      * @var list<string>
      */
-    private const DEBIT_TYPES = ['asset', 'expense'];
+    private const DEBIT_TYPES = ['asset', 'expense', 'purchase'];
 
     public function __construct(
         private readonly LedgerQueryService $query,
         private readonly TrialBalanceReport $trialBalance,
         private readonly JournalEntryAttachmentService $attachments,
+        private readonly AccountNumberingService $numbering,
+        private readonly CoaAccountLifecycleService $coaLifecycle,
     ) {}
 
     // ─── Journal Entries ───────────────────────────────────────────────────
@@ -82,7 +88,12 @@ class LedgerController extends Controller
             $search = $request->string('search');
             $query->where(function ($q) use ($search) {
                 $q->where('description', 'like', "%{$search}%")
-                    ->orWhere('journalReferenceUuid', 'like', "%{$search}%");
+                    ->orWhere('journalReferenceUuid', 'like', "%{$search}%")
+                    ->orWhere(function ($q) use ($search) {
+                        $q->whereNotNull('extra')
+                            ->where('extra', 'like', '%"reference_number"%')
+                            ->where('extra', 'like', "%{$search}%");
+                    });
             });
         }
 
@@ -94,11 +105,14 @@ class LedgerController extends Controller
             return $this->formatJournalEntry($entry, $subJournalMap);
         });
 
+        $inactiveCodes = CoaSetting::query()->where('is_active', false)->pluck('code')->flip();
+
         $accounts = LedgerAccount::with('names')
             ->where('category', false)
             ->where('code', '!=', '')
             ->orderBy('code')
             ->get()
+            ->reject(fn (LedgerAccount $account) => isset($inactiveCodes[$account->code]))
             ->map(function (LedgerAccount $account) {
                 return [
                     'code' => $account->code,
@@ -111,6 +125,10 @@ class LedgerController extends Controller
         return Inertia::render('Accounting/Ledger/JournalEntries', [
             'entries' => $paginated,
             'filters' => $request->only(['dateFrom', 'dateTo', 'search']),
+            'period' => [
+                'from' => $request->string('dateFrom')->toString() ?: null,
+                'to' => $request->string('dateTo')->toString() ?: null,
+            ],
             'journalOptions' => $journalOptions,
             'accounts' => $accounts,
         ]);
@@ -129,6 +147,7 @@ class LedgerController extends Controller
         $validated = $request->validate([
             'transDate' => ['required', 'date'],
             'description' => ['required', 'string', 'max:500'],
+            'referenceNumber' => ['nullable', 'string', 'max:100'],
             'journal' => ['required', 'string', 'in:GEN,AIR,HTL,INS,ESM,STL'],
             'lines' => ['required', 'array', 'min:2'],
             'lines.*.accountCode' => ['required', 'string', 'exists:ledger_accounts,code'],
@@ -152,7 +171,10 @@ class LedgerController extends Controller
                 'journal' => $validated['journal'],
                 'description' => $validated['description'],
                 'transDate' => Carbon::parse($validated['transDate'])->toDateTimeString(),
-                'extra' => json_encode(['source' => 'manual'], JSON_THROW_ON_ERROR),
+                'extra' => json_encode(
+                    $this->buildManualExtra($validated['referenceNumber'] ?? null),
+                    JSON_THROW_ON_ERROR,
+                ),
                 'details' => collect($validated['lines'])->map(fn (array $line): array => [
                     'code' => $line['accountCode'],
                     'debit' => ! empty($line['debit']) ? (string) $line['debit'] : null,
@@ -191,6 +213,7 @@ class LedgerController extends Controller
         $validated = $request->validate([
             'transDate' => ['required', 'date'],
             'description' => ['required', 'string', 'max:500'],
+            'referenceNumber' => ['nullable', 'string', 'max:100'],
             'lines' => ['required', 'array', 'min:2'],
             'lines.*.accountCode' => ['required', 'string', 'exists:ledger_accounts,code'],
             'lines.*.debit' => ['nullable', 'numeric', 'min:0'],
@@ -210,7 +233,11 @@ class LedgerController extends Controller
             $this->attachments->remove($entry);
         }
 
-        $extra = $this->manualExtraForUpdate($entry, $request->boolean('remove_attachment'));
+        $extra = $this->manualExtraForUpdate(
+            $entry,
+            $request->boolean('remove_attachment'),
+            $validated['referenceNumber'] ?? null,
+        );
 
         $originalDateClass = get_class(Date::now());
         Date::use(Carbon::class);
@@ -305,11 +332,14 @@ class LedgerController extends Controller
 
     public function trialBalance(Request $request): Response
     {
-        $asOf = $request->filled('asOf')
-            ? Carbon::parse($request->string('asOf'))
-            : Carbon::now();
+        $from = $request->string('dateFrom', Carbon::now()->startOfMonth()->toDateString())->toString();
+        $to = $request->string('dateTo', Carbon::now()->endOfMonth()->toDateString())->toString();
 
-        $rows = $this->trialBalance->generate($asOf);
+        if ($from > $to) {
+            [$from, $to] = [$to, $from];
+        }
+
+        $rows = $this->trialBalance->generate($to);
 
         $mapped = $rows->map(function ($row) {
             $typeKey = substr((string) $row['code'], 0, 1);
@@ -328,7 +358,8 @@ class LedgerController extends Controller
         $totalCredit = round(collect($mapped)->sum('credit'), 3);
 
         return Inertia::render('Accounting/Ledger/TrialBalance', [
-            'period' => ['asOf' => $asOf->toDateString()],
+            'period' => ['from' => $from, 'to' => $to, 'asOf' => $to],
+            'filters' => $request->only(['dateFrom', 'dateTo']),
             'rows' => $mapped,
             'totals' => ['debit' => $totalDebit, 'credit' => $totalCredit],
             'isBalanced' => abs($totalDebit - $totalCredit) < 0.01,
@@ -341,20 +372,29 @@ class LedgerController extends Controller
     {
         $view = $request->string('view', 'list')->toString();
 
+        $settings = CoaSetting::query()->get()->keyBy('code');
+        $activeUuids = JournalDetail::query()->distinct()->pluck('ledgerUuid')->flip();
+
         $accounts = ChartOfAccount::with('names')
             ->where('category', false)
             ->orderBy('code')
             ->get()
-            ->map(function (LedgerAccount $account) {
+            ->map(function (LedgerAccount $account) use ($settings, $activeUuids) {
                 $typeKey = substr((string) $account->code, 0, 1);
+                $setting = $settings->get($account->code);
 
                 return [
                     'code' => $account->code,
                     'name' => $account->names->first()?->name ?? $account->code,
-                    'type' => self::TYPE_MAP[$typeKey] ?? 'asset',
+                    'type' => $setting?->account_type ?? self::TYPE_MAP[$typeKey] ?? 'asset',
                     'balance' => round($this->query->accountBalanceSigned($account->code), 3),
                     'parentUuid' => $account->parentUuid,
                     'uuid' => $account->ledgerUuid,
+                    'parentCode' => $setting?->parent_code,
+                    'isSystem' => (bool) ($setting?->is_system ?? false),
+                    'isActive' => (bool) ($setting?->is_active ?? true),
+                    'description' => $setting?->description,
+                    'hasActivity' => isset($activeUuids[$account->ledgerUuid]),
                 ];
             })->all();
 
@@ -364,14 +404,50 @@ class LedgerController extends Controller
         ]);
     }
 
-    public function storeChartOfAccount(Request $request): RedirectResponse
+    public function nextChartOfAccountCode(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'code' => ['required', 'string', 'max:20', 'unique:ledger_accounts,code'],
-            'name' => ['required', 'string', 'max:255'],
-            'type' => ['required', 'string', 'in:asset,liability,equity,revenue,expense'],
             'parent' => ['nullable', 'string', 'exists:ledger_accounts,code'],
+            'type' => ['nullable', 'string', 'in:asset,liability,equity,revenue,expense,purchase'],
         ]);
+
+        $code = ! empty($validated['parent'])
+            ? $this->numbering->nextAvailableCode($validated['parent'])
+            : $this->numbering->nextTopLevelCode($validated['type'] ?? 'asset');
+
+        return response()->json(['code' => $code]);
+    }
+
+    public function storeChartOfAccount(Request $request): RedirectResponse
+    {
+        $code = $request->string('code')->trim()->toString();
+        $name = $request->string('name')->trim()->toString();
+
+        if ($code !== '' && $name !== '') {
+            $this->coaLifecycle->purgeRemovedAccountForReuse($code, $name);
+        }
+
+        $validated = $request->validate([
+            'code' => [
+                'required',
+                'string',
+                'max:20',
+                Rule::unique('ledger_accounts', 'code')->whereNull('deleted_at'),
+                Rule::unique('coa_settings', 'code'),
+            ],
+            'name' => ['required', 'string', 'max:255'],
+            'type' => ['required', 'string', 'in:asset,liability,equity,revenue,expense,purchase'],
+            'parent' => ['nullable', 'string', 'exists:ledger_accounts,code'],
+            'description' => ['nullable', 'string', 'max:255'],
+            'is_active' => ['sometimes', 'boolean'],
+        ], [
+            'code.unique' => 'Account code :input already exists',
+        ]);
+
+        $this->coaLifecycle->purgeRemovedAccountForReuse(
+            $validated['code'],
+            $validated['name'],
+        );
 
         $isDebit = in_array($validated['type'], self::DEBIT_TYPES, true);
 
@@ -399,6 +475,20 @@ class LedgerController extends Controller
             Date::use($originalDateClass);
         }
 
+        $ledgerAccount = LedgerAccount::where('code', $validated['code'])->first();
+
+        CoaSetting::create([
+            'ledger_uuid' => $ledgerAccount?->ledgerUuid ?? '',
+            'code' => $validated['code'],
+            'display_name' => $validated['name'],
+            'account_type' => $validated['type'],
+            'parent_code' => $validated['parent'] ?? null,
+            'is_system' => false,
+            'is_active' => $validated['is_active'] ?? true,
+            'description' => $validated['description'] ?? null,
+            'sort_order' => (int) $validated['code'],
+        ]);
+
         return back()->with('success', 'Account created successfully.');
     }
 
@@ -408,6 +498,8 @@ class LedgerController extends Controller
 
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255'],
+            'description' => ['nullable', 'string', 'max:255'],
+            'is_active' => ['sometimes', 'boolean'],
         ]);
 
         // Update or create the English name
@@ -422,16 +514,26 @@ class LedgerController extends Controller
             ]);
         }
 
+        CoaSetting::where('code', $code)->update(array_filter([
+            'display_name' => $validated['name'],
+            'description' => $validated['description'] ?? null,
+            'is_active' => $request->has('is_active') ? $request->boolean('is_active') : null,
+        ], fn ($value) => $value !== null));
+
         return back()->with('success', 'Account updated successfully.');
     }
 
     public function destroyChartOfAccount(string $code): RedirectResponse
     {
-        $account = ChartOfAccount::where('code', $code)->firstOrFail();
+        $account = ChartOfAccount::withTrashed()->where('code', $code)->firstOrFail();
 
-        $hasTransactions = JournalDetail::where('ledgerUuid', $account->ledgerUuid)->exists();
+        $setting = CoaSetting::where('code', $code)->first();
 
-        if ($hasTransactions) {
+        if ($setting?->is_system) {
+            return back()->with('error', 'System accounts cannot be deleted. You can rename or deactivate them instead.');
+        }
+
+        if ($this->coaLifecycle->hasPostedTransactions($account)) {
             return back()->with('error', 'Cannot delete an account that has posted transactions.');
         }
 
@@ -441,7 +543,11 @@ class LedgerController extends Controller
             return back()->with('error', 'Cannot delete an account that has sub-accounts. Delete or reassign the sub-accounts first.');
         }
 
-        $account->delete();
+        try {
+            $this->coaLifecycle->hardDeleteAccount($account);
+        } catch (\Abivia\Ledger\Exceptions\Breaker $e) {
+            return back()->with('error', 'Could not delete account: '.implode(' ', $e->getErrors()));
+        }
 
         return back()->with('success', 'Account deleted successfully.');
     }
@@ -495,6 +601,9 @@ class LedgerController extends Controller
 
         $closingBalance = round($running, 3);
 
+        $totalDebit = round($lines->sum('debit'), 3);
+        $totalCredit = round($lines->sum('credit'), 3);
+
         return Inertia::render('Accounting/Ledger/AccountDetail', [
             'account' => [
                 'code' => $code,
@@ -504,6 +613,8 @@ class LedgerController extends Controller
             'period' => ['from' => $from, 'to' => $to],
             'openingBalance' => $openingBalance,
             'lines' => $linesWithBalance,
+            'totalDebit' => $totalDebit,
+            'totalCredit' => $totalCredit,
             'closingBalance' => $closingBalance,
         ]);
     }
@@ -539,6 +650,7 @@ class LedgerController extends Controller
             'date' => $entry->transDate->toDateString(),
             'description' => $entry->description ?? '',
             'journal' => $journal,
+            'referenceNumber' => trim((string) ($extra['reference_number'] ?? '')),
             'reference' => $entry->journalReferenceUuid ?? '',
             'totalDebit' => round($totalDebit, 3),
             'totalCredit' => round($totalCredit, 3),
@@ -583,9 +695,27 @@ class LedgerController extends Controller
     /**
      * @return array<string, mixed>
      */
-    private function manualExtraForUpdate(JournalEntry $entry, bool $removeAttachment): array
+    private function buildManualExtra(?string $referenceNumber): array
     {
         $extra = ['source' => 'manual'];
+        $trimmed = is_string($referenceNumber) ? trim($referenceNumber) : '';
+
+        if ($trimmed !== '') {
+            $extra['reference_number'] = $trimmed;
+        }
+
+        return $extra;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function manualExtraForUpdate(
+        JournalEntry $entry,
+        bool $removeAttachment,
+        ?string $referenceNumber = null,
+    ): array {
+        $extra = $this->buildManualExtra($referenceNumber);
 
         if (! $removeAttachment) {
             $existing = $this->attachments->attachmentFromExtra($entry);

@@ -1,19 +1,27 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { usePage } from '@inertiajs/react';
+
+import { flattenTranslations } from '@/lib/i18n';
 
 export const useTranslation = () => {
     const { props } = usePage();
     const currentLocale = props.locale || 'en';
-    const [translations, setTranslations] = useState({});
-    const [loading, setLoading] = useState(true);
+    const sharedTranslations = useMemo(
+        () => flattenTranslations(props.translations ?? {}),
+        [props.translations],
+    );
+    const [translations, setTranslations] = useState(sharedTranslations);
+    const [loading, setLoading] = useState(Object.keys(sharedTranslations).length === 0);
 
-    // Load translations for the current locale
     useEffect(() => {
+        setTranslations(sharedTranslations);
+
         const loadTranslations = async () => {
             try {
                 setLoading(true);
-                const response = await fetch(`/lang/${currentLocale}.json`, {
+                const response = await fetch(`/lang/${currentLocale}.json?v=${encodeURIComponent(currentLocale)}`, {
                     headers: { Accept: 'application/json' },
+                    cache: 'no-store',
                 });
 
                 if (!response.ok) {
@@ -21,17 +29,17 @@ export const useTranslation = () => {
                 }
 
                 const payload = await response.json();
-                setTranslations(payload || {});
+                setTranslations(payload || sharedTranslations);
             } catch (error) {
                 console.warn(`Failed to load translations from /lang for locale: ${currentLocale}`, error);
-                setTranslations({});
+                setTranslations(sharedTranslations);
             } finally {
                 setLoading(false);
             }
         };
 
         loadTranslations();
-    }, [currentLocale]);
+    }, [currentLocale, sharedTranslations]);
 
     const t = (key, params = {}) => {
         if (loading) {

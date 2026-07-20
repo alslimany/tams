@@ -71,9 +71,9 @@ class HandleInertiaRequests extends Middleware
                     'tenant' => function_exists('tenant') && tenant() ? tenant()->id : $request->route('tenant'),
                 ],
             ],
-            'locale' => session('locale', app()->getLocale()),
+            'locale' => fn () => app()->getLocale(),
             'translations' => function () {
-                $locale = session('locale', app()->getLocale());
+                $locale = app()->getLocale();
                 $sourceLangPath = base_path('lang');
                 $phpTranslations = [];
                 if (file_exists($sourceLangPath.'/'.$locale.'.json')) {

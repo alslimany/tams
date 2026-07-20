@@ -40,11 +40,14 @@ afterEach(function () {
 test('it initializes ledger root and required accounts for current tenant', function () {
     $result = app(InitializeTenantLedger::class)->execute('USD');
 
-    expect($result['created_root'])->toBeTrue()
+    // The tenant-creation pipeline (BootstrapTenantLedgerJob) already creates the
+    // ledger root, so the legacy initializer only adds its missing accounts.
+    expect($result['created_root'])->toBeFalse()
+        ->and($result['added_accounts'])->toBeGreaterThan(0)
         ->and($result['total_required_accounts'])->toBeGreaterThan(0)
         ->and(LedgerAccount::hasRoot())->toBeTrue();
 
-    foreach (['1300', '2200', '2200_ST', '2300', '3100', '3190', '6100'] as $code) {
+    foreach (['1300', '2200', '2200_ST', '2300', '3100', '3190', '7500'] as $code) {
         expect(LedgerAccount::query()->where('code', $code)->exists())->toBeTrue();
     }
 });

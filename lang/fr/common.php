@@ -37,6 +37,7 @@ return [
     'info' => 'Information',
     'language' => 'Langue',
     'select_language' => 'Sélectionner la langue',
+    'language_switched' => 'Langue changée avec succès',
     'current_locale' => 'Langue actuelle : :locale',
     'translation_example' => 'Ceci est un exemple de traduction',
     'hello_user' => 'Bonjour, :name !',

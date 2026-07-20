@@ -59,7 +59,12 @@ class ProcessESimProviderWalletTransactions
 
             $withdrawal = $this->runForProviderTenant($tenantId, fn (): ?Transaction => DB::transaction(function () use ($order, $item, $resolvedProvider): ?Transaction {
                 $provider = TenantEsimProvider::query()->find($resolvedProvider->id) ?? $resolvedProvider;
-                $currency = strtoupper((string) ($item->currency ?? $order->currency ?? 'USD'));
+                $currency = strtoupper((string) (
+                    data_get($item->item_details, 'provider_currency')
+                    ?: $item->currency
+                    ?: $order->currency
+                    ?: 'USD'
+                ));
                 $walletId = $provider->getOrCreateCurrencyWallet($currency)->id;
 
                 return $this->executeForItem($order, $item, $provider, $walletId);
@@ -88,13 +93,24 @@ class ProcessESimProviderWalletTransactions
             return null;
         }
 
-        $amount = round((float) ($item->net_fare ?? $item->total_amount ?? $item->total ?? 0), 2);
+        $amount = round((float) (
+            data_get($item->item_details, 'provider_cost')
+            ?? $item->net_fare
+            ?? $item->total_amount
+            ?? $item->total
+            ?? 0
+        ), 2);
 
         if ($amount <= 0) {
             return null;
         }
 
-        $currency = strtoupper((string) ($item->currency ?? $order->currency ?? 'USD'));
+        $currency = strtoupper((string) (
+            data_get($item->item_details, 'provider_currency')
+            ?: $item->currency
+            ?: $order->currency
+            ?: 'USD'
+        ));
         $this->assertCanWithdraw($provider, $currency, $amount, $walletId);
 
         $wallet = $walletId !== null ? Wallet::query()->find($walletId) : $provider->getOrCreateCurrencyWallet($currency);

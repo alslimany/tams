@@ -237,7 +237,7 @@ test('trial balance is balanced after issuance', function () {
             currency: 'LYD',
         ));
 
-        $trialBalance = app(TrialBalanceReport::class)->generate();
+        $trialBalance = app(TrialBalanceReport::class)->generate(now()->addYear()->toDateString());
         $totalDebits = $trialBalance->sum('debit');
         $totalCredits = $trialBalance->sum('credit');
 

@@ -46,6 +46,7 @@ return [
     'info' => 'Information',
     'language' => 'Language',
     'select_language' => 'Select Language',
+    'language_switched' => 'Language switched successfully',
     'current_locale' => 'Current Locale: :locale',
     'translation_example' => 'This is a translation example',
     'hello_user' => 'Hello, :name!',

@@ -6,7 +6,9 @@ use App\Http\Controllers\LanguageController;
 use App\Http\Controllers\Tenant\Accounting\AccountingDashboardController;
 use App\Http\Controllers\Tenant\Accounting\AccountingReportController;
 use App\Http\Controllers\Tenant\Accounting\AccountingSettingsController;
+use App\Http\Controllers\Tenant\Accounting\AccountRoutingController;
 use App\Http\Controllers\Tenant\Accounting\CancellationAuditController;
+use App\Http\Controllers\Tenant\Accounting\InventoryController;
 use App\Http\Controllers\Tenant\Accounting\IssuanceHistoryController;
 use App\Http\Controllers\Tenant\Accounting\LedgerController;
 use App\Http\Controllers\Tenant\Accounting\ProviderWalletController;
@@ -234,6 +236,7 @@ Route::prefix(config('tenancy.tenant_path_prefix', 'agency').'/{tenant}')->group
                 Route::delete('/ledger/journal/{id}', [LedgerController::class, 'destroyJournalEntry'])->name('ledger.journal.destroy');
                 Route::get('/ledger/trial-balance', [LedgerController::class, 'trialBalance'])->name('ledger.trial-balance');
                 Route::get('/ledger/chart-of-accounts', [LedgerController::class, 'chartOfAccounts'])->name('ledger.coa');
+                Route::get('/ledger/chart-of-accounts/next-code', [LedgerController::class, 'nextChartOfAccountCode'])->name('ledger.coa.next-code');
                 Route::post('/ledger/chart-of-accounts', [LedgerController::class, 'storeChartOfAccount'])->name('ledger.coa.store');
                 Route::put('/ledger/chart-of-accounts/{code}', [LedgerController::class, 'updateChartOfAccount'])->name('ledger.coa.update');
                 Route::delete('/ledger/chart-of-accounts/{code}', [LedgerController::class, 'destroyChartOfAccount'])->name('ledger.coa.destroy');
@@ -253,14 +256,35 @@ Route::prefix(config('tenancy.tenant_path_prefix', 'agency').'/{tenant}')->group
 
                 // Reports
                 Route::get('/reports', [AccountingReportController::class, 'index'])->name('reports.index');
+                Route::get('/reports/general-ledger', [AccountingReportController::class, 'generalLedger'])->name('reports.general-ledger');
+                Route::get('/reports/balance-sheet', [AccountingReportController::class, 'balanceSheet'])->name('reports.balance-sheet');
+                Route::get('/reports/income-statement', [AccountingReportController::class, 'incomeStatement'])->name('reports.income-statement');
                 Route::get('/reports/revenue', [AccountingReportController::class, 'revenue'])->name('reports.revenue');
                 Route::get('/reports/gross-margin', [AccountingReportController::class, 'grossMargin'])->name('reports.gross-margin');
                 Route::get('/reports/vat', [AccountingReportController::class, 'vat'])->name('reports.vat');
                 Route::get('/reports/reconciliation', [AccountingReportController::class, 'reconciliation'])->name('reports.reconciliation');
 
+                // Inventory
+                Route::get('/inventory/warehouses', [InventoryController::class, 'warehouses'])->name('inventory.warehouses');
+                Route::post('/inventory/warehouses', [InventoryController::class, 'storeWarehouse'])->name('inventory.warehouses.store');
+                Route::get('/inventory/warehouses/{id}', [InventoryController::class, 'warehouseShow'])->name('inventory.warehouses.show');
+                Route::get('/inventory/items', [InventoryController::class, 'items'])->name('inventory.items');
+                Route::post('/inventory/items', [InventoryController::class, 'storeItem'])->name('inventory.items.store');
+                Route::get('/inventory/items/{id}', [InventoryController::class, 'itemShow'])->name('inventory.items.show');
+                Route::get('/inventory/movements', [InventoryController::class, 'movements'])->name('inventory.movements');
+                Route::get('/inventory/receive', [InventoryController::class, 'receiveForm'])->name('inventory.receive');
+                Route::post('/inventory/receive', [InventoryController::class, 'receiveStore'])->name('inventory.receive.store');
+                Route::get('/inventory/deliver', [InventoryController::class, 'deliverForm'])->name('inventory.deliver');
+                Route::post('/inventory/deliver', [InventoryController::class, 'deliverStore'])->name('inventory.deliver.store');
+                Route::get('/inventory/transfer', [InventoryController::class, 'transferForm'])->name('inventory.transfer');
+                Route::post('/inventory/transfer', [InventoryController::class, 'transferStore'])->name('inventory.transfer.store');
+
                 // Settings
                 Route::get('/settings', [AccountingSettingsController::class, 'index'])->name('settings.index');
                 Route::put('/settings', [AccountingSettingsController::class, 'update'])->name('settings.update');
+                Route::get('/settings/routing', [AccountRoutingController::class, 'index'])->name('settings.routing');
+                Route::put('/settings/routing', [AccountRoutingController::class, 'update'])->name('settings.routing.update');
+                Route::post('/settings/routing/reset', [AccountRoutingController::class, 'reset'])->name('settings.routing.reset');
             });
         });
 

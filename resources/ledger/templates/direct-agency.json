@@ -16,6 +16,9 @@
     { "code": "1300", "name": "Receivables",                  "debit": true, "parent": "1000" },
     { "code": "1310", "name": "Customer Receivable",          "debit": true, "parent": "1300" },
     { "code": "1320", "name": "Merchant Receivable",          "debit": true, "parent": "1300" },
+    { "code": "1400", "name": "Inventory",                    "debit": true, "parent": "1000" },
+    { "code": "1410", "name": "Travel Product Inventory",     "debit": true, "parent": "1400" },
+    { "code": "1420", "name": "Physical Goods Inventory",     "debit": true, "parent": "1400" },
 
     { "code": "2000", "name": "Liabilities",                  "credit": true },
     { "code": "2100", "name": "Provider Payables",            "credit": true, "parent": "2000" },
@@ -26,6 +29,11 @@
     { "code": "2200", "name": "Network Agency Payable",       "credit": true, "parent": "2000" },
     { "code": "2300", "name": "Customer Deposits",            "credit": true, "parent": "2000" },
     { "code": "2400", "name": "VAT Payable",                  "credit": true, "parent": "2000" },
+    { "code": "2410", "name": "Airline Tax Payable",          "credit": true, "parent": "2000" },
+    { "code": "2420", "name": "Hotel Tax Payable",            "credit": true, "parent": "2000" },
+    { "code": "2500", "name": "Accounts Payable",             "credit": true, "parent": "2000" },
+    { "code": "2510", "name": "Supplier Payable",             "credit": true, "parent": "2500" },
+    { "code": "2520", "name": "Purchase Returns Payable",     "credit": true, "parent": "2500" },
 
     { "code": "3000", "name": "Equity",                       "credit": true },
     { "code": "3100", "name": "Agency Capital",               "credit": true, "parent": "3000" },
@@ -48,15 +56,24 @@
     { "code": "5400", "name": "eSIM Provider Cost",           "debit": true, "parent": "5000" },
     { "code": "5500", "name": "Merchant Wholesale Cost",      "debit": true, "parent": "5000" },
 
-    { "code": "6000", "name": "Operating Expenses",           "debit": true },
-    { "code": "6100", "name": "Refunds & Voids",              "debit": true, "parent": "6000" },
-    { "code": "6200", "name": "Settlement Adjustments",       "debit": true, "parent": "6000" },
-    { "code": "6300", "name": "Exchange Gain/Loss",           "debit": true, "parent": "6000" },
+    { "code": "6000", "name": "Purchases",                    "debit": true },
+    { "code": "6010", "name": "Airline Ticket Purchases",     "debit": true, "parent": "6000" },
+    { "code": "6020", "name": "Hotel Booking Purchases",      "debit": true, "parent": "6000" },
+    { "code": "6030", "name": "Insurance Purchases",          "debit": true, "parent": "6000" },
+    { "code": "6040", "name": "eSIM Purchases",               "debit": true, "parent": "6000" },
+    { "code": "6050", "name": "Inventory Purchases",          "debit": true, "parent": "6000" },
+    { "code": "6060", "name": "Other Purchases",              "debit": true, "parent": "6000" },
 
-    { "code": "7000", "name": "Settlement Clearing",          "debit": true },
-    { "code": "7100", "name": "Network Agency Settlement",    "debit": true, "parent": "7000" },
-    { "code": "7200", "name": "Merchant Settlement Clearing", "debit": true, "parent": "7000" },
-    { "code": "7400", "name": "Provider Reconciliation",      "debit": true, "parent": "7000" }
+    { "code": "7000", "name": "Operating Expenses",           "debit": true },
+    { "code": "7100", "name": "Refunds & Voids",              "debit": true, "parent": "7000" },
+    { "code": "7200", "name": "Settlement Adjustments",       "debit": true, "parent": "7000" },
+    { "code": "7300", "name": "Exchange Gain/Loss",           "debit": true, "parent": "7000" },
+    { "code": "7500", "name": "Commission Expense",           "debit": true, "parent": "7000" },
+
+    { "code": "8000", "name": "Settlement Clearing",          "debit": true },
+    { "code": "8100", "name": "Network Agency Settlement",    "debit": true, "parent": "8000" },
+    { "code": "8200", "name": "Merchant Settlement Clearing", "debit": true, "parent": "8000" },
+    { "code": "8400", "name": "Provider Reconciliation",      "debit": true, "parent": "8000" }
   ],
   "journals": [
     { "name": "General",    "code": "GEN" },

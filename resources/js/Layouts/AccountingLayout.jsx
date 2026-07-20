@@ -1,5 +1,8 @@
 import { Link, usePage } from '@inertiajs/react';
 import {
+    ArrowDownToLineIcon,
+    ArrowRightLeftIcon,
+    ArrowUpFromLineIcon,
     BarChart3Icon,
     BookTextIcon,
     CalculatorIcon,
@@ -7,11 +10,13 @@ import {
     HistoryIcon,
     LayoutDashboardIcon,
     ListIcon,
+    PackageIcon,
     ScaleIcon,
     SettingsIcon,
     Share2Icon,
     ShieldOffIcon,
     WalletIcon,
+    WarehouseIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useTranslation } from '@/hooks/useTranslation';
@@ -104,8 +109,22 @@ export default function AccountingLayout({ children, title, subtitle, actions })
             ],
         },
         {
+            heading: t('accounting.nav.inventory'),
+            items: [
+                { label: t('accounting.nav.warehouses'), route: 'accounting.inventory.warehouses', icon: WarehouseIcon },
+                { label: t('accounting.nav.item_catalogue'), route: 'accounting.inventory.items', icon: PackageIcon },
+                { label: t('accounting.nav.receive_goods'), route: 'accounting.inventory.receive', icon: ArrowDownToLineIcon },
+                { label: t('accounting.nav.deliver_goods'), route: 'accounting.inventory.deliver', icon: ArrowUpFromLineIcon },
+                { label: t('accounting.nav.transfer_goods'), route: 'accounting.inventory.transfer', icon: ArrowRightLeftIcon },
+                { label: t('accounting.nav.movement_log'), route: 'accounting.inventory.movements', icon: HistoryIcon },
+            ],
+        },
+        {
             heading: t('accounting.nav.reports'),
             items: [
+                { label: t('accounting.nav.general_ledger'), route: 'accounting.reports.general-ledger', icon: BookTextIcon },
+                { label: t('accounting.nav.balance_sheet'), route: 'accounting.reports.balance-sheet', icon: ScaleIcon },
+                { label: t('accounting.nav.income_statement'), route: 'accounting.reports.income-statement', icon: BarChart3Icon },
                 { label: t('accounting.nav.revenue'), route: 'accounting.reports.revenue', icon: BarChart3Icon },
                 { label: t('accounting.nav.gross_margin'), route: 'accounting.reports.gross-margin', icon: BarChart3Icon },
                 { label: t('accounting.nav.vat_summary'), route: 'accounting.reports.vat', icon: FileTextIcon },
@@ -116,6 +135,7 @@ export default function AccountingLayout({ children, title, subtitle, actions })
             heading: t('accounting.nav.settings_heading'),
             items: [
                 { label: t('accounting.nav.preferences'), route: 'accounting.settings.index', icon: SettingsIcon },
+                { label: t('accounting.nav.account_routing'), route: 'accounting.settings.routing', icon: Share2Icon },
             ],
         },
     ];

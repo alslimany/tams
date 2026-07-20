@@ -72,7 +72,7 @@ function acctAdmin(): User
  */
 function uniqueExpenseCode(): string
 {
-    return '6'.mt_rand(1000, 9999);
+    return '7'.mt_rand(1000, 9999);
 }
 
 // ─── Chart of Accounts ───────────────────────────────────────────────────────
@@ -85,7 +85,7 @@ test('admin can create a manual expense account (regression: creation no longer 
             'code' => $code,
             'name' => 'Office Rent',
             'type' => 'expense',
-            'parent' => '6000',
+            'parent' => '7000',
         ])
         ->assertSessionHas('success');
 
@@ -142,7 +142,7 @@ test('admin can post a balanced manual journal entry and ledger balances update'
             'code' => $code,
             'name' => 'Salaries',
             'type' => 'expense',
-            'parent' => '6000',
+            'parent' => '7000',
         ])
         ->assertSessionHas('success');
 
@@ -178,7 +178,7 @@ test('updating a manual entry keeps ledger balances in sync (no double counting)
     $admin = acctAdmin();
 
     $this->actingAs($admin)->post(tenantRoute('accounting.ledger.coa.store'), [
-        'code' => $code, 'name' => 'Utilities', 'type' => 'expense', 'parent' => '6000',
+        'code' => $code, 'name' => 'Utilities', 'type' => 'expense', 'parent' => '7000',
     ])->assertSessionHas('success');
 
     $this->actingAs($admin)->post(tenantRoute('accounting.ledger.journal.store'), [
@@ -223,7 +223,7 @@ test('deleting a manual entry reverses its ledger balance impact', function () {
     $admin = acctAdmin();
 
     $this->actingAs($admin)->post(tenantRoute('accounting.ledger.coa.store'), [
-        'code' => $code, 'name' => 'Marketing', 'type' => 'expense', 'parent' => '6000',
+        'code' => $code, 'name' => 'Marketing', 'type' => 'expense', 'parent' => '7000',
     ])->assertSessionHas('success');
 
     $this->actingAs($admin)->post(tenantRoute('accounting.ledger.journal.store'), [
@@ -303,7 +303,7 @@ test('an account with posted transactions cannot be deleted', function () {
     $admin = acctAdmin();
 
     $this->actingAs($admin)->post(tenantRoute('accounting.ledger.coa.store'), [
-        'code' => $code, 'name' => 'Travel', 'type' => 'expense', 'parent' => '6000',
+        'code' => $code, 'name' => 'Travel', 'type' => 'expense', 'parent' => '7000',
     ])->assertSessionHas('success');
 
     $this->actingAs($admin)->post(tenantRoute('accounting.ledger.journal.store'), [
@@ -326,12 +326,49 @@ test('an account with posted transactions cannot be deleted', function () {
     tenancy()->end();
 });
 
+test('admin can recreate a deleted account with the same code and name', function () {
+    $code = '4'.mt_rand(800, 899).'0';
+    $name = 'Visa Service Revenue '.mt_rand(1000, 9999);
+    $admin = acctAdmin();
+
+    $this->actingAs($admin)->post(tenantRoute('accounting.ledger.coa.store'), [
+        'code' => $code,
+        'name' => $name,
+        'type' => 'revenue',
+        'parent' => '4000',
+    ])->assertSessionHas('success');
+
+    $this->actingAs($admin)
+        ->delete(tenantRoute('accounting.ledger.coa.destroy', $code))
+        ->assertSessionHas('success');
+
+    acctTenant()->run(function () use ($code) {
+        expect(LedgerAccount::where('code', $code)->exists())->toBeFalse();
+    });
+    tenancy()->end();
+
+    $this->actingAs($admin)->post(tenantRoute('accounting.ledger.coa.store'), [
+        'code' => $code,
+        'name' => $name,
+        'type' => 'revenue',
+        'parent' => '4000',
+    ])->assertSessionHas('success');
+
+    acctTenant()->run(function () use ($code, $name) {
+        $account = LedgerAccount::where('code', $code)->with('names')->first();
+
+        expect($account)->not->toBeNull()
+            ->and($account->names->first()?->name)->toBe($name);
+    });
+    tenancy()->end();
+});
+
 test('admin can attach a pdf to a manual journal entry', function () {
     $code = uniqueExpenseCode();
     $admin = acctAdmin();
 
     $this->actingAs($admin)->post(tenantRoute('accounting.ledger.coa.store'), [
-        'code' => $code, 'name' => 'Rent', 'type' => 'expense', 'parent' => '6000',
+        'code' => $code, 'name' => 'Rent', 'type' => 'expense', 'parent' => '7000',
     ])->assertSessionHas('success');
 
     $file = \Illuminate\Http\UploadedFile::fake()->create('rent-invoice.pdf', 100, 'application/pdf');
@@ -359,12 +396,155 @@ test('admin can attach a pdf to a manual journal entry', function () {
     tenancy()->end();
 });
 
+test('account detail page includes period total debit and credit', function () {
+    $code = uniqueExpenseCode();
+    $admin = acctAdmin();
+    $date = postingDate();
+
+    $this->actingAs($admin)->post(tenantRoute('accounting.ledger.coa.store'), [
+        'code' => $code, 'name' => 'Account Detail Totals', 'type' => 'expense', 'parent' => '7000',
+    ])->assertSessionHas('success');
+
+    $this->actingAs($admin)->post(tenantRoute('accounting.ledger.journal.store'), [
+        'transDate' => $date,
+        'description' => 'Totals test entry',
+        'journal' => 'GEN',
+        'lines' => [
+            ['accountCode' => $code, 'debit' => 500, 'credit' => null],
+            ['accountCode' => '1110', 'debit' => null, 'credit' => 500],
+        ],
+    ])->assertSessionHas('success');
+
+    $this->actingAs($admin)
+        ->get(tenantRoute('accounting.ledger.account', ['code' => $code, 'from' => $date, 'to' => $date]))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->component('Accounting/Ledger/AccountDetail')
+            ->where('totalDebit', 500)
+            ->where('totalCredit', 0)
+            ->where('closingBalance', -500)
+        );
+});
+
+test('trial balance shows closing balances as of period end date', function () {
+    $code = uniqueExpenseCode();
+    $admin = acctAdmin();
+    $date = postingDate();
+    $beforeDate = now()->toDateString();
+
+    $this->actingAs($admin)->post(tenantRoute('accounting.ledger.coa.store'), [
+        'code' => $code, 'name' => 'TB Closing Balance Test', 'type' => 'expense', 'parent' => '7000',
+    ])->assertSessionHas('success');
+
+    $this->actingAs($admin)->post(tenantRoute('accounting.ledger.journal.store'), [
+        'transDate' => $date,
+        'description' => 'TB closing balance test entry',
+        'journal' => 'GEN',
+        'lines' => [
+            ['accountCode' => $code, 'debit' => 400, 'credit' => null],
+            ['accountCode' => '1110', 'debit' => null, 'credit' => 400],
+        ],
+    ])->assertSessionHas('success');
+
+    $this->actingAs($admin)
+        ->get(tenantRoute('accounting.ledger.trial-balance', ['dateFrom' => $date, 'dateTo' => $date]))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->component('Accounting/Ledger/TrialBalance')
+            ->where('period.from', $date)
+            ->where('period.to', $date)
+            ->where('period.asOf', $date)
+            ->where('rows', fn ($rows) => collect($rows)->firstWhere('code', $code)['debit'] === 400)
+            ->where('rows', fn ($rows) => (collect($rows)->firstWhere('code', $code)['credit'] ?? 0) === 0)
+            ->where('rows', fn ($rows) => collect($rows)->every(
+                fn ($row) => ! (($row['debit'] ?? 0) > 0 && ($row['credit'] ?? 0) > 0),
+            ))
+            ->where('isBalanced', true)
+        );
+
+    $this->actingAs($admin)
+        ->get(tenantRoute('accounting.ledger.trial-balance', ['dateFrom' => $beforeDate, 'dateTo' => $beforeDate]))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->where('rows', fn ($rows) => (collect($rows)->firstWhere('code', $code)['debit'] ?? 0) === 0)
+            ->where('rows', fn ($rows) => (collect($rows)->firstWhere('code', $code)['credit'] ?? 0) === 0)
+        );
+
+    $this->actingAs($admin)
+        ->get(tenantRoute('accounting.ledger.account', ['code' => $code, 'from' => $date, 'to' => $date]))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->component('Accounting/Ledger/AccountDetail')
+            ->where('period.from', $date)
+            ->where('period.to', $date)
+        );
+});
+
+test('manual journal entry stores optional reference number and can be searched', function () {
+    $code = uniqueExpenseCode();
+    $admin = acctAdmin();
+
+    $this->actingAs($admin)->post(tenantRoute('accounting.ledger.coa.store'), [
+        'code' => $code, 'name' => 'Ref Test Expense', 'type' => 'expense', 'parent' => '7000',
+    ])->assertSessionHas('success');
+
+    $this->actingAs($admin)->post(tenantRoute('accounting.ledger.journal.store'), [
+        'transDate' => postingDate(),
+        'description' => 'Office supplies with voucher',
+        'referenceNumber' => 'INV-2042',
+        'journal' => 'GEN',
+        'lines' => [
+            ['accountCode' => $code, 'debit' => 250, 'credit' => null],
+            ['accountCode' => '1110', 'debit' => null, 'credit' => 250],
+        ],
+    ])->assertSessionHas('success');
+
+    acctTenant()->run(function () {
+        $entry = JournalEntry::latest('journalEntryId')->first();
+        $extra = json_decode($entry->extra, true);
+        expect($extra['reference_number'] ?? null)->toBe('INV-2042');
+    });
+    tenancy()->end();
+
+    $entryId = null;
+    acctTenant()->run(function () use (&$entryId) {
+        $entryId = JournalEntry::latest('journalEntryId')->value('journalEntryId');
+    });
+    tenancy()->end();
+
+    $this->actingAs($admin)->put(tenantRoute('accounting.ledger.journal.update', $entryId), [
+        'transDate' => postingDate(),
+        'description' => 'Office supplies with voucher',
+        'referenceNumber' => 'VCH-9901',
+        'lines' => [
+            ['accountCode' => $code, 'debit' => 250, 'credit' => null],
+            ['accountCode' => '1110', 'debit' => null, 'credit' => 250],
+        ],
+    ])->assertSessionHas('success');
+
+    acctTenant()->run(function () {
+        $entry = JournalEntry::latest('journalEntryId')->first();
+        $extra = json_decode($entry->extra, true);
+        expect($extra['reference_number'] ?? null)->toBe('VCH-9901');
+    });
+    tenancy()->end();
+
+    $this->actingAs($admin)
+        ->get(tenantRoute('accounting.ledger.journal', ['search' => 'VCH-9901']))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->component('Accounting/Ledger/JournalEntries')
+            ->has('entries.data', 1)
+            ->where('entries.data.0.referenceNumber', 'VCH-9901')
+        );
+});
+
 test('journal entry attachment rejects unsupported file types', function () {
     $code = uniqueExpenseCode();
     $admin = acctAdmin();
 
     $this->actingAs($admin)->post(tenantRoute('accounting.ledger.coa.store'), [
-        'code' => $code, 'name' => 'Supplies', 'type' => 'expense', 'parent' => '6000',
+        'code' => $code, 'name' => 'Supplies', 'type' => 'expense', 'parent' => '7000',
     ])->assertSessionHas('success');
 
     $file = \Illuminate\Http\UploadedFile::fake()->create('notes.docx', 50, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');

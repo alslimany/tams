@@ -3,6 +3,7 @@
 namespace App\Services\ESim;
 
 use App\DTOs\ESim\ESimPackage;
+use App\Models\Tenant\TenantEsimProvider;
 use Illuminate\Support\Facades\Cache;
 
 class ESimCatalogueService
@@ -82,16 +83,33 @@ class ESimCatalogueService
         ], fn (mixed $value): bool => $value !== null && $value !== '');
 
         $packages = $this->providerManager->provider()->catalogue($filters);
+        $provider = $this->providerManager->activeProvider();
 
         foreach ($packages as $package) {
             if ($package->id === $packageId) {
-                return $package->toArray();
+                $presented = $package->toArray();
+
+                if ($provider instanceof TenantEsimProvider) {
+                    $presented = array_merge($presented, $provider->presentUsdPrice((float) $package->price));
+                }
+
+                return $presented;
             }
         }
 
         $bundle = $this->providerManager->provider()->bundles($packageId);
+        $usdPrice = (float) ($bundle['price'] ?? 0);
+        $presented = array_merge($bundle, [
+            'id' => $packageId,
+            'price' => $usdPrice,
+            'currency' => 'USD',
+        ]);
 
-        return array_merge($bundle, ['id' => $packageId]);
+        if ($provider instanceof TenantEsimProvider) {
+            $presented = array_merge($presented, $provider->presentUsdPrice($usdPrice));
+        }
+
+        return $presented;
     }
 
     /**
@@ -109,11 +127,21 @@ class ESimCatalogueService
     private function presentPackages(array $packages): array
     {
         $providerSource = $this->activeProviderSource();
+        $provider = $this->providerManager->activeProvider();
 
         return array_map(
-            fn (ESimPackage $package): array => array_merge($package->toArray(), [
-                'provider_source' => $providerSource,
-            ]),
+            function (ESimPackage $package) use ($providerSource, $provider): array {
+                $presented = $package->toArray();
+
+                if ($provider instanceof TenantEsimProvider) {
+                    $converted = $provider->presentUsdPrice((float) $package->price);
+                    $presented = array_merge($presented, $converted);
+                }
+
+                return array_merge($presented, [
+                    'provider_source' => $providerSource,
+                ]);
+            },
             $packages,
         );
     }

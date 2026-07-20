@@ -42,6 +42,11 @@ class CreateOrderFromESimPurchase
         return DB::transaction(function () use ($issuer, $orderResult, $packageData, $customerData, $providerSource, $esimProvider): Order {
             $currency = strtoupper((string) ($packageData['currency'] ?? 'USD'));
             $price = round((float) ($packageData['price'] ?? 0), 2);
+            $providerCurrency = strtoupper((string) ($packageData['provider_currency'] ?? 'USD'));
+            $providerPrice = round((float) ($packageData['provider_price'] ?? $packageData['price'] ?? 0), 2);
+            $exchangeRate = isset($packageData['exchange_rate']) && (float) $packageData['exchange_rate'] > 0
+                ? round((float) $packageData['exchange_rate'], 4)
+                : 1.0;
             $commissionPercent = $esimProvider?->commissionForProductType('esim') ?? 0.0;
             $commissionAmount = round(($price * $commissionPercent) / 100, 2);
             $defaultAgencyTenantId = $this->resolveDefaultAgencyTenantId();
@@ -85,6 +90,8 @@ class CreateOrderFromESimPurchase
                     'validity_days' => (int) ($packageData['validity_days'] ?? 0),
                     'provider' => $esimProvider?->provider_type ?? 'l2',
                     'provider_order_id' => $orderResult->orderId,
+                    'provider_cost' => $providerPrice,
+                    'provider_currency' => $providerCurrency,
                     'iccid' => $orderResult->iccid,
                     'activation_code' => $orderResult->activationCode,
                     'smdp_address' => $orderResult->smdpAddress,
@@ -111,6 +118,8 @@ class CreateOrderFromESimPurchase
                         : null,
                     'qr_code_url' => $orderResult->qrCodeUrl,
                     'customer' => $customerData,
+                    'provider_cost' => $providerPrice,
+                    'provider_currency' => $providerCurrency,
                 ],
                 'price' => $price,
                 'net_fare' => $price,
@@ -119,7 +128,7 @@ class CreateOrderFromESimPurchase
                 'total' => $price,
                 'total_amount' => $price,
                 'currency' => $currency,
-                'exchange_rate' => 1,
+                'exchange_rate' => $exchangeRate,
                 'status' => 'issued',
                 'transaction_type' => 'purchase',
                 'commission_percent' => $commissionPercent,

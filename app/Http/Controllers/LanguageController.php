@@ -26,12 +26,7 @@ class LanguageController extends Controller
         // Set the application locale
         App::setLocale($locale);
 
-        // For authenticated users, save this preference to the database
-        if ($request->user()) {
-            $request->user()->update(['locale' => $locale]);
-        }
-
         // Redirect back with success message
-        return redirect()->back()->with('success', __('Language switched successfully'));
+        return redirect()->back()->with('success', __('common.language_switched'));
     }
 }

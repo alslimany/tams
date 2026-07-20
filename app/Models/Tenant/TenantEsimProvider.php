@@ -28,6 +28,52 @@ class TenantEsimProvider extends Model implements WalletInterface
             'credentials' => 'array',
             'is_active' => 'boolean',
             'commission_esim' => 'decimal:2',
+            'usd_to_lyd_rate' => 'decimal:4',
+        ];
+    }
+
+    public function usdToLydRate(): ?float
+    {
+        $rate = $this->usd_to_lyd_rate;
+
+        if ($rate === null || (float) $rate <= 0) {
+            return null;
+        }
+
+        return round((float) $rate, 4);
+    }
+
+    public function convertsUsdToLyd(): bool
+    {
+        return $this->usdToLydRate() !== null;
+    }
+
+    /**
+     * Convert an L2 USD amount to the tenant selling currency when a rate is configured.
+     *
+     * @return array{price: float, currency: string, provider_price: float, provider_currency: string, exchange_rate: float|null}
+     */
+    public function presentUsdPrice(float $usdPrice): array
+    {
+        $providerPrice = round($usdPrice, 2);
+        $rate = $this->usdToLydRate();
+
+        if ($rate === null) {
+            return [
+                'price' => $providerPrice,
+                'currency' => self::DEFAULT_CURRENCY,
+                'provider_price' => $providerPrice,
+                'provider_currency' => self::DEFAULT_CURRENCY,
+                'exchange_rate' => null,
+            ];
+        }
+
+        return [
+            'price' => round($providerPrice * $rate, 2),
+            'currency' => 'LYD',
+            'provider_price' => $providerPrice,
+            'provider_currency' => self::DEFAULT_CURRENCY,
+            'exchange_rate' => $rate,
         ];
     }
 

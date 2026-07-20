@@ -46,6 +46,7 @@ return [
     'info' => 'معلومات',
     'language' => 'اللغة',
     'select_language' => 'اختر اللغة',
+    'language_switched' => 'تم تغيير اللغة بنجاح',
     'current_locale' => 'اللغة الحالية: :locale',
     'translation_example' => 'هذا مثال على الترجمة',
     'hello_user' => 'مرحباً، :name!',

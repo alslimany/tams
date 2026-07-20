@@ -32,6 +32,17 @@ return [
         'provider_wallets' => 'محافظ الموردين',
         'providers' => 'الموردون',
         'preferences' => 'التفضيلات',
+        'general_ledger' => 'دفتر الأستاذ العام',
+        'balance_sheet' => 'الميزانية العمومية',
+        'income_statement' => 'قائمة الدخل',
+        'account_routing' => 'توجيه الحسابات',
+        'inventory' => 'المخزون',
+        'warehouses' => 'المستودعات',
+        'item_catalogue' => 'دليل الأصناف',
+        'receive_goods' => 'استلام بضائع',
+        'deliver_goods' => 'تسليم بضائع',
+        'transfer_goods' => 'تحويل بضائع',
+        'movement_log' => 'سجل الحركات',
     ],
 
     // Issuances
@@ -143,7 +154,9 @@ return [
         'rerun' => 'إعادة التشغيل',
 
         'trial_balance_title' => 'ميزان المراجعة',
-        'trial_balance_desc' => 'إجماليات المدين والدائن لجميع الحسابات.',
+        'trial_balance_desc' => 'أرصدة المدين والدائن الختامية لجميع الحسابات.',
+        'trial_balance_subtitle' => 'الأرصدة الختامية لجميع الحسابات.',
+        'trial_balance_period_hint' => 'تُحسب الأرصدة اعتباراً من تاريخ النهاية. تاريخ البداية يُستخدم عند فتح تفاصيل الحساب.',
 
         'aging_title' => 'تقرير الأعمار',
         'aging_desc' => 'المستحقات المعلقة مصنّفة حسب الفترة الزمنية.',

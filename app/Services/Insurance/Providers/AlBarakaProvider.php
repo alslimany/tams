@@ -677,7 +677,7 @@ class AlBarakaProvider implements InsuranceProviderInterface
 
     protected function resolveToken(): string
     {
-        $configuredToken = (string) data_get($this->activeProvider()?->credentials ?? [], 'token', '');
+        $configuredToken = $this->activeProvider()?->bearerToken() ?? '';
 
         if ($configuredToken !== '') {
             return $configuredToken;

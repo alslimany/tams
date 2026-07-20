@@ -27,6 +27,7 @@ import {
 } from '@/Components/ui/Table';
 import { Skeleton } from '@/Components/ui/skeleton';
 import { useTranslation } from '@/hooks/useTranslation';
+import { accountDetailHref, formatAccountingPeriod } from '@/lib/accounting';
 
 const JOURNAL_COLORS = {
     AIR: 'bg-blue-100 text-blue-700 border-blue-200',
@@ -48,7 +49,7 @@ const JOURNAL_COLORS_DARK = {
 
 // ─── Journal Entry View Dialog ─────────────────────────────────────────────
 
-function JournalEntryViewDialog({ open, onClose, entryId }) {
+function JournalEntryViewDialog({ open, onClose, entryId, accountPeriod }) {
     const [entry, setEntry] = React.useState(null);
     const [loading, setLoading] = React.useState(false);
     const [error, setError] = React.useState('');
@@ -134,7 +135,7 @@ function JournalEntryViewDialog({ open, onClose, entryId }) {
                                 Reference
                             </dt>
                             <dd className="font-mono text-xs">
-                                {entry.reference || '—'}
+                                {entry.referenceNumber || '—'}
                             </dd>
                             <dt className="text-muted-foreground col-span-2 mt-1">
                                 Description
@@ -178,10 +179,18 @@ function JournalEntryViewDialog({ open, onClose, entryId }) {
                                 {entry.lines.map((line, i) => (
                                     <TableRow key={i}>
                                         <TableCell>
-                                            <span className="font-mono text-xs text-muted-foreground mr-2">
-                                                {line.accountCode}
-                                            </span>
-                                            {line.accountName}
+                                            <Link
+                                                href={accountDetailHref(
+                                                    line.accountCode,
+                                                    accountPeriod,
+                                                )}
+                                                className="hover:underline"
+                                            >
+                                                <span className="font-mono text-xs text-muted-foreground mr-2">
+                                                    {line.accountCode}
+                                                </span>
+                                                {line.accountName}
+                                            </Link>
                                         </TableCell>
                                         <TableCell className="text-right">
                                             {line.debit != null ? (
@@ -242,11 +251,18 @@ function JournalEntryViewDialog({ open, onClose, entryId }) {
 export default function JournalEntries({
     entries,
     filters,
+    period,
     journalOptions,
     accounts,
 }) {
     const { t } = useTranslation();
     const [expandedId, setExpandedId] = React.useState(null);
+
+    const accountPeriod = {
+        from: period?.from ?? filters.dateFrom ?? undefined,
+        to: period?.to ?? filters.dateTo ?? undefined,
+    };
+    const periodLabel = formatAccountingPeriod(accountPeriod);
 
     // Sheet (create/edit form) state
     const [sheetOpen, setSheetOpen] = React.useState(false);
@@ -314,7 +330,9 @@ export default function JournalEntries({
             <Head title={t('accounting.nav.journal')} />
             <AccountingLayout
                 title={t('accounting.nav.journal')}
-                subtitle="Complete double-entry journal log"
+                subtitle={
+                    periodLabel ?? 'Complete double-entry journal log'
+                }
                 actions={
                     <Button onClick={openCreateSheet}>
                         <Plus className="size-4 mr-1" />
@@ -368,6 +386,7 @@ export default function JournalEntries({
                             <TableRow>
                                 <TableHead className="w-8" />
                                 <TableHead>Date</TableHead>
+                                <TableHead>Reference</TableHead>
                                 <TableHead>Description</TableHead>
                                 <TableHead>Journal</TableHead>
                                 <TableHead className="text-right">
@@ -385,7 +404,7 @@ export default function JournalEntries({
                             {entries.data.length === 0 ? (
                                 <TableRow>
                                     <TableCell
-                                        colSpan={8}
+                                        colSpan={9}
                                         className="py-10 text-center text-sm text-muted-foreground"
                                     >
                                         No journal entries found.
@@ -428,6 +447,18 @@ export default function JournalEntries({
                                                 }
                                             >
                                                 {entry.date}
+                                            </TableCell>
+                                            <TableCell
+                                                className="max-w-[140px] truncate text-sm font-mono text-muted-foreground"
+                                                onClick={() =>
+                                                    setExpandedId(
+                                                        expandedId === entry.id
+                                                            ? null
+                                                            : entry.id,
+                                                    )
+                                                }
+                                            >
+                                                {entry.referenceNumber || '—'}
                                             </TableCell>
                                             <TableCell
                                                 className="max-w-xs truncate text-sm"
@@ -560,7 +591,7 @@ export default function JournalEntries({
                                         {expandedId === entry.id && (
                                             <TableRow className="bg-muted/30">
                                                 <TableCell
-                                                    colSpan={8}
+                                                    colSpan={9}
                                                     className="p-0"
                                                 >
                                                     <table className="w-full text-xs">
@@ -592,9 +623,9 @@ export default function JournalEntries({
                                                                     >
                                                                         <td className="py-1 pl-10">
                                                                             <Link
-                                                                                href={route(
-                                                                                    'accounting.ledger.account',
+                                                                                href={accountDetailHref(
                                                                                     line.accountCode,
+                                                                                    accountPeriod,
                                                                                 )}
                                                                                 className="hover:underline"
                                                                             >
@@ -693,6 +724,7 @@ export default function JournalEntries({
                 open={dialogOpen}
                 onClose={closeDialog}
                 entryId={viewEntryId}
+                accountPeriod={accountPeriod}
             />
         </TenantLayout>
     );

@@ -13,12 +13,17 @@ class AccountingSettingsController extends Controller
 {
     public function index(): Response
     {
-        $providers = TenantProvider::all(['id', 'name', 'type'])->map(fn ($p) => [
-            'id' => $p->id,
-            'name' => $p->name,
-            'type' => $p->type,
-            'lowBalanceThreshold' => (float) (tenant()->data['accounting_thresholds'][$p->id] ?? 500),
-        ])->all();
+        $providers = TenantProvider::query()
+            ->orderBy('airline_name')
+            ->get(['id', 'airline_name', 'account_name', 'provider_type'])
+            ->map(fn (TenantProvider $provider) => [
+                'id' => $provider->id,
+                'name' => $provider->airline_name ?? $provider->account_name,
+                'type' => $provider->provider_type,
+                'lowBalanceThreshold' => (float) (tenant()->data['accounting_thresholds'][$provider->id] ?? 500),
+            ])
+            ->values()
+            ->all();
 
         $settings = [
             'currency' => 'LYD',

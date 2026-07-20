@@ -5,6 +5,7 @@ import { Card } from '@/Components/ui/Card';
 import { useTranslation } from '@/hooks/useTranslation';
 import {
     BarChart3Icon,
+    BookTextIcon,
     TrendingUpIcon,
     ReceiptIcon,
     ScaleIcon,
@@ -16,6 +17,27 @@ export default function ReportsIndex() {
     const { t } = useTranslation();
 
     const reports = [
+        {
+            title: t('accounting.reports.general_ledger_title', 'General Ledger'),
+            description: t('accounting.reports.general_ledger_desc', 'Account-by-account statement with opening balance and running balance'),
+            href: route('accounting.reports.general-ledger'),
+            icon: <BookTextIcon className="w-6 h-6" />,
+            color: 'text-indigo-600 bg-indigo-50',
+        },
+        {
+            title: t('accounting.reports.balance_sheet_title', 'Balance Sheet'),
+            description: t('accounting.reports.balance_sheet_desc', 'Assets, liabilities, and equity snapshot at any date'),
+            href: route('accounting.reports.balance-sheet'),
+            icon: <ScaleIcon className="w-6 h-6" />,
+            color: 'text-teal-600 bg-teal-50',
+        },
+        {
+            title: t('accounting.reports.income_statement_title', 'Income Statement'),
+            description: t('accounting.reports.income_statement_desc', 'Revenue, cost of sales, purchases, and expenses with net profit'),
+            href: route('accounting.reports.income-statement'),
+            icon: <TrendingUpIcon className="w-6 h-6" />,
+            color: 'text-rose-600 bg-rose-50',
+        },
         {
             title: t('accounting.reports.revenue_title', 'Revenue by Product'),
             description: t('accounting.reports.revenue_desc', 'Gross sales breakdown by airline, hotel, insurance, and eSIM'),

@@ -200,7 +200,7 @@ class FinanceSettleMasterCommissionsCommand extends Command
                         description: "Commission settlement for buyer {$buyerTenantId}",
                         entries: [
                             [
-                                'account' => '6100',
+                                'account' => '7500',
                                 'direction' => 'debit',
                                 'amount' => $settlementTotal,
                             ],

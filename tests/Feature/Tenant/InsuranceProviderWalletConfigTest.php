@@ -109,3 +109,61 @@ test('insurance provider wallet supports manual deposits', function () {
         ->where('type', 'deposit')
         ->count())->toBeGreaterThanOrEqual(2);
 });
+
+test('insurance settings page returns decrypted bearer token for configured provider', function () {
+    global $state;
+
+    TenantInsuranceProvider::query()->updateOrCreate(
+        ['provider_type' => 'albaraka'],
+        [
+            'name' => 'Al Baraka Insurance',
+            'credentials' => [
+                'base_url' => 'https://tameen.webapi.ly',
+                'token' => 'secret-bearer-token',
+            ],
+            'is_active' => true,
+            'commission_compulsory' => 5,
+            'commission_travel' => 10,
+            'commission_orange' => 8,
+        ],
+    );
+
+    $this->actingAs($state['admin'])
+        ->get($state['baseUrl'].route('settings.insurance.index', [], false))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->component('Tenant/Settings/Insurance')
+            ->where('providers', fn ($providers) => collect($providers)
+                ->firstWhere('provider_type', 'albaraka')['token'] === 'secret-bearer-token')
+        );
+});
+
+test('legacy insurance credentials with encrypted token field are decrypted for display', function () {
+    global $state;
+
+    $provider = TenantInsuranceProvider::query()->create([
+        'provider_type' => 'albaraka',
+        'name' => 'Al Baraka Insurance',
+        'is_active' => true,
+        'commission_compulsory' => 5,
+        'commission_travel' => 10,
+        'commission_orange' => 8,
+    ]);
+
+    \Illuminate\Support\Facades\DB::table('tenant_insurance_providers')
+        ->where('id', $provider->id)
+        ->update([
+            'credentials' => json_encode([
+                'base_url' => 'https://tameen.webapi.ly',
+                'token' => encrypt('legacy-encrypted-token'),
+            ], JSON_THROW_ON_ERROR),
+        ]);
+
+    $this->actingAs($state['admin'])
+        ->get($state['baseUrl'].route('settings.insurance.index', [], false))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->where('providers', fn ($providers) => collect($providers)
+                ->firstWhere('provider_type', 'albaraka')['token'] === 'legacy-encrypted-token')
+        );
+});

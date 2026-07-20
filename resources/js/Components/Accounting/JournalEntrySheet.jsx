@@ -48,7 +48,7 @@ export default function JournalEntrySheet({ entry, loading = false, open, onClos
                             <dt className="text-muted-foreground">Date</dt>
                             <dd>{entry.date}</dd>
                             <dt className="text-muted-foreground">Reference</dt>
-                            <dd className="font-mono text-xs">{entry.reference}</dd>
+                            <dd className="font-mono text-xs">{entry.referenceNumber || '—'}</dd>
                             <dt className="text-muted-foreground">Description</dt>
                             <dd>{entry.description}</dd>
                         </dl>

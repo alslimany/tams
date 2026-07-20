@@ -13,6 +13,17 @@ use Illuminate\Support\Facades\Date;
 
 class LedgerPostingService
 {
+    private ?AccountRoutingService $routingService = null;
+
+    /**
+     * Resolved lazily (not constructor-injected) so partial mocks of this
+     * service created without constructor arguments keep working.
+     */
+    protected function routing(): AccountRoutingService
+    {
+        return $this->routingService ??= app(AccountRoutingService::class);
+    }
+
     /**
      * Post a simple double-entry journal from a wallet transaction's meta.
      *
@@ -69,13 +80,13 @@ class LedgerPostingService
             clearing: true,
             details: [
                 // Customer payment received — debit operating wallet
-                ['code' => '1110', 'debit' => (string) $dto->sellingPrice],
+                ['code' => $this->routing()->debitAccount('issuance_operating_wallet', 'general'), 'debit' => (string) $dto->sellingPrice],
 
                 // Revenue (net of VAT) — credit revenue account
                 ['code' => $this->revenueAccount($dto->productType), 'credit' => (string) $revenueNet],
 
                 // VAT payable — credit
-                ['code' => '2400', 'credit' => (string) $dto->vatAmount],
+                ['code' => $this->routing()->creditAccount('issuance_vat_payable', 'general'), 'credit' => (string) $dto->vatAmount],
 
                 // Provider cost (COGS) — debit
                 ['code' => $this->costAccount($dto->productType), 'debit' => (string) $dto->providerCost],
@@ -113,19 +124,19 @@ class LedgerPostingService
             clearing: true,
             details: [
                 // Customer payment received into operating wallet
-                ['code' => '1110', 'debit' => (string) $dto->sellingPrice],
+                ['code' => $this->routing()->debitAccount('issuance_operating_wallet', 'general'), 'debit' => (string) $dto->sellingPrice],
 
                 // Wholesale cost (COGS — what merchant owes the agency)
-                ['code' => '5500', 'debit' => (string) $wholesalePrice],
+                ['code' => $this->routing()->debitAccount('merchant_wholesale_cost', 'general'), 'debit' => (string) $wholesalePrice],
 
                 // Revenue net of VAT
                 ['code' => $this->revenueAccount($dto->productType), 'credit' => (string) $revenueNet],
 
                 // VAT payable
-                ['code' => '2400', 'credit' => (string) $dto->vatAmount],
+                ['code' => $this->routing()->creditAccount('issuance_vat_payable', 'general'), 'credit' => (string) $dto->vatAmount],
 
                 // Network agency payable (wholesale price owed to agency)
-                ['code' => '2200', 'credit' => (string) $wholesalePrice],
+                ['code' => $this->routing()->creditAccount('network_agency_payable', 'general'), 'credit' => (string) $wholesalePrice],
             ],
         );
     }
@@ -137,7 +148,7 @@ class LedgerPostingService
      *   Dr 1320  Merchant Receivable (wholesale price due from merchant)
      *   Dr 5xxx  Provider Cost (COGS at provider cost)
      *   Cr 4600  Network Commission Income (wholesale - provider cost)
-     *   Cr 7200  Settlement Clearing (wholesale price — to be settled)
+     *   Cr 8200  Settlement Clearing (wholesale price — to be settled)
      *   Cr 1xxx  Provider Wallet (prepaid asset consumed)
      *
      * @param  array{order_id: string, product_type: string, wholesale_price: float, provider_cost: float, commission: float, merchant_tenant: string}  $data
@@ -161,10 +172,10 @@ class LedgerPostingService
             clearing: false,
             details: [
                 // Merchant receivable (wholesale price due from merchant)
-                ['code' => '1320', 'debit' => (string) $wholesalePrice],
+                ['code' => $this->routing()->debitAccount('merchant_receivable', 'general'), 'debit' => (string) $wholesalePrice],
 
                 // Network commission income (our margin)
-                ['code' => '4600', 'credit' => (string) $commission],
+                ['code' => $this->routing()->creditAccount('network_commission_income', 'general'), 'credit' => (string) $commission],
 
                 // Provider wallet consumed (prepaid asset)
                 ['code' => $this->providerWalletAccount($productType), 'credit' => (string) $providerCost],
@@ -260,38 +271,39 @@ class LedgerPostingService
 
         $journal = $this->resolveJournal($productType);
         $refundAmount = round($sellingPrice - ($cancellationFee ?? 0.0), 3);
+        $category = $this->routingCategory($productType);
 
         $details = [
             // Reverse customer receivable — credit back to customer (net of cancellation fee)
-            ['code' => '1310', 'credit' => (string) $refundAmount],
+            ['code' => $this->routing()->creditAccount('void_customer_receivable', $category), 'credit' => (string) $refundAmount],
 
             // Reverse revenue — debit revenue account
-            ['code' => $this->revenueAccount($productType), 'debit' => (string) $revenueNet],
+            ['code' => $this->routing()->debitAccount('void_revenue', $category), 'debit' => (string) $revenueNet],
         ];
 
         // Reverse commission — debit service fees account
         if ($commissionAmount > 0) {
-            $details[] = ['code' => '4500', 'debit' => (string) $commissionAmount];
+            $details[] = ['code' => $this->routing()->debitAccount('void_margin', $category), 'debit' => (string) $commissionAmount];
         }
 
         // Reverse tax liability — debit tax payable
         if ($taxTotal > 0) {
-            $details[] = ['code' => '2410', 'debit' => (string) $taxTotal];
+            $details[] = ['code' => $this->routing()->debitAccount('void_tax_payable', $category), 'debit' => (string) $taxTotal];
         }
 
         // Reverse provider cost — credit COGS
         if ($providerCost > 0) {
-            $details[] = ['code' => $this->costAccount($productType), 'credit' => (string) $providerCost];
+            $details[] = ['code' => $this->routing()->creditAccount('void_cost_provider', $category), 'credit' => (string) $providerCost];
         }
 
         // Restore provider wallet — debit prepaid asset
         if ($providerCost > 0) {
-            $details[] = ['code' => $this->providerWalletAccount($productType), 'debit' => (string) $providerCost];
+            $details[] = ['code' => $this->routing()->debitAccount('void_provider_wallet', $category), 'debit' => (string) $providerCost];
         }
 
         if ($cancellationFee !== null && $cancellationFee > 0) {
             // Cancellation fee retained — credit fee income account
-            $details[] = ['code' => '4700', 'credit' => (string) $cancellationFee];
+            $details[] = ['code' => $this->routing()->creditAccount('cancellation_fee', $category), 'credit' => (string) $cancellationFee];
         }
 
         return $this->post(
@@ -353,6 +365,8 @@ class LedgerPostingService
         string $batchReference,
         string $agencyTenantId,
     ): JournalEntry {
+        $routing = $this->routing()->resolve('settlement_merchant', 'general');
+
         return $this->post(
             journal: 'STL',
             description: "settlement:merchant-to-agency:batch:{$batchReference}",
@@ -360,9 +374,9 @@ class LedgerPostingService
             clearing: false,
             details: [
                 // Clear the payable to the network agency
-                ['code' => '2200', 'debit' => (string) $amount],
+                ['code' => $routing['debit'], 'debit' => (string) $amount],
                 // Merchant wallet debited (cash out)
-                ['code' => '1120', 'credit' => (string) $amount],
+                ['code' => $routing['credit'], 'credit' => (string) $amount],
             ],
         );
     }
@@ -382,6 +396,8 @@ class LedgerPostingService
         string $batchReference,
         string $merchantTenantId,
     ): JournalEntry {
+        $routing = $this->routing()->resolve('settlement_agency', 'general');
+
         return $this->post(
             journal: 'STL',
             description: "settlement:agency-from-merchant:batch:{$batchReference}",
@@ -389,9 +405,33 @@ class LedgerPostingService
             clearing: false,
             details: [
                 // Operating wallet credited (cash in)
-                ['code' => '1110', 'debit' => (string) $amount],
+                ['code' => $routing['debit'], 'debit' => (string) $amount],
                 // Clear the merchant receivable
-                ['code' => '1320', 'credit' => (string) $amount],
+                ['code' => $routing['credit'], 'credit' => (string) $amount],
+            ],
+        );
+    }
+
+    /**
+     * Post a two-line inventory journal entry using the routing configuration.
+     */
+    public function postInventoryEntry(
+        string $eventType,
+        string $category,
+        float $amount,
+        string $description,
+        string $reference,
+    ): JournalEntry {
+        $routing = $this->routing()->resolve($eventType, $category);
+
+        return $this->post(
+            journal: 'GEN',
+            description: $description,
+            reference: $reference,
+            clearing: false,
+            details: [
+                ['code' => $routing['debit'], 'debit' => (string) $amount],
+                ['code' => $routing['credit'], 'credit' => (string) $amount],
             ],
         );
     }
@@ -408,36 +448,44 @@ class LedgerPostingService
         };
     }
 
-    public function revenueAccount(string $productType): string
+    /**
+     * Map a product type to its account routing category.
+     */
+    public function routingCategory(string $productType): string
     {
         return match ($productType) {
-            'airline' => '4100',
-            'hotel' => '4200',
-            'insurance' => '4300',
-            'esim' => '4400',
-            default => '4500',
+            'airline', 'hotel', 'insurance', 'esim' => $productType,
+            default => 'general',
         };
+    }
+
+    public function receivableAccount(string $productType): string
+    {
+        return $this->routing()->debitAccount('sale_customer_receivable', $this->routingCategory($productType));
+    }
+
+    public function revenueAccount(string $productType): string
+    {
+        return $this->routing()->creditAccount('sale_revenue', $this->routingCategory($productType));
+    }
+
+    public function marginAccount(string $productType): string
+    {
+        return $this->routing()->creditAccount('sale_margin', $this->routingCategory($productType));
+    }
+
+    public function taxPayableAccount(string $productType): string
+    {
+        return $this->routing()->creditAccount('sale_tax_payable', $this->routingCategory($productType));
     }
 
     public function costAccount(string $productType): string
     {
-        return match ($productType) {
-            'airline' => '5100',
-            'hotel' => '5200',
-            'insurance' => '5300',
-            'esim' => '5400',
-            default => '5500',
-        };
+        return $this->routing()->debitAccount('cost_provider', $this->routingCategory($productType));
     }
 
     public function providerWalletAccount(string $productType): string
     {
-        return match ($productType) {
-            'airline' => '1210',
-            'hotel' => '1220',
-            'insurance' => '1230',
-            'esim' => '1240',
-            default => '1200',
-        };
+        return $this->routing()->creditAccount('cost_provider_wallet', $this->routingCategory($productType));
     }
 }

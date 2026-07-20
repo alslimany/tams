@@ -1,5 +1,5 @@
 import React from 'react';
-import { Head, router } from '@inertiajs/react';
+import { Head, Link, router } from '@inertiajs/react';
 import { PrinterIcon } from 'lucide-react';
 import TenantLayout from '@/Layouts/TenantLayout';
 import AccountingLayout from '@/Layouts/AccountingLayout';
@@ -10,17 +10,19 @@ import { Button } from '@/Components/ui/Button';
 import { Card } from '@/Components/ui/Card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/Components/ui/Table';
 import { useTranslation } from '@/hooks/useTranslation';
+import { accountDetailHref, formatTrialBalanceSubtitle } from '@/lib/accounting';
 
-const TYPE_ORDER = ['asset', 'liability', 'equity', 'revenue', 'expense'];
+const TYPE_ORDER = ['asset', 'liability', 'equity', 'revenue', 'expense', 'purchase'];
 const TYPE_LABELS = {
     asset: 'Assets',
     liability: 'Liabilities',
     equity: 'Equity',
     revenue: 'Revenue',
     expense: 'Expenses',
+    purchase: 'Purchases',
 };
 
-export default function TrialBalance({ period, rows, totals, isBalanced }) {
+export default function TrialBalance({ period, filters, rows, totals, isBalanced }) {
     const { t } = useTranslation();
     const [showZero, setShowZero] = React.useState(false);
 
@@ -29,12 +31,32 @@ export default function TrialBalance({ period, rows, totals, isBalanced }) {
         return acc;
     }, {});
 
+    function applyFilter(key, value) {
+        router.get(
+            route('accounting.ledger.trial-balance'),
+            {
+                dateFrom: filters.dateFrom ?? period.from,
+                dateTo: filters.dateTo ?? period.to,
+                [key]: value || undefined,
+            },
+            { preserveState: true, replace: true },
+        );
+    }
+
+    const accountPeriod = {
+        from: period.from,
+        to: period.to,
+    };
+
     return (
         <TenantLayout>
             <Head title={t('accounting.nav.trial_balance')} />
             <AccountingLayout
                 title={t('accounting.nav.trial_balance')}
-                subtitle={`As of ${period.asOf}`}
+                subtitle={
+                    formatTrialBalanceSubtitle(period)
+                    ?? t('accounting.reports.trial_balance_subtitle')
+                }
                 actions={
                     <div className="flex items-center gap-2">
                         <label className="flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground">
@@ -46,18 +68,6 @@ export default function TrialBalance({ period, rows, totals, isBalanced }) {
                             />
                             Show zero balances
                         </label>
-                        <input
-                            type="date"
-                            value={period.asOf}
-                            onChange={(e) =>
-                                router.get(
-                                    route('accounting.ledger.trial-balance'),
-                                    { asOf: e.target.value },
-                                    { preserveState: true },
-                                )
-                            }
-                            className="rounded-md border bg-background px-3 py-1.5 text-sm"
-                        />
                         <Button variant="outline" size="sm" onClick={() => window.print()}>
                             <PrinterIcon className="mr-1.5 size-3.5" /> Print
                         </Button>
@@ -77,6 +87,26 @@ export default function TrialBalance({ period, rows, totals, isBalanced }) {
                         </AlertDescription>
                     </Alert>
                 )}
+
+                <div className="mb-4 flex flex-wrap items-center gap-3">
+                    <input
+                        type="date"
+                        value={period.from}
+                        onChange={(e) => applyFilter('dateFrom', e.target.value)}
+                        className="rounded-md border bg-background px-3 py-1.5 text-sm"
+                        aria-label="Period start"
+                    />
+                    <input
+                        type="date"
+                        value={period.to}
+                        onChange={(e) => applyFilter('dateTo', e.target.value)}
+                        className="rounded-md border bg-background px-3 py-1.5 text-sm"
+                        aria-label="Closing balance date"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                        {t('accounting.reports.trial_balance_period_hint')}
+                    </p>
+                </div>
 
                 <Card className="print:shadow-none">
                     <Table>
@@ -111,7 +141,17 @@ export default function TrialBalance({ period, rows, totals, isBalanced }) {
                                                         {row.code}
                                                     </code>
                                                 </TableCell>
-                                                <TableCell className="text-sm">{row.name}</TableCell>
+                                                <TableCell className="text-sm">
+                                                    <Link
+                                                        href={accountDetailHref(
+                                                            row.code,
+                                                            accountPeriod,
+                                                        )}
+                                                        className="hover:underline"
+                                                    >
+                                                        {row.name}
+                                                    </Link>
+                                                </TableCell>
                                                 <TableCell>
                                                     <span className="text-xs capitalize text-muted-foreground">
                                                         {row.type}

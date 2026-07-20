@@ -125,17 +125,22 @@ class ESimBookingService
             throw new RuntimeException('eSIM provider is not configured.');
         }
 
-        $currency = strtoupper((string) ($packageData['currency'] ?? 'USD'));
-        $amount = round((float) ($packageData['price'] ?? 0), 2);
+        $providerCurrency = strtoupper((string) ($packageData['provider_currency'] ?? 'USD'));
+        $providerAmount = round((float) ($packageData['provider_price'] ?? $packageData['price'] ?? 0), 2);
 
-        $this->esimProviderWalletTransactions->assertCanWithdrawForSource($providerSource, $esimProvider, $currency, $amount);
+        $this->esimProviderWalletTransactions->assertCanWithdrawForSource(
+            $providerSource,
+            $esimProvider,
+            $providerCurrency,
+            $providerAmount,
+        );
 
         $providerOrg = $this->providerManager->provider()->organization();
         $apiBalance = (float) ($providerOrg['balance'] ?? 0);
 
-        if ($apiBalance < $amount) {
+        if ($apiBalance < $providerAmount) {
             throw new InsufficientWalletBalanceException(
-                "Insufficient provider balance. Required: \${$amount} {$currency}, available: \${$apiBalance} {$currency}."
+                "Insufficient provider balance. Required: \${$providerAmount} {$providerCurrency}, available: \${$apiBalance} {$providerCurrency}."
             );
         }
 

@@ -9,6 +9,7 @@ import { Button } from '@/Components/ui/Button';
 import { Card } from '@/Components/ui/Card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/Components/ui/Table';
 import { useTranslation } from '@/hooks/useTranslation';
+import { formatAccountingPeriod } from '@/lib/accounting';
 
 const JOURNAL_COLORS = {
     AIR: 'bg-blue-100 text-blue-700 border-blue-200',
@@ -19,9 +20,18 @@ const JOURNAL_COLORS = {
     GEN: 'bg-slate-100 text-slate-700 border-slate-200',
 };
 
-export default function AccountDetail({ account, period, openingBalance, lines, closingBalance }) {
+export default function AccountDetail({
+    account,
+    period,
+    openingBalance,
+    lines,
+    totalDebit,
+    totalCredit,
+    closingBalance,
+}) {
     const { t } = useTranslation();
     const [sheetEntryId, setSheetEntryId] = React.useState(null);
+    const periodLabel = formatAccountingPeriod(period);
 
     function applyFilter(key, value) {
         router.get(
@@ -36,7 +46,17 @@ export default function AccountDetail({ account, period, openingBalance, lines, 
             <Head title={`${account.code} — ${account.name}`} />
             <AccountingLayout
                 title={`${account.code} — ${account.name}`}
-                subtitle={<span className="capitalize text-muted-foreground">{account.type}</span>}
+                subtitle={
+                    <span className="text-muted-foreground">
+                        <span className="capitalize">{account.type}</span>
+                        {periodLabel && (
+                            <>
+                                {' · '}
+                                {periodLabel}
+                            </>
+                        )}
+                    </span>
+                }
                 actions={
                     <Button
                         variant="ghost"
@@ -136,6 +156,21 @@ export default function AccountDetail({ account, period, openingBalance, lines, 
                                         </TableCell>
                                     </TableRow>
                                 ))
+                            )}
+
+                            {lines.length > 0 && (
+                                <TableRow className="border-t font-semibold">
+                                    <TableCell colSpan={3} className="text-sm">
+                                        Totals
+                                    </TableCell>
+                                    <TableCell className="text-right text-sm">
+                                        <AmountDisplay amount={totalDebit} />
+                                    </TableCell>
+                                    <TableCell className="text-right text-sm">
+                                        <AmountDisplay amount={totalCredit} />
+                                    </TableCell>
+                                    <TableCell />
+                                </TableRow>
                             )}
 
                             {/* Closing balance */}

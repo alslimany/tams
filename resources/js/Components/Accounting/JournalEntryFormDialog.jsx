@@ -63,6 +63,7 @@ export default function JournalEntryFormDialog({
 }) {
     const [transDate, setTransDate] = React.useState('');
     const [description, setDescription] = React.useState('');
+    const [referenceNumber, setReferenceNumber] = React.useState('');
     const [journal, setJournal] = React.useState('GEN');
     const [lines, setLines] = React.useState([{ ...emptyLine }, { ...emptyLine }]);
     const [error, setError] = React.useState('');
@@ -89,6 +90,7 @@ export default function JournalEntryFormDialog({
         if (isEdit && entry) {
             setTransDate(entry.date || todayDateString());
             setDescription(entry.description || '');
+            setReferenceNumber(entry.referenceNumber || '');
             setJournal(entry.journal || 'GEN');
             setExistingAttachment(entry.attachment ?? null);
             setLines(
@@ -101,6 +103,7 @@ export default function JournalEntryFormDialog({
         } else {
             setTransDate(todayDateString());
             setDescription('');
+            setReferenceNumber('');
             setJournal('GEN');
             setExistingAttachment(null);
             setLines([{ ...emptyLine }, { ...emptyLine }]);
@@ -217,6 +220,7 @@ export default function JournalEntryFormDialog({
         const payload = {
             transDate,
             description,
+            referenceNumber: referenceNumber.trim() || null,
             journal,
             lines: linesWithAmount.map((l) => ({
                 accountCode: l.accountCode,
@@ -356,6 +360,25 @@ export default function JournalEntryFormDialog({
                                             ))}
                                         </SelectContent>
                                     </Select>
+                                </div>
+
+                                <div className="space-y-1.5">
+                                    <Label htmlFor="je-reference">
+                                        Reference Number
+                                        <span className="ml-1 font-normal text-muted-foreground">
+                                            (optional)
+                                        </span>
+                                    </Label>
+                                    <Input
+                                        id="je-reference"
+                                        type="text"
+                                        value={referenceNumber}
+                                        onChange={(e) =>
+                                            setReferenceNumber(e.target.value)
+                                        }
+                                        placeholder="Voucher or invoice number"
+                                        maxLength={100}
+                                    />
                                 </div>
 
                                 <div className="space-y-1.5 sm:col-span-2 lg:col-span-1">

@@ -142,7 +142,7 @@ function seedAirlineTransactionId(): int
 function makeFakeJournalEntry(int $id = 9001): JournalEntry
 {
     $entry = new JournalEntry;
-    $entry->id = $id;
+    $entry->journalEntryId = $id;
 
     return $entry;
 }

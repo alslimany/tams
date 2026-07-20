@@ -6,6 +6,7 @@ import {
     DropdownMenuTrigger,
 } from '@/Components/ui/dropdown-menu';
 import { useTranslation } from '@/hooks/useTranslation';
+import { switchLocale } from '@/lib/i18n';
 
 export default function LanguageSwitcher({ compact = false }) {
     const { locale, t } = useTranslation();
@@ -22,7 +23,7 @@ export default function LanguageSwitcher({ compact = false }) {
             return;
         }
 
-        window.location.href = `/language/switch?locale=${newLocale}`;
+        switchLocale(newLocale);
     };
 
     return (

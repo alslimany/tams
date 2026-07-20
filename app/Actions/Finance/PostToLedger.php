@@ -90,7 +90,7 @@ class PostToLedger
 
         // Dr 1310 — Customer Receivable (full selling price = base fare + taxes)
         if ($sellingPrice > 0) {
-            $details[] = ['code' => '1310', 'debit' => (string) $sellingPrice];
+            $details[] = ['code' => $this->ledgerPostingService->receivableAccount($productType), 'debit' => (string) $sellingPrice];
         }
 
         // Cr 4xxx — Revenue (base fare net of commission; taxes excluded)
@@ -100,12 +100,12 @@ class PostToLedger
 
         // Cr 4500 — Service Fees & Markup (commission on base fare)
         if ($commissionAmount > 0) {
-            $details[] = ['code' => '4500', 'credit' => (string) $commissionAmount];
+            $details[] = ['code' => $this->ledgerPostingService->marginAccount($productType), 'credit' => (string) $commissionAmount];
         }
 
         // Cr 2410 — Airline Tax Payable (pass-through taxes owed to authority)
         if ($taxTotal > 0) {
-            $details[] = ['code' => '2410', 'credit' => (string) $taxTotal];
+            $details[] = ['code' => $this->ledgerPostingService->taxPayableAccount($productType), 'credit' => (string) $taxTotal];
         }
 
         // Dr 5xxx — Provider Cost / COGS (net fare after commission + taxes)

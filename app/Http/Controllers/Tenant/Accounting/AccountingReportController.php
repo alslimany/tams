@@ -3,10 +3,15 @@
 namespace App\Http\Controllers\Tenant\Accounting;
 
 use App\Http\Controllers\Controller;
+use App\Services\Accounting\Reports\BalanceSheetService;
+use App\Services\Accounting\Reports\GeneralLedgerService;
 use App\Services\Accounting\Reports\GrossMarginReport;
+use App\Services\Accounting\Reports\IncomeStatementService;
 use App\Services\Accounting\Reports\RevenueByProductReport;
 use App\Services\Accounting\Reports\VATSummaryReport;
 use App\Services\Accounting\WalletLedgerReconciliationService;
+use Carbon\Carbon;
+use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -17,11 +22,61 @@ class AccountingReportController extends Controller
         private readonly GrossMarginReport $grossMarginReport,
         private readonly VATSummaryReport $vatReport,
         private readonly WalletLedgerReconciliationService $reconciliation,
+        private readonly GeneralLedgerService $generalLedger,
+        private readonly BalanceSheetService $balanceSheet,
+        private readonly IncomeStatementService $incomeStatement,
     ) {}
 
     public function index(): Response
     {
         return Inertia::render('Accounting/Reports/Index');
+    }
+
+    public function generalLedger(Request $request): Response
+    {
+        $from = $request->string('from', Carbon::now()->startOfMonth()->toDateString())->toString();
+        $to = $request->string('to', Carbon::now()->endOfMonth()->toDateString())->toString();
+        $accountCode = $request->string('account')->toString();
+
+        $accounts = $this->generalLedger->generate(
+            $from,
+            $to,
+            $accountCode !== '' ? [$accountCode] : null,
+        );
+
+        $accountOptions = \Abivia\Ledger\Models\LedgerAccount::with('names')
+            ->where('category', false)
+            ->where('code', '!=', '')
+            ->orderBy('code')
+            ->get()
+            ->map(fn ($account) => [
+                'code' => $account->code,
+                'name' => $account->names->first()?->name ?? $account->code,
+            ])
+            ->values()
+            ->all();
+
+        return Inertia::render('Accounting/Reports/GeneralLedger', [
+            'period' => ['from' => $from, 'to' => $to],
+            'accounts' => $accounts,
+            'accountOptions' => $accountOptions,
+            'selectedAccount' => $accountCode !== '' ? $accountCode : null,
+        ]);
+    }
+
+    public function balanceSheet(Request $request): Response
+    {
+        $asAt = $request->string('asOf', Carbon::now()->toDateString())->toString();
+
+        return Inertia::render('Accounting/Reports/BalanceSheet', $this->balanceSheet->generate($asAt));
+    }
+
+    public function incomeStatement(Request $request): Response
+    {
+        $from = $request->string('from', Carbon::now()->startOfMonth()->toDateString())->toString();
+        $to = $request->string('to', Carbon::now()->endOfMonth()->toDateString())->toString();
+
+        return Inertia::render('Accounting/Reports/IncomeStatement', $this->incomeStatement->generate($from, $to));
     }
 
     public function revenue(): Response

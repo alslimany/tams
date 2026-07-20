@@ -32,6 +32,17 @@ return [
         'provider_wallets' => 'Portefeuilles fournisseurs',
         'providers' => 'Fournisseurs',
         'preferences' => 'Préférences',
+        'general_ledger' => 'Grand livre général',
+        'balance_sheet' => 'Bilan',
+        'income_statement' => 'Compte de résultat',
+        'account_routing' => 'Routage des comptes',
+        'inventory' => 'Inventaire',
+        'warehouses' => 'Entrepôts',
+        'item_catalogue' => 'Catalogue d\'articles',
+        'receive_goods' => 'Réception de marchandises',
+        'deliver_goods' => 'Livraison de marchandises',
+        'transfer_goods' => 'Transfert de marchandises',
+        'movement_log' => 'Journal des mouvements',
     ],
 
     // Issuances
@@ -143,7 +154,9 @@ return [
         'rerun' => 'Relancer',
 
         'trial_balance_title' => 'Balance de vérification',
-        'trial_balance_desc' => 'Totaux débit et crédit pour tous les comptes.',
+        'trial_balance_desc' => 'Soldes débiteurs et créditeurs de clôture pour tous les comptes.',
+        'trial_balance_subtitle' => 'Soldes de clôture pour tous les comptes.',
+        'trial_balance_period_hint' => 'Les soldes sont calculés à la date de fin. La date de début s\'applique lors de l\'ouverture des détails du compte.',
 
         'aging_title' => 'Rapport d\'ancienneté',
         'aging_desc' => 'Créances en suspens par tranche d\'ancienneté.',

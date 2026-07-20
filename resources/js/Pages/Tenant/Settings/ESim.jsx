@@ -23,6 +23,7 @@ export default function ESimSettings({ providers = [] }) {
         client_secret: '',
         is_active: false,
         commission_esim: 0,
+        usd_to_lyd_rate: '',
         initial_balance: '',
     });
 
@@ -42,6 +43,7 @@ export default function ESimSettings({ providers = [] }) {
             client_secret: provider.client_secret || '',
             is_active: Boolean(provider.is_active),
             commission_esim: provider.commission_esim ?? 0,
+            usd_to_lyd_rate: provider.usd_to_lyd_rate ?? '',
             initial_balance: '',
         });
     };
@@ -115,6 +117,12 @@ export default function ESimSettings({ providers = [] }) {
                                 </div>
                                 <div className="text-xs text-muted-foreground">
                                     {t('esim.settings.commission')}: {provider.commission_esim}%
+                                </div>
+                                <div className="text-xs text-muted-foreground">
+                                    {t('esim.settings.usd_to_lyd_rate')}:{' '}
+                                    {provider.usd_to_lyd_rate
+                                        ? `${provider.usd_to_lyd_rate} LYD`
+                                        : t('esim.settings.usd_to_lyd_rate_not_set')}
                                 </div>
 
                                 {provider.provider_org && (
@@ -246,6 +254,24 @@ export default function ESimSettings({ providers = [] }) {
                                             )}
                                         </div>
                                         <div className="grid gap-2">
+                                            <Label htmlFor="usd_to_lyd_rate">{t('esim.settings.usd_to_lyd_rate')}</Label>
+                                            <Input
+                                                id="usd_to_lyd_rate"
+                                                type="number"
+                                                min="0"
+                                                step="0.0001"
+                                                value={form.data.usd_to_lyd_rate}
+                                                onChange={(event) => form.setData('usd_to_lyd_rate', event.target.value)}
+                                                placeholder={t('esim.settings.usd_to_lyd_rate_placeholder')}
+                                            />
+                                            <p className="text-xs text-muted-foreground">
+                                                {t('esim.settings.usd_to_lyd_rate_help')}
+                                            </p>
+                                            {form.errors.usd_to_lyd_rate && (
+                                                <p className="text-xs text-destructive">{form.errors.usd_to_lyd_rate}</p>
+                                            )}
+                                        </div>
+                                        <div className="grid gap-2 sm:col-span-2">
                                             <Label htmlFor="initial_balance">{t('esim.settings.initial_balance')}</Label>
                                             <Input
                                                 id="initial_balance"

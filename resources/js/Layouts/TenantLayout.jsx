@@ -40,6 +40,7 @@ import {
     SidebarProvider,
     SidebarTrigger,
 } from '@/Components/ui/sidebar';
+import LanguageSwitcher from '@/Components/LanguageSwitcher';
 import { useTranslation } from '@/hooks/useTranslation';
 
 export default function TenantLayout({ children }) {
@@ -225,6 +226,10 @@ export default function TenantLayout({ children }) {
                             <SidebarTrigger className="-ms-1" />
 
                             <p className="truncate text-sm text-muted-foreground">{currentPathLabel}</p>
+
+                            <div className="ms-auto">
+                                <LanguageSwitcher compact />
+                            </div>
                         </div>
                     </header>
 

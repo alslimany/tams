@@ -32,6 +32,17 @@ return [
         'provider_wallets' => 'Provider Wallets',
         'providers' => 'Providers',
         'preferences' => 'Preferences',
+        'general_ledger' => 'General Ledger',
+        'balance_sheet' => 'Balance Sheet',
+        'income_statement' => 'Income Statement',
+        'account_routing' => 'Account Routing',
+        'inventory' => 'Inventory',
+        'warehouses' => 'Warehouses',
+        'item_catalogue' => 'Item Catalogue',
+        'receive_goods' => 'Receive Goods',
+        'deliver_goods' => 'Deliver Goods',
+        'transfer_goods' => 'Transfer Goods',
+        'movement_log' => 'Movement Log',
     ],
 
     // Issuances
@@ -149,7 +160,9 @@ return [
 
         // Trial balance
         'trial_balance_title' => 'Trial Balance',
-        'trial_balance_desc' => 'Debit and credit totals for all accounts.',
+        'trial_balance_desc' => 'Closing debit and credit balances for all accounts.',
+        'trial_balance_subtitle' => 'Closing balances for all accounts.',
+        'trial_balance_period_hint' => 'Balances are calculated as of the end date. The start date applies when opening account details.',
 
         // Aging
         'aging_title' => 'Aging Report',

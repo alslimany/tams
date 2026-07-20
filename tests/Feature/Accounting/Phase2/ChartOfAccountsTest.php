@@ -37,12 +37,14 @@ test('direct agency ledger is bootstrapped with all required accounts', function
             '1200', '1210', '1220', '1230', '1240',
             '1300', '1310', '1320',
             '2000', '2100', '2110', '2120', '2130', '2140',
-            '2200', '2300', '2400',
+            '2200', '2300', '2400', '2410', '2420', '2500', '2510', '2520',
             '3000', '3100', '3200', '3300',
             '4000', '4100', '4200', '4300', '4400', '4500', '4600', '4700',
             '5000', '5100', '5200', '5300', '5400', '5500',
-            '6000', '6100', '6200', '6300',
-            '7000', '7100', '7200', '7400',
+            '6000', '6010', '6020', '6030', '6040', '6050', '6060',
+            '7000', '7100', '7200', '7300', '7500',
+            '8000', '8100', '8200', '8400',
+            '1400', '1410', '1420',
         ];
 
         foreach ($requiredCodes as $code) {
@@ -60,7 +62,7 @@ test('network agency ledger is bootstrapped with network-specific accounts', fun
 
     $tenant->run(function () {
         expect(DB::table('ledger_accounts')->where('code', '2200')->exists())->toBeTrue() // Network Agency Payable
-            ->and(DB::table('ledger_accounts')->where('code', '7100')->exists())->toBeTrue() // Network Agency Settlement
+            ->and(DB::table('ledger_accounts')->where('code', '8100')->exists())->toBeTrue() // Network Agency Settlement
             ->and(DB::table('ledger_accounts')->where('code', '4600')->exists())->toBeTrue(); // Network Commission Income
     });
 
@@ -74,7 +76,7 @@ test('merchant agency ledger is bootstrapped with merchant accounts', function (
     $tenant->run(function () {
         expect(DB::table('ledger_accounts')->where('code', '1120')->exists())->toBeTrue() // Merchant Wallet
             ->and(DB::table('ledger_accounts')->where('code', '5500')->exists())->toBeTrue() // Merchant Wholesale Cost
-            ->and(DB::table('ledger_accounts')->where('code', '7200')->exists())->toBeTrue(); // Merchant Settlement Clearing
+            ->and(DB::table('ledger_accounts')->where('code', '8200')->exists())->toBeTrue(); // Merchant Settlement Clearing
     });
 
     tenancy()->end();
