@@ -44,7 +44,16 @@ return new class extends Migration
         $tenant = tenant();
 
         if ($tenant instanceof Tenant) {
-            app(LedgerBootstrapService::class)->bootstrapForTenant($tenant);
+            try {
+                app(LedgerBootstrapService::class)->bootstrapForTenant($tenant);
+            } catch (\Abivia\Ledger\Exceptions\Breaker $exception) {
+                $details = implode(' ', $exception->getErrors(withMessage: true));
+
+                throw new \RuntimeException(
+                    "Failed to sync missing CoA accounts after renumber for tenant [{$tenant->id}]: {$details}",
+                    previous: $exception,
+                );
+            }
         }
     }
 

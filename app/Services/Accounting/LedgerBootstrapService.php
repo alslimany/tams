@@ -19,6 +19,7 @@ class LedgerBootstrapService
 {
     public function __construct(
         private readonly CoaSettingsSyncService $coaSettingsSync,
+        private readonly CoaAccountLifecycleService $coaLifecycle,
     ) {}
 
     /**
@@ -97,18 +98,44 @@ class LedgerBootstrapService
      */
     private function addMissingAccounts(array $templateData): array
     {
-        $existingCodes = LedgerAccount::query()->pluck('code')->filter()->values()->all();
+        $existingCodes = $this->existingAccountCodes();
         $addedAccounts = 0;
         $accounts = $templateData['accounts'] ?? [];
 
         foreach ($accounts as $definition) {
-            if (in_array($definition['code'], $existingCodes, true)) {
+            $code = (string) ($definition['code'] ?? '');
+            $name = (string) ($definition['name'] ?? $code);
+
+            if ($code === '') {
                 continue;
             }
 
-            (new LedgerAccountController)->add(Account::fromArray($definition));
-            $existingCodes[] = $definition['code'];
-            $addedAccounts++;
+            $this->coaLifecycle->purgeRemovedAccountForReuse($code, $name);
+            $existingCodes = $this->existingAccountCodes();
+
+            if (in_array($code, $existingCodes, true)) {
+                continue;
+            }
+
+            try {
+                $accountData = $definition;
+
+                if (isset($accountData['parent']) && is_string($accountData['parent'])) {
+                    $accountData['parent'] = ['code' => (string) $accountData['parent']];
+                }
+
+                (new LedgerAccountController)->add(Account::fromArray($accountData));
+                $existingCodes[] = $code;
+                $addedAccounts++;
+            } catch (Breaker $exception) {
+                $details = implode(' ', $exception->getErrors(withMessage: true));
+
+                throw Breaker::withCode(
+                    $exception->getCode() ?: Breaker::RULE_VIOLATION,
+                    ["Failed adding ledger account {$code} ({$name}): {$details}"],
+                    $exception,
+                );
+            }
         }
 
         return [
@@ -116,6 +143,19 @@ class LedgerBootstrapService
             'added_accounts' => $addedAccounts,
             'total_required_accounts' => count($accounts),
         ];
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function existingAccountCodes(): array
+    {
+        return LedgerAccount::query()
+            ->pluck('code')
+            ->map(fn ($code): string => (string) $code)
+            ->filter(fn (string $code): bool => $code !== '')
+            ->values()
+            ->all();
     }
 
     /**

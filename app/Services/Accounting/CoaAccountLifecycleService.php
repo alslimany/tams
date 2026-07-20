@@ -9,6 +9,7 @@ use Abivia\Ledger\Models\LedgerAccount;
 use App\Models\Tenant\ChartOfAccount;
 use App\Models\Tenant\CoaSetting;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 class CoaAccountLifecycleService
 {
@@ -118,6 +119,12 @@ class CoaAccountLifecycleService
 
         if ($wasSoftDeleted) {
             return true;
+        }
+
+        // During early migrations coa_settings may not exist yet. Only soft-deleted
+        // accounts are safe to purge in that case — never live system accounts.
+        if (! Schema::hasTable('coa_settings')) {
+            return false;
         }
 
         $setting = CoaSetting::query()->where('code', $account->code)->first();
