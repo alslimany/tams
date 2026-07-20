@@ -13,6 +13,8 @@ use Abivia\Ledger\Models\SubJournal;
 use App\Models\Tenant;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Date;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use RuntimeException;
 
 class LedgerBootstrapService
@@ -101,21 +103,27 @@ class LedgerBootstrapService
         $existingCodes = $this->existingAccountCodes();
         $addedAccounts = 0;
         $accounts = $templateData['accounts'] ?? [];
+        $templateNamesByCode = $this->templateNamesByCode($accounts);
 
         foreach ($accounts as $definition) {
             $code = (string) ($definition['code'] ?? '');
             $name = (string) ($definition['name'] ?? $code);
+            $language = (string) ($definition['language'] ?? 'en');
 
             if ($code === '') {
                 continue;
             }
 
-            $this->coaLifecycle->purgeRemovedAccountForReuse($code, $name);
+            $this->coaLifecycle->purgeRemovedAccountForReuse($code, $name, $language);
             $existingCodes = $this->existingAccountCodes();
 
             if (in_array($code, $existingCodes, true)) {
                 continue;
             }
+
+            // Abivia enforces unique names per language. After renumber (e.g. 6000→7000),
+            // a live account may still hold the template name we need for a new code.
+            $this->releaseTemplateName($name, $language, $code, $templateNamesByCode);
 
             try {
                 $accountData = $definition;
@@ -143,6 +151,110 @@ class LedgerBootstrapService
             'added_accounts' => $addedAccounts,
             'total_required_accounts' => count($accounts),
         ];
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $accounts
+     * @return array<string, string>
+     */
+    private function templateNamesByCode(array $accounts): array
+    {
+        $names = [];
+
+        foreach ($accounts as $definition) {
+            $code = (string) ($definition['code'] ?? '');
+
+            if ($code === '') {
+                continue;
+            }
+
+            $names[$code] = (string) ($definition['name'] ?? $code);
+        }
+
+        return $names;
+    }
+
+    /**
+     * Free a template display name by renaming any other live account that holds it.
+     *
+     * Prefer restoring the conflicting account to its own template name when known
+     * (typical after expense→opex renumber); otherwise suffix with its code.
+     *
+     * @param  array<string, string>  $templateNamesByCode
+     */
+    private function releaseTemplateName(
+        string $name,
+        string $language,
+        string $forCode,
+        array $templateNamesByCode,
+    ): void {
+        $conflicts = LedgerAccount::query()
+            ->where('code', '!=', $forCode)
+            ->whereHas('names', function ($query) use ($name, $language): void {
+                $query->where('language', $language)->where('name', $name);
+            })
+            ->get();
+
+        foreach ($conflicts as $conflict) {
+            $conflictCode = (string) $conflict->code;
+            $preferred = $templateNamesByCode[$conflictCode] ?? null;
+            $baseName = ($preferred !== null && $preferred !== $name)
+                ? $preferred
+                : "{$name} ({$conflictCode})";
+
+            $newName = $this->uniqueAccountName($baseName, $language, (string) $conflict->ledgerUuid);
+            $this->renameAccount($conflict, $language, $newName);
+        }
+    }
+
+    private function uniqueAccountName(string $base, string $language, string $exceptUuid): string
+    {
+        $candidate = $base;
+        $suffix = 2;
+
+        while (
+            LedgerAccount::query()
+                ->where('ledgerUuid', '!=', $exceptUuid)
+                ->whereHas('names', function ($query) use ($candidate, $language): void {
+                    $query->where('language', $language)->where('name', $candidate);
+                })
+                ->exists()
+        ) {
+            $candidate = "{$base} ({$suffix})";
+            $suffix++;
+        }
+
+        return $candidate;
+    }
+
+    private function renameAccount(LedgerAccount $account, string $language, string $newName): void
+    {
+        $updated = DB::table('ledger_names')
+            ->where('ownerUuid', $account->ledgerUuid)
+            ->where('language', $language)
+            ->update([
+                'name' => $newName,
+                'updated_at' => now(),
+            ]);
+
+        if ($updated === 0) {
+            DB::table('ledger_names')->insert([
+                'ownerUuid' => $account->ledgerUuid,
+                'language' => $language,
+                'name' => $newName,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+        }
+
+        if (Schema::hasTable('coa_settings')) {
+            DB::table('coa_settings')
+                ->where('ledger_uuid', $account->ledgerUuid)
+                ->update([
+                    'display_name' => $newName,
+                    'updated_at' => now(),
+                ]);
+        }
     }
 
     /**

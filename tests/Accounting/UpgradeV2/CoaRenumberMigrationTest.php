@@ -127,7 +127,7 @@ test('bootstrap recreates soft-deleted template accounts and surfaces name confl
     tenancy()->end();
 });
 
-test('bootstrap reports the failing account when a live name conflict blocks creation', function () {
+test('bootstrap renames live name conflicts so missing template accounts can be added', function () {
     renumberTestTenant()->run(function () {
         if (! Schema::hasTable('ledger_accounts')) {
             expect(true)->toBeTrue();
@@ -136,7 +136,7 @@ test('bootstrap reports the failing account when a live name conflict blocks cre
         }
 
         // Remove a template account so bootstrap will try to recreate it,
-        // then plant a protected blocker with the same display name.
+        // then plant a live blocker with the same display name.
         $target = \Abivia\Ledger\Models\LedgerAccount::query()->where('code', '6060')->first();
 
         if ($target === null) {
@@ -191,24 +191,75 @@ test('bootstrap reports the failing account when a live name conflict blocks cre
         }
 
         try {
-            app(\App\Services\Accounting\LedgerBootstrapService::class)
+            $result = app(\App\Services\Accounting\LedgerBootstrapService::class)
                 ->bootstrapForTenant(renumberTestTenant());
-            expect(false)->toBeTrue('Expected Breaker for name conflict');
-        } catch (\Abivia\Ledger\Exceptions\Breaker $exception) {
-            $message = implode(' ', $exception->getErrors(withMessage: true));
-            expect($message)->toContain('6060')
-                ->and($message)->toContain('Other Purchases');
+
+            expect($result['created_root'])->toBeFalse()
+                ->and(\Abivia\Ledger\Models\LedgerAccount::query()->where('code', '6060')->exists())->toBeTrue();
+
+            $renamed = DB::table('ledger_names')
+                ->where('ownerUuid', $blockerUuid)
+                ->where('language', 'en')
+                ->value('name');
+
+            expect($renamed)->toBe("Other Purchases ({$blockerCode})");
         } finally {
             if (Schema::hasTable('coa_settings')) {
                 DB::table('coa_settings')->where('code', $blockerCode)->delete();
             }
             DB::table('ledger_names')->where('ownerUuid', $blockerUuid)->delete();
             DB::table('ledger_accounts')->where('ledgerUuid', $blockerUuid)->delete();
-
-            // Restore the removed template account for later tests.
-            app(\App\Services\Accounting\LedgerBootstrapService::class)
-                ->bootstrapForTenant(renumberTestTenant());
         }
+    });
+    tenancy()->end();
+});
+
+test('bootstrap restores renumbered template names before adding purchases accounts', function () {
+    renumberTestTenant()->run(function () {
+        if (! Schema::hasTable('ledger_accounts')) {
+            expect(true)->toBeTrue();
+
+            return;
+        }
+
+        $opex = \Abivia\Ledger\Models\LedgerAccount::query()->where('code', '7000')->first();
+        $purchases = \Abivia\Ledger\Models\LedgerAccount::query()->where('code', '6000')->first();
+
+        if ($opex === null || $purchases === null) {
+            expect(true)->toBeTrue();
+
+            return;
+        }
+
+        // Simulate median: old Operating Expenses was renumbered to 7000 but still
+        // carries the Purchases display name, blocking recreation of 6000.
+        DB::table('ledger_names')
+            ->where('ownerUuid', $opex->ledgerUuid)
+            ->where('language', 'en')
+            ->update(['name' => 'Purchases', 'updated_at' => now()]);
+
+        DB::table('ledger_names')->where('ownerUuid', $purchases->ledgerUuid)->delete();
+        DB::table('ledger_accounts')->where('ledgerUuid', $purchases->ledgerUuid)->delete();
+        if (Schema::hasTable('coa_settings')) {
+            DB::table('coa_settings')->where('code', '6000')->delete();
+        }
+
+        app(\App\Services\Accounting\LedgerBootstrapService::class)
+            ->bootstrapForTenant(renumberTestTenant());
+
+        expect(\Abivia\Ledger\Models\LedgerAccount::query()->where('code', '6000')->exists())->toBeTrue();
+
+        $opexName = DB::table('ledger_names')
+            ->where('ownerUuid', $opex->ledgerUuid)
+            ->where('language', 'en')
+            ->value('name');
+        $purchasesName = DB::table('ledger_names')
+            ->where('ownerUuid', \Abivia\Ledger\Models\LedgerAccount::query()->where('code', '6000')->value('ledgerUuid'))
+            ->where('language', 'en')
+            ->value('name');
+
+        expect($opexName)->toBe('Operating Expenses')
+            ->and($purchasesName)->toBe('Purchases');
     });
     tenancy()->end();
 });
