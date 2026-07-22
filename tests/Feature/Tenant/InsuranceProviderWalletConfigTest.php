@@ -110,7 +110,7 @@ test('insurance provider wallet supports manual deposits', function () {
         ->count())->toBeGreaterThanOrEqual(2);
 });
 
-test('insurance settings page returns decrypted bearer token for configured provider', function () {
+test('insurance settings page returns bearer token for configured provider', function () {
     global $state;
 
     TenantInsuranceProvider::query()->updateOrCreate(
@@ -138,32 +138,36 @@ test('insurance settings page returns decrypted bearer token for configured prov
         );
 });
 
-test('legacy insurance credentials with encrypted token field are decrypted for display', function () {
+test('updating albaraka credentials persists json credentials and can be updated again', function () {
     global $state;
 
-    $provider = TenantInsuranceProvider::query()->create([
+    $this->actingAs($state['admin']);
+
+    $this->post($state['baseUrl'].route('settings.insurance.store', [], false), [
         'provider_type' => 'albaraka',
         'name' => 'Al Baraka Insurance',
+        'base_url' => 'https://tameen.webapi.ly',
+        'token' => 'plain-bearer-token-one',
         'is_active' => true,
         'commission_compulsory' => 5,
         'commission_travel' => 10,
         'commission_orange' => 8,
-    ]);
+    ])->assertRedirect();
 
-    \Illuminate\Support\Facades\DB::table('tenant_insurance_providers')
-        ->where('id', $provider->id)
-        ->update([
-            'credentials' => json_encode([
-                'base_url' => 'https://tameen.webapi.ly',
-                'token' => encrypt('legacy-encrypted-token'),
-            ], JSON_THROW_ON_ERROR),
-        ]);
+    $this->post($state['baseUrl'].route('settings.insurance.store', [], false), [
+        'provider_type' => 'albaraka',
+        'name' => 'Al Baraka Insurance',
+        'base_url' => 'https://tameen.webapi.ly',
+        'token' => 'plain-bearer-token-two',
+        'is_active' => true,
+        'commission_compulsory' => 6,
+        'commission_travel' => 11,
+        'commission_orange' => 9,
+    ])->assertRedirect()->assertSessionHas('success');
 
-    $this->actingAs($state['admin'])
-        ->get($state['baseUrl'].route('settings.insurance.index', [], false))
-        ->assertOk()
-        ->assertInertia(fn ($page) => $page
-            ->where('providers', fn ($providers) => collect($providers)
-                ->firstWhere('provider_type', 'albaraka')['token'] === 'legacy-encrypted-token')
-        );
+    $provider = TenantInsuranceProvider::query()->where('provider_type', 'albaraka')->firstOrFail();
+
+    expect($provider->bearerToken())->toBe('plain-bearer-token-two')
+        ->and($provider->credential('base_url'))->toBe('https://tameen.webapi.ly')
+        ->and((float) $provider->commission_compulsory)->toBe(6.0);
 });
