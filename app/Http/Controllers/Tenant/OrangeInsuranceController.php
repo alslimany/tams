@@ -123,12 +123,26 @@ class OrangeInsuranceController extends Controller
         $quote = $this->pullQuote((string) $validated['quote_token'], keepInSession: true);
 
         if ($quote === null) {
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Quote expired. Please calculate price again.',
+                ], 410);
+            }
+
             return back()->with('error', 'The selected quote has expired. Please calculate the price again.');
         }
 
         $issuer = $request->user();
 
         if (! $issuer instanceof User) {
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Authentication required.',
+                ], 401);
+            }
+
             return back()->with('error', 'Authentication is required to issue orange insurance.');
         }
 
@@ -153,6 +167,14 @@ class OrangeInsuranceController extends Controller
                     round((float) ($quote['total_premium'] ?? 0), 3),
                 );
             } catch (InsufficientWalletBalanceException $exception) {
+                if ($request->expectsJson()) {
+                    return response()->json([
+                        'success' => false,
+                        'error' => 'Insufficient wallet balance',
+                        'message' => $exception->getMessage(),
+                    ], 402);
+                }
+
                 return back()->with('error', $exception->getMessage());
             }
         }
@@ -260,11 +282,36 @@ class OrangeInsuranceController extends Controller
 
             $this->forgetQuote((string) $validated['quote_token']);
 
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Orange insurance policy issued successfully.',
+                    'data' => [
+                        'order_id' => $order->id,
+                        'order_number' => $order->number,
+                        'policy_number' => $policyDetails['policy_number'],
+                        'policy_id' => $policyDetails['policy_id'],
+                        'report_reference' => $policyDetails['report_reference'],
+                        'total_amount' => $policyDetails['total_amount'],
+                        'currency' => $policyDetails['currency'],
+                    ],
+                ], 201);
+            }
+
             return redirect()
                 ->route('orders.show', $order)
                 ->with('success', 'Orange insurance policy issued successfully.');
         } catch (Throwable $exception) {
             report($exception);
+
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $exception->getMessage() !== ''
+                        ? $exception->getMessage()
+                        : 'Unable to issue orange insurance at the moment.',
+                ], 422);
+            }
 
             return back()->with('error', 'Unable to issue orange insurance at the moment. Please try again.');
         }
@@ -279,11 +326,26 @@ class OrangeInsuranceController extends Controller
         return Cache::remember('insurance:orange:reference:'.(tenant()?->id ?? 'central').':'.$key, now()->addDay(), $resolver);
     }
 
+    protected function quoteCacheKey(string $quoteToken): string
+    {
+        return 'insurance_orange_quote_'.(tenant()?->id ?? 'central').'_'.$quoteToken;
+    }
+
     /**
      * @return array<string, mixed>|null
      */
     protected function pullQuote(string $quoteToken, bool $keepInSession): ?array
     {
+        $cached = Cache::get($this->quoteCacheKey($quoteToken));
+
+        if (is_array($cached)) {
+            if (! $keepInSession) {
+                Cache::forget($this->quoteCacheKey($quoteToken));
+            }
+
+            return $cached;
+        }
+
         $quotes = session()->get('insurance.orange_quotes', []);
 
         if (! is_array($quotes) || ! isset($quotes[$quoteToken]) || ! is_array($quotes[$quoteToken])) {
@@ -305,6 +367,8 @@ class OrangeInsuranceController extends Controller
      */
     protected function storeQuote(string $quoteToken, array $quote): void
     {
+        Cache::put($this->quoteCacheKey($quoteToken), $quote, now()->addMinutes(30));
+
         $quotes = session()->get('insurance.orange_quotes', []);
 
         if (! is_array($quotes)) {
@@ -317,6 +381,8 @@ class OrangeInsuranceController extends Controller
 
     protected function forgetQuote(string $quoteToken): void
     {
+        Cache::forget($this->quoteCacheKey($quoteToken));
+
         $quotes = session()->get('insurance.orange_quotes', []);
 
         if (! is_array($quotes)) {

@@ -208,12 +208,26 @@ class TravelInsuranceController extends Controller
         $quote = $this->pullQuote((string) $validated['quote_token'], keepInSession: true);
 
         if ($quote === null) {
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Quote expired. Please calculate price again.',
+                ], 410);
+            }
+
             return back()->with('error', 'The selected quote has expired. Please calculate the price again.');
         }
 
         $issuer = $request->user();
 
         if (! $issuer instanceof User) {
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Authentication required.',
+                ], 401);
+            }
+
             return back()->with('error', 'Authentication is required to issue travel insurance.');
         }
 
@@ -226,9 +240,10 @@ class TravelInsuranceController extends Controller
         } catch (InsufficientWalletBalanceException $exception) {
             if ($request->expectsJson()) {
                 return response()->json([
+                    'success' => false,
                     'error' => 'Insufficient wallet balance',
                     'message' => $exception->getMessage(),
-                ], 422);
+                ], 402);
             }
 
             return back()->with('error', $exception->getMessage());
@@ -391,6 +406,30 @@ class TravelInsuranceController extends Controller
                 'order_number' => (string) $order->number,
             ]);
 
+            if ($request->expectsJson()) {
+                $order->loadMissing('items');
+
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Travel insurance policies were issued successfully.',
+                    'data' => [
+                        'order_id' => $order->id,
+                        'order_number' => $order->number,
+                        'total_amount' => (float) $order->grand_total,
+                        'currency' => (string) $order->currency,
+                        'items' => $order->items->map(fn ($item): array => [
+                            'id' => $item->id,
+                            'policy_number' => $item->ticket_number,
+                            'provider_reference' => $item->provider_reference,
+                            'report_reference' => data_get($item->product_details, 'policy_details.report_reference')
+                                ?? data_get($item->item_details, 'insurance.report_reference'),
+                            'total' => (float) $item->total_amount,
+                            'currency' => (string) $item->currency,
+                        ])->values(),
+                    ],
+                ], 201);
+            }
+
             return redirect()
                 ->route('orders.show', $order)
                 ->with('success', 'Travel insurance policies were issued successfully.');
@@ -405,7 +444,10 @@ class TravelInsuranceController extends Controller
 
             if ($request->expectsJson()) {
                 return response()->json([
-                    'error' => $exception->getMessage() !== '' ? $exception->getMessage() : 'Unable to issue travel insurance policies at the moment.',
+                    'success' => false,
+                    'message' => $exception->getMessage() !== ''
+                        ? $exception->getMessage()
+                        : 'Unable to issue travel insurance policies at the moment.',
                 ], 422);
             }
 
@@ -757,11 +799,26 @@ class TravelInsuranceController extends Controller
         return $this->agencyProviderResolver->canManageOwnProviders();
     }
 
+    protected function quoteCacheKey(string $quoteToken): string
+    {
+        return 'insurance_travel_quote_'.(tenant()?->id ?? 'central').'_'.$quoteToken;
+    }
+
     /**
      * @return array<string, mixed>|null
      */
     protected function pullQuote(string $quoteToken, bool $keepInSession): ?array
     {
+        $cached = Cache::get($this->quoteCacheKey($quoteToken));
+
+        if (is_array($cached)) {
+            if (! $keepInSession) {
+                Cache::forget($this->quoteCacheKey($quoteToken));
+            }
+
+            return $cached;
+        }
+
         $quotes = session()->get('insurance.travel_quotes', []);
 
         if (! is_array($quotes) || ! isset($quotes[$quoteToken]) || ! is_array($quotes[$quoteToken])) {
@@ -783,6 +840,8 @@ class TravelInsuranceController extends Controller
      */
     protected function storeQuote(string $quoteToken, array $quote): void
     {
+        Cache::put($this->quoteCacheKey($quoteToken), $quote, now()->addMinutes(30));
+
         $quotes = session()->get('insurance.travel_quotes', []);
 
         if (! is_array($quotes)) {
@@ -795,6 +854,8 @@ class TravelInsuranceController extends Controller
 
     protected function forgetQuote(string $quoteToken): void
     {
+        Cache::forget($this->quoteCacheKey($quoteToken));
+
         $quotes = session()->get('insurance.travel_quotes', []);
 
         if (! is_array($quotes)) {

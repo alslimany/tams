@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Booknow API v1",
-    "description": "## Booknow REST API v1 \u2014 Mobile Application\n\n**Base URL**: `{{base_url}}/agency/{{tenant}}/api/v1`  \n**Auth**: Bearer token (set via `{{token}}` variable after Login)  \n**Content-Type**: `application/json`\n\n### Token Abilities\n| Ability | Scope |\n|---------|-------|\n| `read` | Results, seat map, fare rules, orders, reports, wallet, eSIM catalogue |\n| `write` | Search, select, price, book (flights, hotels, insurance, eSIM) |\n| `issue` | Issue ticket, void/refund, change segment, eSIM refund |\n| `report` | Dashboard & reports |\n| `*` | Full access |\n\n### Quick Start\n1. Set `base_url` and `tenant` (e.g. `median`)\n2. Run **Login** \u2014 token is saved to `{{token}}` automatically\n3. Flights: Search \u2192 Results \u2192 Select \u2192 Seat Map \u2192 Price \u2192 Book\n4. eSIM upsell during flight booking: **Airport Packages** with destination IATA\n5. eSIM standalone: Search \u2192 Packages \u2192 Select \u2192 Book\n6. For ticket changes use **Change Segment** folder\n\n### Recent Updates\n- **Insurance Policy PDF** \u2014 `GET /orders/{order}/insurance-items/{item}/policy-pdf` returns the Al Baraka printable policy PDF (compulsory, travel, orange)\n- Order detail insurance items include `report_reference` for print lookup\n- **eSIM API** \u2014 full catalogue and booking flow\n- `GET /esim/airport/{iata}/packages` \u2014 destination airport bundles for flight-booking upsell\n- `POST /esim/search` \u2192 `GET /esim/results/{uuid}/packages` \u2192 `POST /esim/select` \u2192 `POST /esim/book`\n- `POST /orders/{order}/esim-items/{item}/refund` \u2014 refund issued eSIM (requires `issue`)\n- Orders list filter: `product_type=esim`\n- Cabin filter: `cabin_class` = `all` | `Y` | `C` | `F`\n- Offers include `baggage`, `airline_logo_url`, `fare_id`, ISO8601 `duration` (`PT4H`, `PT2H10M`)\n- `POST /flights/open-reservation-availability` \u2014 check if open reservation (QQ) is allowed for an offer\n- `POST /flights/fare-rules` \u2014 plain-text rules (no line numbers)\n- `POST /flights/seatmap` \u2014 interactive seat map with per-seat pricing\n- `POST /flights/price` \u2014 total with seat fees and ancillaries\n- `POST /flights/book` accepts `extras.seats` for seat assignment\n- Draft booking: `ticketing_mode: draft` then `POST .../tickets/issue`\n- Change segment: search \u2192 results \u2192 quote \u2192 confirm\n\n### Response Format\n```json\n{ \"success\": true|false, \"message\": \"...\", \"data\": {...} }\n```",
+    "description": "## Booknow REST API v1 \u2014 Mobile Application\n\n**Base URL**: `{{base_url}}/agency/{{tenant}}/api/v1`  \n**Auth**: Bearer token (set via `{{token}}` variable after Login)  \n**Content-Type**: `application/json`\n\n### Token Abilities\n| Ability | Scope |\n|---------|-------|\n| `read` | Results, seat map, fare rules, orders, reports, wallet, eSIM catalogue |\n| `write` | Search, select, price, book (flights, hotels, insurance, eSIM) |\n| `issue` | Issue ticket, void/refund, change segment, eSIM refund |\n| `report` | Dashboard & reports |\n| `*` | Full access |\n\n### Quick Start\n1. Set `base_url` and `tenant` (e.g. `median`)\n2. Run **Login** \u2014 token is saved to `{{token}}` automatically\n3. Flights: Search \u2192 Results \u2192 Select \u2192 Seat Map \u2192 Price \u2192 Book\n4. eSIM upsell during flight booking: **Airport Packages** with destination IATA\n5. eSIM standalone: Search \u2192 Packages \u2192 Select \u2192 Book\n6. For ticket changes use **Change Segment** folder\n\n### Recent Updates\n- **Travel & Orange issue** \u2014 `POST /insurance/travel/issue`, `POST /insurance/orange/issue` (requires `issue`)\n- **API token management** \u2014 `POST /auth/tokens` create scoped token, `DELETE /auth/tokens/{tokenId}` revoke by id\n- **Insurance Policy PDF** \u2014 `GET /orders/{order}/insurance-items/{item}/policy-pdf` returns the Al Baraka printable policy PDF (compulsory, travel, orange)\n- Order detail insurance items include `report_reference` for print lookup\n- **eSIM API** \u2014 full catalogue and booking flow\n- `GET /esim/airport/{iata}/packages` \u2014 destination airport bundles for flight-booking upsell\n- `POST /esim/search` \u2192 `GET /esim/results/{uuid}/packages` \u2192 `POST /esim/select` \u2192 `POST /esim/book`\n- `POST /orders/{order}/esim-items/{item}/refund` \u2014 refund issued eSIM (requires `issue`)\n- Orders list filter: `product_type=esim`\n- Cabin filter: `cabin_class` = `all` | `Y` | `C` | `F`\n- Offers include `baggage`, `airline_logo_url`, `fare_id`, ISO8601 `duration` (`PT4H`, `PT2H10M`)\n- `POST /flights/open-reservation-availability` \u2014 check if open reservation (QQ) is allowed for an offer\n- `POST /flights/fare-rules` \u2014 plain-text rules (no line numbers)\n- `POST /flights/seatmap` \u2014 interactive seat map with per-seat pricing\n- `POST /flights/price` \u2014 total with seat fees and ancillaries\n- `POST /flights/book` accepts `extras.seats` for seat assignment\n- Draft booking: `ticketing_mode: draft` then `POST .../tickets/issue`\n- Change segment: search \u2192 results \u2192 quote \u2192 confirm\n\n### Response Format\n```json\n{ \"success\": true|false, \"message\": \"...\", \"data\": {...} }\n```",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "auth": {
@@ -79,6 +79,19 @@
       "key": "insurance_report_reference",
       "value": "",
       "description": "Al Baraka EncryptedId / card number from issue or order detail"
+    },
+    {
+      "key": "token_id",
+      "value": "",
+      "description": "Personal access token ID — set from List Tokens or Create Token"
+    },
+    {
+      "key": "travel_quote_token",
+      "value": ""
+    },
+    {
+      "key": "orange_quote_token",
+      "value": ""
     }
   ],
   "item": [
@@ -185,6 +198,20 @@
         },
         {
           "name": "List Tokens",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var json = pm.response.json();",
+                  "if (json.success && Array.isArray(json.data) && json.data[0]) {",
+                  "    pm.collectionVariables.set('token_id', json.data[0].id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
           "request": {
             "method": "GET",
             "url": {
@@ -201,14 +228,109 @@
                 "tokens"
               ]
             },
-            "description": "List all active API tokens for the current user."
+            "description": "List all active API tokens for the current user. Saves the first token id to `{{token_id}}`."
           },
           "response": [
             {
               "name": "200",
               "status": "OK",
               "code": 200,
-              "body": "{\n  \"success\": true,\n  \"data\": [\n    { \"id\": 1, \"name\": \"Postman\", \"abilities\": [], \"last_used_at\": \"...\", \"created_at\": \"...\" }\n  ]\n}"
+              "body": "{\n  \"success\": true,\n  \"data\": [\n    { \"id\": 1, \"name\": \"Postman\", \"abilities\": [\"*\"], \"last_used_at\": \"...\", \"expires_at\": null, \"created_at\": \"...\" }\n  ]\n}"
+            }
+          ]
+        },
+        {
+          "name": "Create Token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var json = pm.response.json();",
+                  "if (json.success && json.data) {",
+                  "    if (json.data.id) {",
+                  "        pm.collectionVariables.set('token_id', json.data.id);",
+                  "    }",
+                  "    if (json.data.token) {",
+                  "        console.log('New token created. Store securely — it will not be shown again.');",
+                  "        console.log('Token prefix: ' + String(json.data.token).substring(0, 20) + '...');",
+                  "    }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Mobile App\",\n  \"abilities\": [\"read\", \"write\", \"issue\", \"report\"]\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/agency/{{tenant}}/api/v1/auth/tokens",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "agency",
+                "{{tenant}}",
+                "api",
+                "v1",
+                "auth",
+                "tokens"
+              ]
+            },
+            "description": "Create a new scoped API token for the authenticated user.\n\n**Body**\n- `name` (required) — token label\n- `abilities` (optional) — `read` | `write` | `issue` | `report`. Omit or use `[\"*\"]` for full access.\n\nThe plain-text token is returned once in `data.token`. Store it securely."
+          },
+          "response": [
+            {
+              "name": "201",
+              "status": "Created",
+              "code": 201,
+              "body": "{\n  \"success\": true,\n  \"message\": \"Token created. Store it securely — it will not be shown again.\",\n  \"data\": {\n    \"id\": 12,\n    \"name\": \"Mobile App\",\n    \"abilities\": [\"read\", \"write\", \"issue\", \"report\"],\n    \"token\": \"12|abcdef123456...\",\n    \"created_at\": \"2026-07-27T09:00:00.000Z\"\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Revoke Token by ID",
+          "request": {
+            "method": "DELETE",
+            "url": {
+              "raw": "{{base_url}}/agency/{{tenant}}/api/v1/auth/tokens/{{token_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "agency",
+                "{{tenant}}",
+                "api",
+                "v1",
+                "auth",
+                "tokens",
+                "{{token_id}}"
+              ]
+            },
+            "description": "Revoke a specific personal access token by id. Users can only revoke their own tokens.\n\nUse **List Tokens** first to populate `{{token_id}}`."
+          },
+          "response": [
+            {
+              "name": "200",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"success\": true,\n  \"message\": \"Token revoked.\",\n  \"data\": null\n}"
+            },
+            {
+              "name": "404",
+              "status": "Not Found",
+              "code": 404,
+              "body": "{\n  \"success\": false,\n  \"message\": \"Token not found.\"\n}"
             }
           ]
         },
@@ -1753,12 +1875,97 @@
             },
             "description": "Calculate travel insurance premium for one or more passengers. Use either `passengers` array or `adult_count`/`child_count`/`senior_count` counts."
           },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var json = pm.response.json();",
+                  "if (json.quote_token) {",
+                  "    pm.collectionVariables.set('travel_quote_token', json.quote_token);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
           "response": [
             {
               "name": "200",
               "status": "OK",
               "code": 200,
               "body": "{\n  \"quote_token\": \"uuid\",\n  \"zone_id\": 1,\n  \"zone_text\": \"Zone A\",\n  \"duration_days\": 7,\n  \"total_premium\": 75.0,\n  \"total_net_premium\": 70.0,\n  \"total_tax\": 5.0,\n  \"currency\": \"LYD\",\n  \"passenger_breakdown\": {\n    \"adult\": { \"count\": 1, \"unit_total_premium\": 75.0, \"total_premium\": 75.0 }\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Issue Policy",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var json = pm.response.json();",
+                  "if (json.success && json.data && json.data.order_id) {",
+                  "    pm.collectionVariables.set('order_id', json.data.order_id);",
+                  "    pm.collectionVariables.set('booking_id', json.data.order_id);",
+                  "    if (json.data.items && json.data.items[0]) {",
+                  "        pm.collectionVariables.set('item_id', json.data.items[0].id);",
+                  "        if (json.data.items[0].report_reference) {",
+                  "            pm.collectionVariables.set('insurance_report_reference', json.data.items[0].report_reference);",
+                  "        }",
+                  "    }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"quote_token\": \"{{travel_quote_token}}\",\n  \"client_name\": \"John Doe\",\n  \"client_phone\": \"+218911234567\",\n  \"client_address\": \"Tripoli\",\n  \"client_email\": \"john@example.com\",\n  \"passengers\": [\n    {\n      \"first_name\": \"John\",\n      \"last_name\": \"Doe\",\n      \"birth_date\": \"1990-01-15\",\n      \"gender_id\": 1,\n      \"birth_place\": \"Tripoli\",\n      \"passport_number\": \"A1234567\",\n      \"nationality_id\": 1\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/agency/{{tenant}}/api/v1/insurance/travel/issue",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "agency",
+                "{{tenant}}",
+                "api",
+                "v1",
+                "insurance",
+                "travel",
+                "issue"
+              ]
+            },
+            "description": "Issue travel insurance policies for all passengers in the quote. Requires `issue` ability.\n\nMust call **Price Quote** first. Then use **Orders \u2192 Insurance Policy PDF** to download each printable policy."
+          },
+          "response": [
+            {
+              "name": "201",
+              "status": "Created",
+              "code": 201,
+              "body": "{\n  \"success\": true,\n  \"message\": \"Travel insurance policies were issued successfully.\",\n  \"data\": {\n    \"order_id\": 12,\n    \"order_number\": \"ORD-2026-0003\",\n    \"total_amount\": 75.0,\n    \"currency\": \"LYD\",\n    \"items\": [\n      {\n        \"id\": 34,\n        \"policy_number\": \"TRV-8001\",\n        \"report_reference\": \"ENC-TRV-001\",\n        \"total\": 75.0,\n        \"currency\": \"LYD\"\n      }\n    ]\n  }\n}"
+            },
+            {
+              "name": "410 \u2014 Quote Expired",
+              "status": "Gone",
+              "code": 410,
+              "body": "{\n  \"success\": false,\n  \"message\": \"Quote expired. Please calculate price again.\"\n}"
             }
           ]
         }
@@ -1828,12 +2035,94 @@
             },
             "description": "Calculate orange insurance premium."
           },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var json = pm.response.json();",
+                  "if (json.quote_token) {",
+                  "    pm.collectionVariables.set('orange_quote_token', json.quote_token);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
           "response": [
             {
               "name": "200",
               "status": "OK",
               "code": 200,
               "body": "{\n  \"quote_token\": \"uuid\",\n  \"country\": 1,\n  \"document_type_id\": 1,\n  \"policy_date_from\": \"2026-06-01\",\n  \"policy_date_to\": \"2026-06-07\",\n  \"number_of_days\": 7,\n  \"total_premium\": 35.0,\n  \"net_premium\": 32.0,\n  \"tax_amount\": 3.0,\n  \"currency\": \"LYD\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Issue Policy",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var json = pm.response.json();",
+                  "if (json.success && json.data && json.data.order_id) {",
+                  "    pm.collectionVariables.set('order_id', json.data.order_id);",
+                  "    pm.collectionVariables.set('booking_id', json.data.order_id);",
+                  "    if (json.data.report_reference) {",
+                  "        pm.collectionVariables.set('insurance_report_reference', json.data.report_reference);",
+                  "    }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"quote_token\": \"{{orange_quote_token}}\",\n  \"name\": \"ABDULLAH MOHAMMED\",\n  \"address\": \"Tripoli\",\n  \"phone\": \"+218911388788\",\n  \"chassis_number\": \"1VXBR12EXCP901213\",\n  \"metal_plate_number\": \"1074316\",\n  \"manufacture_year\": 2009,\n  \"car_id\": 14,\n  \"nationality\": 1\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/agency/{{tenant}}/api/v1/insurance/orange/issue",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "agency",
+                "{{tenant}}",
+                "api",
+                "v1",
+                "insurance",
+                "orange",
+                "issue"
+              ]
+            },
+            "description": "Issue an orange (Arab card) insurance policy. Requires `issue` ability.\n\nMust call **Price Quote** first. Then use **Orders \u2192 Insurance Policy PDF** to download the printable policy."
+          },
+          "response": [
+            {
+              "name": "201",
+              "status": "Created",
+              "code": 201,
+              "body": "{\n  \"success\": true,\n  \"message\": \"Orange insurance policy issued successfully.\",\n  \"data\": {\n    \"order_id\": 15,\n    \"order_number\": \"ORD-2026-0004\",\n    \"policy_number\": \"LBY/6825725\",\n    \"policy_id\": 67785,\n    \"report_reference\": \"ENC-ORANGE-001\",\n    \"total_amount\": 74.565,\n    \"currency\": \"LYD\"\n  }\n}"
+            },
+            {
+              "name": "410 \u2014 Quote Expired",
+              "status": "Gone",
+              "code": 410,
+              "body": "{\n  \"success\": false,\n  \"message\": \"Quote expired. Please calculate price again.\"\n}"
             }
           ]
         }

@@ -129,6 +129,8 @@ Route::middleware(['auth:sanctum', 'throttle:api', 'audit.api', 'idempotency'])-
         Route::post('flights/{booking}/tickets/{ticket}/void', [TicketController::class, 'void']);
         Route::post('flights/{booking}/tickets/{ticket}/refund', [TicketController::class, 'refund']);
         Route::post('insurance/compulsory/issue', [InsuranceController::class, 'compulsoryIssue']);
+        Route::post('insurance/travel/issue', [TravelInsuranceController::class, 'issue']);
+        Route::post('insurance/orange/issue', [OrangeInsuranceController::class, 'issue']);
     });
 
     // ── Report-gated routes (ability: report OR *) ──────────────
