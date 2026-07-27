@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Booknow API v1",
-    "description": "## Booknow REST API v1 \u2014 Mobile Application\n\n**Base URL**: `{{base_url}}/agency/{{tenant}}/api/v1`  \n**Auth**: Bearer token (set via `{{token}}` variable after Login)  \n**Content-Type**: `application/json`\n\n### Token Abilities\n| Ability | Scope |\n|---------|-------|\n| `read` | Results, seat map, fare rules, orders, reports, wallet, eSIM catalogue |\n| `write` | Search, select, price, book (flights, hotels, insurance, eSIM) |\n| `issue` | Issue ticket, void/refund, change segment, eSIM refund |\n| `report` | Dashboard & reports |\n| `*` | Full access |\n\n### Quick Start\n1. Set `base_url` and `tenant` (e.g. `median`)\n2. Run **Login** \u2014 token is saved to `{{token}}` automatically\n3. Flights: Search \u2192 Results \u2192 Select \u2192 Seat Map \u2192 Price \u2192 Book\n4. eSIM upsell during flight booking: **Airport Packages** with destination IATA\n5. eSIM standalone: Search \u2192 Packages \u2192 Select \u2192 Book\n6. For ticket changes use **Change Segment** folder\n\n### Recent Updates\n- **eSIM API** \u2014 full catalogue and booking flow\n- `GET /esim/airport/{iata}/packages` \u2014 destination airport bundles for flight-booking upsell\n- `POST /esim/search` \u2192 `GET /esim/results/{uuid}/packages` \u2192 `POST /esim/select` \u2192 `POST /esim/book`\n- `POST /orders/{order}/esim-items/{item}/refund` \u2014 refund issued eSIM (requires `issue`)\n- Orders list filter: `product_type=esim`\n- Cabin filter: `cabin_class` = `all` | `Y` | `C` | `F`\n- Offers include `baggage`, `airline_logo_url`, `fare_id`, ISO8601 `duration` (`PT4H`, `PT2H10M`)\n- `POST /flights/open-reservation-availability` \u2014 check if open reservation (QQ) is allowed for an offer\n- `POST /flights/fare-rules` \u2014 plain-text rules (no line numbers)\n- `POST /flights/seatmap` \u2014 interactive seat map with per-seat pricing\n- `POST /flights/price` \u2014 total with seat fees and ancillaries\n- `POST /flights/book` accepts `extras.seats` for seat assignment\n- Draft booking: `ticketing_mode: draft` then `POST .../tickets/issue`\n- Change segment: search \u2192 results \u2192 quote \u2192 confirm\n\n### Response Format\n```json\n{ \"success\": true|false, \"message\": \"...\", \"data\": {...} }\n```",
+    "description": "## Booknow REST API v1 \u2014 Mobile Application\n\n**Base URL**: `{{base_url}}/agency/{{tenant}}/api/v1`  \n**Auth**: Bearer token (set via `{{token}}` variable after Login)  \n**Content-Type**: `application/json`\n\n### Token Abilities\n| Ability | Scope |\n|---------|-------|\n| `read` | Results, seat map, fare rules, orders, reports, wallet, eSIM catalogue |\n| `write` | Search, select, price, book (flights, hotels, insurance, eSIM) |\n| `issue` | Issue ticket, void/refund, change segment, eSIM refund |\n| `report` | Dashboard & reports |\n| `*` | Full access |\n\n### Quick Start\n1. Set `base_url` and `tenant` (e.g. `median`)\n2. Run **Login** \u2014 token is saved to `{{token}}` automatically\n3. Flights: Search \u2192 Results \u2192 Select \u2192 Seat Map \u2192 Price \u2192 Book\n4. eSIM upsell during flight booking: **Airport Packages** with destination IATA\n5. eSIM standalone: Search \u2192 Packages \u2192 Select \u2192 Book\n6. For ticket changes use **Change Segment** folder\n\n### Recent Updates\n- **Insurance Policy PDF** \u2014 `GET /orders/{order}/insurance-items/{item}/policy-pdf` returns the Al Baraka printable policy PDF (compulsory, travel, orange)\n- Order detail insurance items include `report_reference` for print lookup\n- **eSIM API** \u2014 full catalogue and booking flow\n- `GET /esim/airport/{iata}/packages` \u2014 destination airport bundles for flight-booking upsell\n- `POST /esim/search` \u2192 `GET /esim/results/{uuid}/packages` \u2192 `POST /esim/select` \u2192 `POST /esim/book`\n- `POST /orders/{order}/esim-items/{item}/refund` \u2014 refund issued eSIM (requires `issue`)\n- Orders list filter: `product_type=esim`\n- Cabin filter: `cabin_class` = `all` | `Y` | `C` | `F`\n- Offers include `baggage`, `airline_logo_url`, `fare_id`, ISO8601 `duration` (`PT4H`, `PT2H10M`)\n- `POST /flights/open-reservation-availability` \u2014 check if open reservation (QQ) is allowed for an offer\n- `POST /flights/fare-rules` \u2014 plain-text rules (no line numbers)\n- `POST /flights/seatmap` \u2014 interactive seat map with per-seat pricing\n- `POST /flights/price` \u2014 total with seat fees and ancillaries\n- `POST /flights/book` accepts `extras.seats` for seat assignment\n- Draft booking: `ticketing_mode: draft` then `POST .../tickets/issue`\n- Change segment: search \u2192 results \u2192 quote \u2192 confirm\n\n### Response Format\n```json\n{ \"success\": true|false, \"message\": \"...\", \"data\": {...} }\n```",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "auth": {
@@ -70,6 +70,15 @@
     {
       "key": "esim_package_id",
       "value": "esim_1GB_30D_TN_U"
+    },
+    {
+      "key": "compulsory_quote_token",
+      "value": ""
+    },
+    {
+      "key": "insurance_report_reference",
+      "value": "",
+      "description": "Al Baraka EncryptedId / card number from issue or order detail"
     }
   ],
   "item": [
@@ -1620,6 +1629,26 @@
         },
         {
           "name": "Issue Policy",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var json = pm.response.json();",
+                  "if (json.success && json.data) {",
+                  "    if (json.data.order_id) {",
+                  "        pm.collectionVariables.set('order_id', json.data.order_id);",
+                  "        pm.collectionVariables.set('booking_id', json.data.order_id);",
+                  "    }",
+                  "    if (json.data.report_reference) {",
+                  "        pm.collectionVariables.set('insurance_report_reference', json.data.report_reference);",
+                  "    }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
           "request": {
             "method": "POST",
             "header": [
@@ -1647,7 +1676,7 @@
                 "issue"
               ]
             },
-            "description": "Issue a compulsory vehicle insurance policy. Must call **Price Quote** first."
+            "description": "Issue a compulsory vehicle insurance policy. Must call **Price Quote** first.\n\nAfter issue, use **Orders \u2192 Insurance Policy PDF** with the returned `order_id` and insurance item id to download the Al Baraka printable policy."
           },
           "response": [
             {
@@ -2213,9 +2242,16 @@
                   "    var order = json.data.data[0];",
                   "    pm.collectionVariables.set('order_id', order.id);",
                   "    pm.collectionVariables.set('booking_id', order.id);",
-                  "    if (order.items && order.items[0]) {",
-                  "        pm.collectionVariables.set('item_id', order.items[0].id);",
-                  "        pm.collectionVariables.set('ticket_id', order.items[0].id);",
+                  "    if (order.items && order.items.length) {",
+                  "        var insuranceItem = order.items.find(function (item) {",
+                  "            return item.type === 'insurance' || item.product_type === 'insurance';",
+                  "        });",
+                  "        var firstItem = insuranceItem || order.items[0];",
+                  "        pm.collectionVariables.set('item_id', firstItem.id);",
+                  "        pm.collectionVariables.set('ticket_id', firstItem.id);",
+                  "        if (firstItem.report_reference) {",
+                  "            pm.collectionVariables.set('insurance_report_reference', firstItem.report_reference);",
+                  "        }",
                   "    }",
                   "}"
                 ],
@@ -2275,12 +2311,20 @@
               "script": {
                 "exec": [
                   "var json = pm.response.json();",
-                  "if (json.success && json.data) {",
-                  "    pm.collectionVariables.set('order_id', json.data.id);",
-                  "    pm.collectionVariables.set('booking_id', json.data.id);",
-                  "    if (json.data.items && json.data.items[0]) {",
-                  "        pm.collectionVariables.set('item_id', json.data.items[0].id);",
-                  "        pm.collectionVariables.set('ticket_id', json.data.items[0].id);",
+                  "var order = json.success && json.data ? (json.data.order || json.data) : null;",
+                  "if (order) {",
+                  "    pm.collectionVariables.set('order_id', order.id);",
+                  "    pm.collectionVariables.set('booking_id', order.id);",
+                  "    if (order.items && order.items.length) {",
+                  "        var insuranceItem = order.items.find(function (item) {",
+                  "            return item.type === 'insurance' || item.product_type === 'insurance';",
+                  "        });",
+                  "        var firstItem = insuranceItem || order.items[0];",
+                  "        pm.collectionVariables.set('item_id', firstItem.id);",
+                  "        pm.collectionVariables.set('ticket_id', firstItem.id);",
+                  "        if (firstItem.report_reference) {",
+                  "            pm.collectionVariables.set('insurance_report_reference', firstItem.report_reference);",
+                  "        }",
                   "    }",
                   "}"
                 ],
@@ -2304,8 +2348,16 @@
                 "{{order_id}}"
               ]
             },
-            "description": "Full order details with items, passengers, segments, and wallet transactions."
-          }
+            "description": "Full order details with items, passengers, segments, and wallet transactions.\n\nInsurance items include `report_reference` used by **Insurance Policy PDF**."
+          },
+          "response": [
+            {
+              "name": "200 \u2014 Insurance Order",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"order\": {\n      \"id\": 12,\n      \"number\": \"ORD-2026-0002\",\n      \"status\": \"confirmed\",\n      \"items\": [\n        {\n          \"id\": 34,\n          \"type\": \"insurance\",\n          \"product_type\": \"insurance\",\n          \"product_subtype\": \"compulsory\",\n          \"provider\": \"albaraka\",\n          \"ticket_number\": \"CMP-58737\",\n          \"status\": \"confirmed\",\n          \"report_reference\": \"ENC789\",\n          \"total\": 150.0,\n          \"currency\": \"LYD\"\n        }\n      ]\n    }\n  }\n}"
+            }
+          ]
         },
         {
           "name": "Flight Ticket PDF",
@@ -2329,6 +2381,106 @@
               ]
             },
             "description": "Download flight ticket as PDF. Returns binary PDF, not JSON."
+          }
+        },
+        {
+          "name": "Hotel Voucher PDF",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/agency/{{tenant}}/api/v1/orders/{{order_id}}/hotel-items/{{item_id}}/voucher-pdf",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "agency",
+                "{{tenant}}",
+                "api",
+                "v1",
+                "orders",
+                "{{order_id}}",
+                "hotel-items",
+                "{{item_id}}",
+                "voucher-pdf"
+              ]
+            },
+            "description": "Download hotel voucher as PDF. Returns binary PDF, not JSON."
+          }
+        },
+        {
+          "name": "Insurance Policy PDF",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/pdf"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/agency/{{tenant}}/api/v1/orders/{{order_id}}/insurance-items/{{item_id}}/policy-pdf",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "agency",
+                "{{tenant}}",
+                "api",
+                "v1",
+                "orders",
+                "{{order_id}}",
+                "insurance-items",
+                "{{item_id}}",
+                "policy-pdf"
+              ]
+            },
+            "description": "Download the Al Baraka printable insurance policy PDF for compulsory, travel, or orange items.\n\nRequires `read` ability.\n\n**Flow**\n1. Issue policy (or load **Order Detail** / **Order List** with `product_type=insurance`)\n2. Ensure `order_id` and insurance `item_id` are set\n3. Call this endpoint \u2014 response is binary PDF (`Content-Type: application/pdf`), not JSON\n\nUses provider report references (`EncryptedId` / policy id / orange card number) with fallback when encrypted id fails.\n\n**Errors**\n- `422` \u2014 no printable policy reference on the item\n- `502` \u2014 Al Baraka report fetch failed"
+          },
+          "response": [
+            {
+              "name": "200 \u2014 PDF",
+              "status": "OK",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/pdf"
+                },
+                {
+                  "key": "Content-Disposition",
+                  "value": "inline; filename=\"compulsory-policy-ENC789.pdf\""
+                }
+              ],
+              "body": "%PDF-1.4 ..."
+            },
+            {
+              "name": "422 \u2014 Missing Reference",
+              "status": "Unprocessable Entity",
+              "code": 422,
+              "body": "{\n  \"message\": \"No printable policy reference was found for this insurance item.\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Order Summary PDF",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/agency/{{tenant}}/api/v1/orders/{{order_id}}/summary-pdf",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "agency",
+                "{{tenant}}",
+                "api",
+                "v1",
+                "orders",
+                "{{order_id}}",
+                "summary-pdf"
+              ]
+            },
+            "description": "Download order summary as PDF. Returns binary PDF, not JSON."
           }
         }
       ]

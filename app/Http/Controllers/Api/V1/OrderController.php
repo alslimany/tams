@@ -2,12 +2,14 @@
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Actions\Insurance\FetchInsurancePolicyReport;
 use App\Http\Controllers\Api\Controller;
 use App\Models\Tenant\Order;
 use App\Models\Tenant\OrderItem;
-use App\Models\Tenant\Ticket;
+use App\Services\Insurance\InsuranceApiException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 
 class OrderController extends Controller
 {
@@ -99,20 +101,30 @@ class OrderController extends Controller
             ->inline($filename);
     }
 
-    public function insurancePolicyPdf(Order $order, OrderItem $item): \Spatie\LaravelPdf\PdfBuilder
+    /**
+     * Printable Al Baraka insurance policy PDF for compulsory, travel, and orange items.
+     */
+    public function insurancePolicyPdf(Order $order, OrderItem $item, FetchInsurancePolicyReport $fetchInsurancePolicyReport): Response
     {
         abort_unless($item->order_id === $order->id, 404);
         abort_unless((string) $item->type === 'insurance' || (string) $item->product_type === 'insurance', 404);
 
-        $order->loadMissing('owner');
+        try {
+            $report = $fetchInsurancePolicyReport->execute($item);
+        } catch (InsuranceApiException $exception) {
+            $status = str_contains($exception->getMessage(), 'No printable policy reference')
+                ? 422
+                : 502;
 
-        $filename = 'insurance-policy-'.preg_replace('/[^A-Za-z0-9_-]/', '-', (string) ($item->ticket_number ?: $order->number)).'.pdf';
+            abort($status, $exception->getMessage());
+        }
 
-        return \Spatie\LaravelPdf\Support\pdf()
-            ->view('pdf.insurance-policy', ['order' => $order, 'item' => $item])
-            ->format(\Spatie\LaravelPdf\Enums\Format::A4)
-            ->margins(8, 8, 8, 8, \Spatie\LaravelPdf\Enums\Unit::Millimeter)
-            ->inline($filename);
+        return response($report['content'], 200, [
+            'Content-Type' => $report['content_type'],
+            'Content-Disposition' => 'inline; filename="'.$report['filename'].'"',
+            'Cache-Control' => 'no-store, no-cache, must-revalidate, max-age=0',
+            'Pragma' => 'no-cache',
+        ]);
     }
 
     public function orderSummaryPdf(Order $order): \Spatie\LaravelPdf\PdfBuilder
@@ -165,6 +177,8 @@ class OrderController extends Controller
                     'net_fare' => (float) $item->net_fare,
                     'commission_amount' => (float) $item->commission_amount,
                     'currency' => $item->currency,
+                    'report_reference' => data_get($item->product_details, 'policy_details.report_reference')
+                        ?? data_get($item->item_details, 'insurance.report_reference'),
                     'passengers' => data_get($item->item_details, 'passengers'),
                     'segments' => data_get($item->item_details, 'segments'),
                 ];

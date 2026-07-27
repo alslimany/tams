@@ -3,14 +3,15 @@
 namespace App\Http\Controllers\Tenant;
 
 use App\Actions\Finance\FinalizeInsuranceCancellation;
+use App\Actions\Insurance\FetchInsurancePolicyReport;
 use App\Http\Controllers\Controller;
 use App\Models\Tenant\Order;
 use App\Models\Tenant\OrderItem;
+use App\Services\Insurance\InsuranceApiException;
 use App\Services\Insurance\InsuranceProviderManager;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
-use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Throwable;
@@ -171,43 +172,27 @@ class InsurancePolicyController extends Controller
         }
     }
 
-    public function itemReport(Request $request, Order $order, OrderItem $item): Response
+    public function itemReport(Request $request, Order $order, OrderItem $item, FetchInsurancePolicyReport $fetchInsurancePolicyReport): Response
     {
         abort_unless($item->order_id === $order->id, 404);
         abort_unless((string) $item->type === 'insurance', 404);
 
-        $references = $this->resolveReportReferences($item);
+        try {
+            $report = $fetchInsurancePolicyReport->execute($item);
+        } catch (InsuranceApiException $exception) {
+            $status = str_contains($exception->getMessage(), 'No printable policy reference')
+                ? 422
+                : 502;
 
-        if (count($references) === 0) {
-            abort(422, 'No printable policy reference was found for this insurance item.');
+            abort($status, $exception->getMessage());
         }
 
-        $lastException = null;
-
-        foreach ($references as $reference) {
-            try {
-                $report = $this->providerManager->provider()->fetchPolicyReport(
-                    productType: (string) $item->product_subtype,
-                    reportReference: $reference,
-                );
-
-                $fileReference = preg_replace('/[^A-Za-z0-9_-]/', '-', $reference) ?: 'report';
-                $filename = strtolower((string) $item->product_subtype).'-policy-'.$fileReference.'.pdf';
-                $contentType = explode(';', (string) ($report['content_type'] ?? 'application/pdf'))[0] ?: 'application/pdf';
-
-                return response((string) ($report['content'] ?? ''), 200, [
-                    'Content-Type' => $contentType,
-                    'Content-Disposition' => 'inline; filename="'.$filename.'"',
-                    'Cache-Control' => 'no-store, no-cache, must-revalidate, max-age=0',
-                    'Pragma' => 'no-cache',
-                ]);
-            } catch (Throwable $exception) {
-                report($exception);
-                $lastException = $exception;
-            }
-        }
-
-        abort(502, $lastException?->getMessage() ?: 'Unable to fetch policy report from insurance provider.');
+        return response($report['content'], 200, [
+            'Content-Type' => $report['content_type'],
+            'Content-Disposition' => 'inline; filename="'.$report['filename'].'"',
+            'Cache-Control' => 'no-store, no-cache, must-revalidate, max-age=0',
+            'Pragma' => 'no-cache',
+        ]);
     }
 
     protected function resolveInsurancePolicyId(OrderItem $item): ?int
@@ -226,54 +211,5 @@ class InsurancePolicyController extends Controller
         }
 
         return null;
-    }
-
-    /**
-     * @return array<int, string>
-     */
-    protected function resolveReportReferences(OrderItem $item): array
-    {
-        $references = [];
-
-        $encryptedCandidates = [
-            data_get($item->product_details, 'policy_details.report_reference'),
-            data_get($item->item_details, 'insurance.report_reference'),
-            data_get($item->item_details, 'insurance.provider_response.data.EncryptedId'),
-            data_get($item->item_details, 'insurance.provider_response.EncryptedId'),
-            data_get($item->item_details, 'insurance.provider_response.data.CardNumber'),
-            data_get($item->item_details, 'insurance.provider_response.CardNumber'),
-            $item->provider_reference,
-        ];
-
-        foreach ($encryptedCandidates as $candidate) {
-            if (! is_string($candidate)) {
-                continue;
-            }
-
-            $trimmed = trim($candidate);
-
-            if ($trimmed === '') {
-                continue;
-            }
-
-            $references[] = $trimmed;
-        }
-
-        $idCandidates = [
-            data_get($item->product_details, 'policy_details.policy_id'),
-            data_get($item->item_details, 'insurance.cancellation.insurance_policy_id'),
-            data_get($item->item_details, 'insurance.provider_response.data.Id'),
-            data_get($item->item_details, 'insurance.provider_response.Id'),
-        ];
-
-        foreach ($idCandidates as $candidate) {
-            if (! is_numeric($candidate) || (int) $candidate <= 0) {
-                continue;
-            }
-
-            $references[] = (string) ((int) $candidate);
-        }
-
-        return array_values(array_unique(Arr::where($references, fn (string $value): bool => $value !== '')));
     }
 }
