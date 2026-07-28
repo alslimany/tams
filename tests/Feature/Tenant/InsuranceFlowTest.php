@@ -111,7 +111,7 @@ function bindInsuranceManagerFake(): void
             return ['cancelled' => true];
         }
 
-        public function fetchPolicyReport(string $productType, string $reportReference): array
+        public function fetchPolicyReport(string $productType, string $reportReference, array $context = []): array
         {
             return ['content' => '<pdf-content>', 'content_type' => 'application/pdf'];
         }

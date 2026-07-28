@@ -198,7 +198,10 @@ test('api insurance policy pdf returns orange report by card number', function (
     global $state;
 
     Http::fake([
-        'https://tameen.webapi.ly/api/Oranges/GetReportById?CardNumber=ORG-CARD-001' => Http::response('%PDF-1.4 orange-pdf', 200, [
+        'https://tameen.webapi.ly/api/Oranges/GetReportById?Id=9001&CardNumber=ORG-CARD-001' => Http::response('%PDF-1.4 orange-pdf', 200, [
+            'Content-Type' => 'application/pdf',
+        ]),
+        'https://tameen.webapi.ly/api/Oranges/GetReportById?CardNumber=ORG-CARD-001&Id=9001' => Http::response('%PDF-1.4 orange-pdf', 200, [
             'Content-Type' => 'application/pdf',
         ]),
     ]);
@@ -252,7 +255,11 @@ test('api insurance policy pdf returns orange report by card number', function (
         ->assertSee('%PDF-1.4 orange-pdf', false);
 
     Http::assertSent(function (Request $request): bool {
-        return $request->url() === 'https://tameen.webapi.ly/api/Oranges/GetReportById?CardNumber=ORG-CARD-001';
+        parse_str(parse_url($request->url(), PHP_URL_QUERY) ?: '', $query);
+
+        return str_contains($request->url(), '/api/Oranges/GetReportById')
+            && ($query['CardNumber'] ?? null) === 'ORG-CARD-001'
+            && ($query['Id'] ?? null) === '9001';
     });
 });
 

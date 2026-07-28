@@ -561,31 +561,170 @@ class AlBarakaProvider implements InsuranceProviderInterface
         return match ($productType) {
             'compulsory' => $baseUrl.'/api/Compulsories/GetReportById?EncryptedId='.urlencode($reportReference),
             'travel' => $baseUrl.'/api/Travelers/GetReportById?EncryptedId='.urlencode($reportReference),
-            'orange' => $baseUrl.'/api/Oranges/GetReportById?CardNumber='.urlencode($reportReference),
+            'orange' => $baseUrl.'/api/Oranges/GetReportById?'.http_build_query(
+                $this->preferredOrangeReportQuery($reportReference)
+            ),
             default => throw new InsuranceApiException('Unsupported insurance product type.'),
         };
     }
 
-    public function fetchPolicyReport(string $productType, string $reportReference): array
+    /**
+     * @param  array<string, mixed>  $context
+     * @return array{content: string, content_type: string}
+     */
+    public function fetchPolicyReport(string $productType, string $reportReference, array $context = []): array
     {
+        if ($productType === 'orange') {
+            return $this->fetchOrangePolicyReport($reportReference, $context);
+        }
+
         $path = match ($productType) {
             'compulsory' => '/api/Compulsories/GetReportById?EncryptedId='.urlencode($reportReference),
             'travel' => '/api/Travelers/GetReportById?EncryptedId='.urlencode($reportReference),
-            'orange' => '/api/Oranges/GetReportById?CardNumber='.urlencode($reportReference),
             default => throw new InsuranceApiException('Unsupported insurance product type.'),
         };
 
+        return $this->requestPolicyPdf($path);
+    }
+
+    /**
+     * @param  array<string, mixed>  $context
+     * @return array{content: string, content_type: string}
+     */
+    protected function fetchOrangePolicyReport(string $reportReference, array $context = []): array
+    {
+        $attempts = $this->orangeReportQueryAttempts($reportReference, $context);
+        $lastException = null;
+
+        foreach ($attempts as $query) {
+            try {
+                return $this->requestPolicyPdf('/api/Oranges/GetReportById?'.http_build_query($query));
+            } catch (InsuranceApiException $exception) {
+                Log::warning('Orange policy report attempt failed.', [
+                    'query' => $query,
+                    'error' => $exception->getMessage(),
+                ]);
+                $lastException = $exception;
+            }
+        }
+
+        throw $lastException ?? new InsuranceApiException('Unable to fetch orange policy report from insurance provider.');
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    protected function preferredOrangeReportQuery(string $reportReference): array
+    {
+        if (ctype_digit($reportReference)) {
+            return ['Id' => $reportReference];
+        }
+
+        return ['CardNumber' => $reportReference];
+    }
+
+    /**
+     * @param  array<string, mixed>  $context
+     * @return array<int, array<string, string>>
+     */
+    protected function orangeReportQueryAttempts(string $reportReference, array $context = []): array
+    {
+        $cardNumber = trim((string) ($context['card_number'] ?? ''));
+        $encryptedId = trim((string) ($context['encrypted_id'] ?? ''));
+        $policyId = $context['policy_id'] ?? null;
+        $policyId = is_numeric($policyId) && (int) $policyId > 0 ? (string) ((int) $policyId) : '';
+
+        $trimmedReference = trim($reportReference);
+
+        if ($cardNumber === '' && $trimmedReference !== '' && ! ctype_digit($trimmedReference)) {
+            $cardNumber = $trimmedReference;
+        }
+
+        if ($encryptedId === '' && $trimmedReference !== '' && $trimmedReference !== $cardNumber && ! ctype_digit($trimmedReference)) {
+            $encryptedId = $trimmedReference;
+        }
+
+        if ($policyId === '' && ctype_digit($trimmedReference)) {
+            $policyId = $trimmedReference;
+        }
+
+        $attempts = [];
+
+        // Al Baraka indicated orange print needs both policy id and card/policy number.
+        if ($policyId !== '' && $cardNumber !== '') {
+            $attempts[] = ['Id' => $policyId, 'CardNumber' => $cardNumber];
+            $attempts[] = ['CardNumber' => $cardNumber, 'Id' => $policyId];
+        }
+
+        if ($encryptedId !== '' && $policyId !== '') {
+            $attempts[] = ['EncryptedId' => $encryptedId, 'Id' => $policyId];
+            $attempts[] = ['Id' => $policyId, 'EncryptedId' => $encryptedId];
+        }
+
+        if ($encryptedId !== '' && $cardNumber !== '' && $encryptedId !== $cardNumber) {
+            $attempts[] = ['EncryptedId' => $encryptedId, 'CardNumber' => $cardNumber];
+            $attempts[] = ['CardNumber' => $cardNumber, 'EncryptedId' => $encryptedId];
+        }
+
+        if ($encryptedId !== '') {
+            $attempts[] = ['EncryptedId' => $encryptedId];
+        }
+
+        if ($policyId !== '') {
+            $attempts[] = ['EncryptedId' => $policyId];
+            $attempts[] = ['Id' => $policyId];
+        }
+
+        if ($cardNumber !== '') {
+            $attempts[] = ['CardNumber' => $cardNumber];
+            $attempts[] = ['EncryptedId' => $cardNumber];
+        }
+
+        $unique = [];
+        $seen = [];
+
+        foreach ($attempts as $attempt) {
+            ksort($attempt);
+            $key = http_build_query($attempt);
+
+            if (isset($seen[$key])) {
+                continue;
+            }
+
+            $seen[$key] = true;
+            $unique[] = $attempt;
+        }
+
+        return $unique;
+    }
+
+    /**
+     * @return array{content: string, content_type: string}
+     */
+    protected function requestPolicyPdf(string $path): array
+    {
         $response = $this->client()
             ->accept('application/pdf')
             ->get($path);
 
+        $body = (string) $response->body();
+        $contentType = (string) ($response->header('Content-Type') ?: 'application/pdf');
+
         if ($response->failed()) {
-            throw new InsuranceApiException('Insurance report request failed: '.$response->status().' '.$response->body());
+            throw new InsuranceApiException('Insurance report request failed: '.$response->status().' '.$body);
+        }
+
+        if (! str_starts_with(ltrim($body), '%PDF')) {
+            $snippet = mb_substr(preg_replace('/\s+/', ' ', $body) ?? $body, 0, 240);
+
+            throw new InsuranceApiException(
+                'Insurance report response was not a PDF (HTTP '.$response->status().'): '.$snippet
+            );
         }
 
         return [
-            'content' => $response->body(),
-            'content_type' => (string) ($response->header('Content-Type') ?: 'application/pdf'),
+            'content' => $body,
+            'content_type' => explode(';', $contentType)[0] ?: 'application/pdf',
         ];
     }
 

@@ -21,9 +21,10 @@ interface InsuranceProviderInterface
     public function policyReportUrl(string $productType, string $reportReference): string;
 
     /**
+     * @param  array<string, mixed>  $context
      * @return array{content:string,content_type:string}
      */
-    public function fetchPolicyReport(string $productType, string $reportReference): array;
+    public function fetchPolicyReport(string $productType, string $reportReference, array $context = []): array;
 
     /**
      * @return array{insurance_policy_id:int|null,remarks:?string,raw:array<string,mixed>}
