@@ -3,6 +3,7 @@
 use App\Models\Tenant;
 use App\Models\Tenant\TenantHotelProvider;
 use App\Models\User;
+use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 
@@ -65,8 +66,8 @@ test('hotel autocomplete returns destinations', function () {
         'https://btob.3t.tn/hotels-api?method=autocomplete' => Http::response([
             'method' => 'autocomplete',
             'response' => [
-                ['uid' => 'city_1', 'label' => 'Paris, France', 'subLabel' => 'Ile-de-France'],
-                ['uid' => 'city_2', 'label' => 'Istanbul, Türkiye', 'subLabel' => 'Marmara'],
+                ['cityId' => 215, 'label' => 'Paris, France', 'subLabel' => 'Ile-de-France'],
+                ['cityId' => 88, 'label' => 'Istanbul, Türkiye', 'subLabel' => 'Marmara'],
             ],
         ]),
     ]);
@@ -76,10 +77,12 @@ test('hotel autocomplete returns destinations', function () {
 
     $response->assertOk()
         ->assertJsonPath('success', true)
-        ->assertJsonCount(2, 'data.destinations');
+        ->assertJsonCount(2, 'data.destinations')
+        ->assertJsonPath('data.destinations.0.city_id', 215)
+        ->assertJsonPath('data.destinations.0.code', '215');
 });
 
-test('hotel search returns availability', function () {
+test('hotel search sends 3T availability payload with city and occupancies', function () {
     global $state;
 
     Http::fake([
@@ -108,17 +111,95 @@ test('hotel search returns availability', function () {
 
     $response = $this->withToken($state['token'])
         ->postJson($state['apiUrl'].'/hotels/search', [
-            'city_id' => 'city_1',
-            'check_in' => '2026-07-01',
-            'check_out' => '2026-07-05',
-            'rooms' => 1,
-            'adults' => 2,
-            'children' => 0,
+            'city' => 'Paris, France',
+            'city_id' => 215,
+            'check_in' => '2026-08-01',
+            'check_out' => '2026-08-05',
+            'rooms' => [
+                ['adult' => 2, 'children' => [5]],
+            ],
+            'page' => 1,
         ]);
 
     $response->assertOk()
         ->assertJsonPath('success', true)
         ->assertJsonStructure(['data' => ['uuid', 'hotels']]);
+
+    Http::assertSent(function (Request $request): bool {
+        if (! str_contains($request->url(), 'method=availability')) {
+            return false;
+        }
+
+        $payload = $request->data();
+
+        return $payload['checkIn'] === '2026-08-01'
+            && $payload['checkOut'] === '2026-08-05'
+            && $payload['city'] === 'Paris'
+            && $payload['cityId'] === 215
+            && $payload['occupancies']['1']['adult'] === '2'
+            && $payload['occupancies']['1']['child']['value'] === 1
+            && $payload['occupancies']['1']['child']['age'] === '5'
+            && $payload['onlyAvailableHotels'] === true
+            && $payload['channel'] === 'b2b'
+            && $payload['language'] === 'fr_FR';
+    });
+});
+
+test('hotel search accepts flat rooms shortcut without children', function () {
+    global $state;
+
+    Http::fake([
+        'https://btob.3t.tn/hotels-api?method=availability' => Http::response([
+            'method' => 'availability',
+            'response' => [],
+            'search_code' => 'SRCH-002',
+            'hotels_count' => 0,
+            'pages' => 1,
+        ]),
+    ]);
+
+    $response = $this->withToken($state['token'])
+        ->postJson($state['apiUrl'].'/hotels/search', [
+            'city' => 'Tunis',
+            'city_id' => 12,
+            'check_in' => '2026-08-01',
+            'check_out' => '2026-08-03',
+            'rooms' => 1,
+            'adults' => 2,
+            'children' => 0,
+        ]);
+
+    $response->assertOk();
+
+    Http::assertSent(function (Request $request): bool {
+        if (! str_contains($request->url(), 'method=availability')) {
+            return false;
+        }
+
+        $payload = $request->data();
+
+        return $payload['cityId'] === 12
+            && $payload['occupancies']['1']['adult'] === '2'
+            && $payload['occupancies']['1']['child']['value'] === 0;
+    });
+});
+
+test('hotel search rejects flat children without ages', function () {
+    global $state;
+
+    $response = $this->withToken($state['token'])
+        ->postJson($state['apiUrl'].'/hotels/search', [
+            'city' => 'Tunis',
+            'city_id' => 12,
+            'check_in' => '2026-08-01',
+            'check_out' => '2026-08-03',
+            'rooms' => 1,
+            'adults' => 2,
+            'children' => 1,
+        ]);
+
+    $response->assertStatus(422)
+        ->assertJsonFragment(['message' => 'Each child requires an age. Send rooms[].children as ages, or children_ages matching children count.']);
 });
 
 test('hotel details returns hotel info', function () {
@@ -138,7 +219,7 @@ test('hotel details returns hotel info', function () {
     ]);
 
     $response = $this->withToken($state['token'])
-        ->getJson($state['apiUrl'].'/hotels/details?hotel_id=45&city_id=city_1');
+        ->getJson($state['apiUrl'].'/hotels/details?hotel_id=45&city_id=215');
 
     $response->assertOk()
         ->assertJsonPath('success', true)
@@ -152,7 +233,7 @@ test('hotel search validates required fields', function () {
         ->postJson($state['apiUrl'].'/hotels/search', []);
 
     $response->assertStatus(422)
-        ->assertJsonValidationErrors(['city_id', 'check_in', 'check_out', 'rooms', 'adults']);
+        ->assertJsonValidationErrors(['city', 'city_id', 'check_in', 'check_out', 'rooms']);
 });
 
 test('hotel select with expired search returns 410', function () {

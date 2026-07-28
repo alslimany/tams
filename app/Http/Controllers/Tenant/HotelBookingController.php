@@ -19,6 +19,7 @@ use App\Notifications\Orders\HotelBooked;
 use App\Notifications\Orders\OrderContact;
 use App\Services\AgencyNetwork\MerchantAgencyWalletManager;
 use App\Services\Hotels\HotelApiException;
+use App\Services\Hotels\HotelAvailabilityPayloadFactory;
 use App\Services\Hotels\HotelProviderManager;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -34,6 +35,7 @@ class HotelBookingController extends Controller
 {
     public function __construct(
         protected HotelProviderManager $providerManager,
+        protected HotelAvailabilityPayloadFactory $availabilityPayloadFactory,
         protected CreateOrderFromHotelBooking $createOrderFromHotelBooking,
         protected ProcessHotelProviderWalletTransactions $hotelProviderWalletTransactions,
         protected MerchantAgencyWalletManager $merchantAgencyWalletManager,
@@ -127,7 +129,9 @@ class HotelBookingController extends Controller
 
         try {
             $providerSource = $this->providerManager->activeProviderSource();
-            $payload = $this->providerManager->provider()->availability($this->availabilityPayload($search, $page));
+            $payload = $this->providerManager->provider()->availability(
+                $this->availabilityPayloadFactory->make($search, $page),
+            );
 
             return response()->json([
                 'hotels' => $this->normalizeAvailabilityHotels($payload, $providerSource),
@@ -462,39 +466,6 @@ class HotelBookingController extends Controller
     }
 
     /**
-     * @param  array<string, mixed>  $search
-     * @return array<string, mixed>
-     */
-    protected function availabilityPayload(array $search, int $page): array
-    {
-        $payload = [
-            'checkIn' => (string) $search['check_in'],
-            'checkOut' => (string) $search['check_out'],
-            'city' => $this->cityNameForAvailability((string) $search['city']),
-            'hotelName' => '',
-            'boards' => [],
-            'rating' => [],
-            'hotelId' => [],
-            'occupancies' => $this->occupanciesPayload($search['rooms'] ?? []),
-            'language' => str_replace('-', '_', (string) ($search['language'] ?? 'fr_FR')),
-            'onlyAvailableHotels' => true,
-            'channel' => 'b2b',
-            'filtreSearch' => [],
-        ];
-
-        if ((int) ($search['city_id'] ?? 0) > 0) {
-            $payload['cityId'] = (int) $search['city_id'];
-        }
-
-        return $payload;
-    }
-
-    protected function cityNameForAvailability(string $city): string
-    {
-        return trim((string) str($city)->before(','));
-    }
-
-    /**
      * @param  array<int, array<string, mixed>>  $items
      * @return array<int, array<string, mixed>>
      */
@@ -512,29 +483,6 @@ class HotelBookingController extends Controller
                 'category' => (string) ($item['category'] ?? ''),
             ])->except(['id', 'cityId', 'value'])->all();
         }, $items));
-    }
-
-    /**
-     * @param  array<int, array<string, mixed>>  $rooms
-     * @return array<string, array<string, mixed>>
-     */
-    protected function occupanciesPayload(array $rooms): array
-    {
-        $occupancies = [];
-
-        foreach (array_values($rooms) as $index => $room) {
-            $children = array_values(array_filter((array) ($room['children'] ?? []), fn (mixed $age): bool => is_numeric($age)));
-
-            $occupancies[(string) ($index + 1)] = [
-                'adult' => (string) (int) ($room['adult'] ?? 1),
-                'child' => [
-                    'value' => count($children),
-                    'age' => implode(',', array_map(fn (mixed $age): string => (string) (int) $age, $children)),
-                ],
-            ];
-        }
-
-        return $occupancies;
     }
 
     /**

@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Booknow API v1",
-    "description": "## Booknow REST API v1 \u2014 Mobile Application\n\n**Base URL**: `{{base_url}}/agency/{{tenant}}/api/v1`  \n**Auth**: Bearer token (set via `{{token}}` variable after Login)  \n**Content-Type**: `application/json`\n\n### Token Abilities\n| Ability | Scope |\n|---------|-------|\n| `read` | Results, seat map, fare rules, orders, reports, wallet, eSIM catalogue |\n| `write` | Search, select, price, book (flights, hotels, insurance, eSIM) |\n| `issue` | Issue ticket, void/refund, change segment, eSIM refund |\n| `report` | Dashboard & reports |\n| `*` | Full access |\n\n### Quick Start\n1. Set `base_url` and `tenant` (e.g. `median`)\n2. Run **Login** \u2014 token is saved to `{{token}}` automatically\n3. Flights: Search \u2192 Results \u2192 Select \u2192 Seat Map \u2192 Price \u2192 Book\n4. eSIM upsell during flight booking: **Airport Packages** with destination IATA\n5. eSIM standalone: Search \u2192 Packages \u2192 Select \u2192 Book\n6. For ticket changes use **Change Segment** folder\n\n### Recent Updates\n- **Travel & Orange issue** \u2014 `POST /insurance/travel/issue`, `POST /insurance/orange/issue` (requires `issue`)\n- **API token management** \u2014 `POST /auth/tokens` create scoped token, `DELETE /auth/tokens/{tokenId}` revoke by id\n- **Insurance Policy PDF** \u2014 `GET /orders/{order}/insurance-items/{item}/policy-pdf` returns the Al Baraka printable policy PDF (compulsory, travel, orange)\n- Order detail insurance items include `report_reference` for print lookup\n- **eSIM API** \u2014 full catalogue and booking flow\n- `GET /esim/airport/{iata}/packages` \u2014 destination airport bundles for flight-booking upsell\n- `POST /esim/search` \u2192 `GET /esim/results/{uuid}/packages` \u2192 `POST /esim/select` \u2192 `POST /esim/book`\n- `POST /orders/{order}/esim-items/{item}/refund` \u2014 refund issued eSIM (requires `issue`)\n- Orders list filter: `product_type=esim`\n- Cabin filter: `cabin_class` = `all` | `Y` | `C` | `F`\n- Offers include `baggage`, `airline_logo_url`, `fare_id`, ISO8601 `duration` (`PT4H`, `PT2H10M`)\n- `POST /flights/open-reservation-availability` \u2014 check if open reservation (QQ) is allowed for an offer\n- `POST /flights/fare-rules` \u2014 plain-text rules (no line numbers)\n- `POST /flights/seatmap` \u2014 interactive seat map with per-seat pricing\n- `POST /flights/price` \u2014 total with seat fees and ancillaries\n- `POST /flights/book` accepts `extras.seats` for seat assignment\n- Draft booking: `ticketing_mode: draft` then `POST .../tickets/issue`\n- Change segment: search \u2192 results \u2192 quote \u2192 confirm\n\n### Response Format\n```json\n{ \"success\": true|false, \"message\": \"...\", \"data\": {...} }\n```",
+    "description": "## Booknow REST API v1 — Mobile Application\n\n**Base URL**: `{{base_url}}/agency/{{tenant}}/api/v1`  \n**Auth**: Bearer token (set via `{{token}}` variable after Login)  \n**Content-Type**: `application/json`\n\n### Token Abilities\n| Ability | Scope |\n|---------|-------|\n| `read` | Results, seat map, fare rules, orders, reports, wallet, eSIM catalogue |\n| `write` | Search, select, price, book (flights, hotels, insurance, eSIM) |\n| `issue` | Issue ticket, void/refund, change segment, eSIM refund |\n| `report` | Dashboard & reports |\n| `*` | Full access |\n\n### Quick Start\n1. Set `base_url` and `tenant` (e.g. `median`)\n2. Run **Login** — token is saved to `{{token}}` automatically\n3. Flights: Search → Results → Select → Seat Map → Price → Book\n4. eSIM upsell during flight booking: **Airport Packages** with destination IATA\n5. eSIM standalone: Search → Packages → Select → Book\n6. Hotels: Autocomplete → Search → Details → Select → Book (use `city` + numeric `city_id` + structured `rooms`)\n7. For ticket changes use **Change Segment** folder\n\n### Recent Updates\n- **Hotel search payload** — requires `city` + numeric `city_id` from autocomplete; `rooms` as `[{ \"adult\": 2, \"children\": [5] }]` (flat `rooms`/`adults`/`children` only when children is 0 or ages provided)\n- **Travel & Orange issue** — `POST /insurance/travel/issue`, `POST /insurance/orange/issue` (requires `issue`)\n- **API token management** — `POST /auth/tokens` create scoped token, `DELETE /auth/tokens/{tokenId}` revoke by id\n- **Insurance Policy PDF** — `GET /orders/{order}/insurance-items/{item}/policy-pdf` returns the Al Baraka printable policy PDF (compulsory, travel, orange)\n- Order detail insurance items include `report_reference` for print lookup\n- **eSIM API** — full catalogue and booking flow\n- `GET /esim/airport/{iata}/packages` — destination airport bundles for flight-booking upsell\n- `POST /esim/search` → `GET /esim/results/{uuid}/packages` → `POST /esim/select` → `POST /esim/book`\n- `POST /orders/{order}/esim-items/{item}/refund` — refund issued eSIM (requires `issue`)\n- Orders list filter: `product_type=esim`\n- Cabin filter: `cabin_class` = `all` | `Y` | `C` | `F`\n- Offers include `baggage`, `airline_logo_url`, `fare_id`, ISO8601 `duration` (`PT4H`, `PT2H10M`)\n- `POST /flights/open-reservation-availability` — check if open reservation (QQ) is allowed for an offer\n- `POST /flights/fare-rules` — plain-text rules (no line numbers)\n- `POST /flights/seatmap` — interactive seat map with per-seat pricing\n- `POST /flights/price` — total with seat fees and ancillaries\n- `POST /flights/book` accepts `extras.seats` for seat assignment\n- Draft booking: `ticketing_mode: draft` then `POST .../tickets/issue`\n- Change segment: search → results → quote → confirm\n\n### Response Format\n```json\n{ \"success\": true|false, \"message\": \"...\", \"data\": {...} }\n```",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "auth": {
@@ -92,15 +92,40 @@
     {
       "key": "orange_quote_token",
       "value": ""
+    },
+    {
+      "key": "hotel_city",
+      "value": "Paris, France",
+      "description": "City label from hotel autocomplete"
+    },
+    {
+      "key": "hotel_city_id",
+      "value": "215",
+      "description": "Numeric city_id from hotel autocomplete"
+    },
+    {
+      "key": "hotel_search_uuid",
+      "value": "",
+      "description": "Set by Search Hotels"
+    },
+    {
+      "key": "hotel_booking_uuid",
+      "value": "",
+      "description": "Set by Select Hotel Offer"
+    },
+    {
+      "key": "hotel_rate_key",
+      "value": "",
+      "description": "Optional: set from search results rateKey"
     }
   ],
   "item": [
     {
-      "name": "\ud83d\udd10 Auth",
+      "name": "🔐 Auth",
       "description": "Authentication endpoints. Run Login first to get a token.",
       "item": [
         {
-          "name": "Login \u2014 Get Token",
+          "name": "Login — Get Token",
           "event": [
             {
               "listen": "test",
@@ -148,7 +173,7 @@
           },
           "response": [
             {
-              "name": "200 \u2014 Success",
+              "name": "200 — Success",
               "status": "OK",
               "code": 200,
               "header": [
@@ -160,7 +185,7 @@
               "body": "{\n  \"success\": true,\n  \"message\": \"Token created successfully.\",\n  \"data\": {\n    \"token\": \"1|abcdef123456...\",\n    \"user\": {\n      \"id\": 1,\n      \"name\": \"John Doe\",\n      \"email\": \"agent@example.com\",\n      \"role\": \"agent\",\n      \"is_active\": true,\n      \"initials\": \"JD\",\n      \"last_login_at\": \"2026-05-13T10:00:00.000Z\"\n    }\n  }\n}"
             },
             {
-              "name": "403 \u2014 Deactivated",
+              "name": "403 — Deactivated",
               "status": "Forbidden",
               "code": 403,
               "body": "{\n  \"success\": false,\n  \"message\": \"Your account has been deactivated.\"\n}"
@@ -168,7 +193,7 @@
           ]
         },
         {
-          "name": "Get Me \u2014 Current User",
+          "name": "Get Me — Current User",
           "request": {
             "method": "GET",
             "url": {
@@ -335,7 +360,7 @@
           ]
         },
         {
-          "name": "Revoke Token \u2014 Logout",
+          "name": "Revoke Token — Logout",
           "request": {
             "method": "DELETE",
             "url": {
@@ -366,7 +391,7 @@
       ]
     },
     {
-      "name": "\ud83d\udcda Reference Data",
+      "name": "📚 Reference Data",
       "item": [
         {
           "name": "Airports Search",
@@ -469,8 +494,8 @@
       ]
     },
     {
-      "name": "\u2708\ufe0f Flights",
-      "description": "Flight search, pricing, and booking flow.\n\n**Book flow**: Search \u2192 Results \u2192 (Open Reservation check) \u2192 (Fare Rules) \u2192 Select \u2192 Seatmap \u2192 Price \u2192 Book (`ticketing_mode: final` or `draft`)\n\n**Open reservation**: After **2. Fetch Results**, call **2c. Open Reservation Availability** per offer. If `allowed: true`, pass `reservation_type: QQ` in **5. Select Flight**.\n\n**Seat flow**: **5b. Seat Map** \u2192 pick seats \u2192 **5c. Price** (with `extras.seats`) \u2192 **6. Book** (same `extras.seats`)\n\n**Draft flow**: Book with `ticketing_mode: draft` \u2192 Issue Ticket\n\n**Change flow**: See **Change Segment** folder",
+      "name": "✈️ Flights",
+      "description": "Flight search, pricing, and booking flow.\n\n**Book flow**: Search → Results → (Open Reservation check) → (Fare Rules) → Select → Seatmap → Price → Book (`ticketing_mode: final` or `draft`)\n\n**Open reservation**: After **2. Fetch Results**, call **2c. Open Reservation Availability** per offer. If `allowed: true`, pass `reservation_type: QQ` in **5. Select Flight**.\n\n**Seat flow**: **5b. Seat Map** → pick seats → **5c. Price** (with `extras.seats`) → **6. Book** (same `extras.seats`)\n\n**Draft flow**: Book with `ticketing_mode: draft` → Issue Ticket\n\n**Change flow**: See **Change Segment** folder",
       "item": [
         {
           "name": "1. Search Flights",
@@ -634,19 +659,19 @@
           },
           "response": [
             {
-              "name": "200 \u2014 Allowed",
+              "name": "200 — Allowed",
               "status": "OK",
               "code": 200,
               "body": "{\n  \"success\": true,\n  \"data\": {\n    \"allowed\": true\n  }\n}"
             },
             {
-              "name": "200 \u2014 Not Allowed",
+              "name": "200 — Not Allowed",
               "status": "OK",
               "code": 200,
               "body": "{\n  \"success\": true,\n  \"data\": {\n    \"allowed\": false\n  }\n}"
             },
             {
-              "name": "404 \u2014 Provider Not Found",
+              "name": "404 — Provider Not Found",
               "status": "Not Found",
               "code": 404,
               "body": "{\n  \"success\": false,\n  \"message\": \"Provider not found.\"\n}"
@@ -868,7 +893,7 @@
           ]
         },
         {
-          "name": "6. Book Flight \u2014 Issue Ticket",
+          "name": "6. Book Flight — Issue Ticket",
           "event": [
             {
               "listen": "test",
@@ -914,17 +939,17 @@
                 "book"
               ]
             },
-            "description": "Finalize booking and issue ticket immediately (`ticketing_mode: final`, default). Creates order, charges wallet, and issues e-ticket. Must call **Select Flight** first.\n\nPass `extras.seats` (same format as **5c. Price**) to assign seats during booking.\n\nFor hold-only PNR without payment, use **6b. Book Flight \u2014 Draft Reservation**."
+            "description": "Finalize booking and issue ticket immediately (`ticketing_mode: final`, default). Creates order, charges wallet, and issues e-ticket. Must call **Select Flight** first.\n\nPass `extras.seats` (same format as **5c. Price**) to assign seats during booking.\n\nFor hold-only PNR without payment, use **6b. Book Flight — Draft Reservation**."
           },
           "response": [
             {
-              "name": "201 \u2014 Booked",
+              "name": "201 — Booked",
               "status": "Created",
               "code": 201,
               "body": "{\n  \"success\": true,\n  \"message\": \"Booking confirmed successfully.\",\n  \"data\": {\n    \"id\": \"uuid\",\n    \"number\": \"ORD-2026-0001\",\n    \"status\": \"confirmed\",\n    \"total\": 475.0,\n    \"currency\": \"LYD\",\n    \"issued_at\": \"2026-05-13T10:00:00.000Z\",\n    \"items\": [\n      {\n        \"id\": 1,\n        \"type\": \"flight\",\n        \"product_type\": \"ticket\",\n        \"provider_reference\": \"AAJ6DU\",\n        \"status\": \"confirmed\",\n        \"total\": 475.0,\n        \"currency\": \"LYD\"\n      }\n    ]\n  }\n}"
             },
             {
-              "name": "402 \u2014 Insufficient Balance",
+              "name": "402 — Insufficient Balance",
               "status": "Payment Required",
               "code": 402,
               "body": "{\n  \"success\": false,\n  \"message\": \"Insufficient wallet balance: requires 450.00 LYD, available 100.00 LYD\"\n}"
@@ -932,7 +957,7 @@
           ]
         },
         {
-          "name": "6b. Book Flight \u2014 Draft Reservation",
+          "name": "6b. Book Flight — Draft Reservation",
           "event": [
             {
               "listen": "test",
@@ -982,7 +1007,7 @@
           },
           "response": [
             {
-              "name": "201 \u2014 Draft Created",
+              "name": "201 — Draft Created",
               "status": "Created",
               "code": 201,
               "body": "{\n  \"success\": true,\n  \"message\": \"Draft reservation created. Issue the ticket with POST /flights/{booking}/tickets/issue when ready.\",\n  \"data\": {\n    \"id\": \"01jx...\",\n    \"number\": \"ORD-2026-0001\",\n    \"status\": \"pending\",\n    \"total\": 450.0,\n    \"currency\": \"LYD\",\n    \"issued_at\": null,\n    \"items\": [\n      {\n        \"id\": \"01jy...\",\n        \"status\": \"pending\",\n        \"provider_reference\": \"AAJ6DU\",\n        \"ticket_number\": null\n      }\n    ]\n  }\n}"
@@ -1023,19 +1048,19 @@
           },
           "response": [
             {
-              "name": "201 \u2014 Issued",
+              "name": "201 — Issued",
               "status": "Created",
               "code": 201,
               "body": "{\n  \"success\": true,\n  \"message\": \"Ticket issued successfully.\",\n  \"data\": {\n    \"id\": \"01jx...\",\n    \"number\": \"ORD-2026-0002\",\n    \"status\": \"issued\",\n    \"total\": 450.0,\n    \"currency\": \"LYD\",\n    \"items\": []\n  }\n}"
             },
             {
-              "name": "402 \u2014 Insufficient Balance",
+              "name": "402 — Insufficient Balance",
               "status": "Payment Required",
               "code": 402,
               "body": "{\n  \"success\": false,\n  \"message\": \"Insufficient wallet balance: requires 450.00 LYD, available 100.00 LYD\"\n}"
             },
             {
-              "name": "503 \u2014 Timeout",
+              "name": "503 — Timeout",
               "status": "Service Unavailable",
               "code": 503,
               "body": "{\n  \"success\": false,\n  \"message\": \"Airline ticket issuance timed out. Please try again.\"\n}"
@@ -1063,23 +1088,23 @@
                 "refund-quote"
               ]
             },
-            "description": "Fetch a refund quote (penalty + net refund amount) for a specific ticket item. Read-only \u2014 no state is changed. Present the returned amounts to the user before calling **Refund Ticket**.\n\nRequires `issue` token ability."
+            "description": "Fetch a refund quote (penalty + net refund amount) for a specific ticket item. Read-only — no state is changed. Present the returned amounts to the user before calling **Refund Ticket**.\n\nRequires `issue` token ability."
           },
           "response": [
             {
-              "name": "200 \u2014 Quote",
+              "name": "200 — Quote",
               "status": "OK",
               "code": 200,
               "body": "{\n  \"penalty\": 50.0,\n  \"net_refund\": 400.0,\n  \"gross_refund\": 450.0,\n  \"currency\": \"LYD\"\n}"
             },
             {
-              "name": "404 \u2014 Not Found",
+              "name": "404 — Not Found",
               "status": "Not Found",
               "code": 404,
               "body": "{\n  \"error\": \"Ticket item not found.\"\n}"
             },
             {
-              "name": "503 \u2014 Timeout",
+              "name": "503 — Timeout",
               "status": "Service Unavailable",
               "code": 503,
               "body": "{\n  \"error\": \"Airline refund quote request timed out. Please try again.\"\n}"
@@ -1121,19 +1146,19 @@
           },
           "response": [
             {
-              "name": "200 \u2014 Voided",
+              "name": "200 — Voided",
               "status": "OK",
               "code": 200,
               "body": "{\n  \"success\": true,\n  \"message\": \"Ticket voided successfully.\",\n  \"data\": {\n    \"booking_id\": \"01jx...\",\n    \"status\": \"voided\",\n    \"amount_refunded\": 450.0,\n    \"currency\": \"LYD\"\n  }\n}"
             },
             {
-              "name": "422 \u2014 Not Voidable",
+              "name": "422 — Not Voidable",
               "status": "Unprocessable Entity",
               "code": 422,
               "body": "{\n  \"success\": false,\n  \"message\": \"PNR can only be voided on the same issue date. Please use refund flow.\"\n}"
             },
             {
-              "name": "503 \u2014 Timeout",
+              "name": "503 — Timeout",
               "status": "Service Unavailable",
               "code": 503,
               "body": "{\n  \"success\": false,\n  \"message\": \"Airline void request timed out. Please try again.\"\n}"
@@ -1175,19 +1200,19 @@
           },
           "response": [
             {
-              "name": "200 \u2014 Refunded",
+              "name": "200 — Refunded",
               "status": "OK",
               "code": 200,
               "body": "{\n  \"success\": true,\n  \"message\": \"Refund processed successfully.\",\n  \"data\": {\n    \"booking_id\": \"01jx...\",\n    \"status\": \"refunded\",\n    \"net_refund_amount\": 400.0,\n    \"penalty_amount\": 50.0,\n    \"currency\": \"LYD\"\n  }\n}"
             },
             {
-              "name": "422 \u2014 Rejected by Airline",
+              "name": "422 — Rejected by Airline",
               "status": "Unprocessable Entity",
               "code": 422,
               "body": "{\n  \"success\": false,\n  \"message\": \"Airline rejected the refund request. Response: ...\"\n}"
             },
             {
-              "name": "503 \u2014 Timeout",
+              "name": "503 — Timeout",
               "status": "Service Unavailable",
               "code": 503,
               "body": "{\n  \"success\": false,\n  \"message\": \"Airline refund request timed out. Please try again.\"\n}"
@@ -1197,8 +1222,8 @@
       ]
     },
     {
-      "name": "\ud83d\udd04 Change Segment",
-      "description": "Change a ticket segment on the **issuing airline only**.\n\n**Flow**:\n1. **Change Search** \u2192 saves `flight_uuid` + `flight_provider_id`\n2. **Fetch Results** (in Flights folder) \u2192 pick a new offer\n3. **Change Quote** \u2192 review fees (`outstanding_amount`)\n4. **Change Confirm** \u2192 apply change\n\nRequires `issue` ability. Set `order_id` and `item_id` from a booked order (auto-saved after Book, or from **Order Detail**).",
+      "name": "🔄 Change Segment",
+      "description": "Change a ticket segment on the **issuing airline only**.\n\n**Flow**:\n1. **Change Search** → saves `flight_uuid` + `flight_provider_id`\n2. **Fetch Results** (in Flights folder) → pick a new offer\n3. **Change Quote** → review fees (`outstanding_amount`)\n4. **Change Confirm** → apply change\n\nRequires `issue` ability. Set `order_id` and `item_id` from a booked order (auto-saved after Book, or from **Order Detail**).",
       "item": [
         {
           "name": "1. Change Search",
@@ -1247,7 +1272,7 @@
                 "search"
               ]
             },
-            "description": "Start a change search locked to the ticket's issuing airline.\n\nReturns a new `uuid` \u2014 fetch offers with **2. Fetch Results** in the Flights folder using `?provider_id={{flight_provider_id}}`.\n\n**segment_line**: 1-based segment index on the ticket.\n\n**cabin_class**: `all` | `Y` | `C` | `F` (optional, default `all`)."
+            "description": "Start a change search locked to the ticket's issuing airline.\n\nReturns a new `uuid` — fetch offers with **2. Fetch Results** in the Flights folder using `?provider_id={{flight_provider_id}}`.\n\n**segment_line**: 1-based segment index on the ticket.\n\n**cabin_class**: `all` | `Y` | `C` | `F` (optional, default `all`)."
           },
           "response": [
             {
@@ -1347,11 +1372,31 @@
       ]
     },
     {
-      "name": "\ud83c\udfe8 Hotels",
-      "description": "Hotel search and booking.\n\n**Flow**: Autocomplete \u2192 Search \u2192 Details \u2192 Select \u2192 Book",
+      "name": "🏨 Hotels",
+      "description": "Hotel search and booking via the active tenant hotel provider (e.g. 3T).\n\n**Flow**: Autocomplete → Search → Details → Select → Book\n\n**Search requirements (provider-ready)**:\n- `city` — destination label from autocomplete (e.g. `Paris, France`)\n- `city_id` — **numeric** id from autocomplete (`city_id` / `code`)\n- `rooms` — occupancy list: `[{ \"adult\": 2, \"children\": [5] }]` (`children` = ages, not a count)\n- Optional flat shortcut: `rooms: 1`, `adults: 2`, `children: 0` (if `children` > 0, send `children_ages`)\n\nRun **Autocomplete** first — it saves `{{hotel_city}}` and `{{hotel_city_id}}`.",
       "item": [
         {
-          "name": "Autocomplete \u2014 Destinations",
+          "name": "Autocomplete — Destinations",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var json = pm.response.json();",
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "if (json.success && json.data && json.data.destinations && json.data.destinations.length) {",
+                  "    var dest = json.data.destinations[0];",
+                  "    var cityId = dest.city_id || dest.code || dest.id;",
+                  "    var label = dest.label || dest.name || '';",
+                  "    if (cityId) { pm.collectionVariables.set('hotel_city_id', String(cityId)); }",
+                  "    if (label) { pm.collectionVariables.set('hotel_city', label); }",
+                  "    console.log('Hotel destination: ' + label + ' (city_id=' + cityId + ')');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
           "request": {
             "method": "GET",
             "url": {
@@ -1375,14 +1420,14 @@
                 }
               ]
             },
-            "description": "Search for hotel destinations by name."
+            "description": "Search destinations by name. Use the returned `city_id` (numeric) and `label` as `city` on **Search Hotels**. Saves `{{hotel_city}}` and `{{hotel_city_id}}`."
           },
           "response": [
             {
               "name": "200",
               "status": "OK",
               "code": 200,
-              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"destinations\": [\n      { \"uid\": \"city_1\", \"label\": \"Paris, France\", \"subLabel\": \"Ile-de-France\" }\n    ]\n  }\n}"
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"destinations\": [\n      {\n        \"label\": \"Paris, France\",\n        \"subLabel\": \"Ile-de-France\",\n        \"country\": \"France\",\n        \"category\": \"city\",\n        \"code\": \"215\",\n        \"city_id\": 215,\n        \"id\": 215\n      }\n    ]\n  }\n}"
             }
           ]
         },
@@ -1394,8 +1439,16 @@
               "script": {
                 "exec": [
                   "var json = pm.response.json();",
-                  "if (json.success && json.data.uuid) {",
-                  "    pm.collectionVariables.set('hotel_search_uuid', json.data.uuid);",
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "if (json.success && json.data) {",
+                  "    if (json.data.uuid) {",
+                  "        pm.collectionVariables.set('hotel_search_uuid', json.data.uuid);",
+                  "    }",
+                  "    var hotels = json.data.hotels || [];",
+                  "    if (hotels.length && hotels[0].rooms && hotels[0].rooms.length) {",
+                  "        var rate = hotels[0].rooms[0].rateKey || hotels[0].rooms[0].rate_key;",
+                  "        if (rate) { pm.collectionVariables.set('hotel_rate_key', rate); }",
+                  "    }",
                   "}"
                 ],
                 "type": "text/javascript"
@@ -1412,7 +1465,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"city_id\": \"city_1\",\n  \"check_in\": \"2026-07-01\",\n  \"check_out\": \"2026-07-05\",\n  \"rooms\": 1,\n  \"adults\": 2,\n  \"children\": 0,\n  \"page\": 1\n}"
+              "raw": "{\n  \"city\": \"{{hotel_city}}\",\n  \"city_id\": {{hotel_city_id}},\n  \"check_in\": \"2026-08-01\",\n  \"check_out\": \"2026-08-05\",\n  \"rooms\": [\n    {\n      \"adult\": 2,\n      \"children\": []\n    }\n  ],\n  \"language\": \"fr-FR\",\n  \"page\": 1\n}"
             },
             "url": {
               "raw": "{{base_url}}/agency/{{tenant}}/api/v1/hotels/search",
@@ -1428,23 +1481,93 @@
                 "search"
               ]
             },
-            "description": "Search for available hotels in a destination."
+            "description": "Search available hotels.\n\n**Required**\n| Field | Type | Notes |\n|-------|------|-------|\n| `city` | string | Label from autocomplete |\n| `city_id` | integer | Numeric id from autocomplete |\n| `check_in` / `check_out` | `YYYY-MM-DD` | checkout after checkin |\n| `rooms` | array | `[{ \"adult\": 2, \"children\": [5] }]` — children are **ages** |\n\nOptional: `language`, `page`.\n\nSaves `{{hotel_search_uuid}}` (and `{{hotel_rate_key}}` when present)."
           },
           "response": [
             {
               "name": "200",
               "status": "OK",
               "code": 200,
-              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"uuid\": \"search-uuid\",\n    \"hotels\": [\n      {\n        \"hotel\": { \"hotelId\": 45, \"name\": \"Hotel Paris\", \"rating\": 4 },\n        \"rooms\": [\n          { \"rateKey\": \"rate_123\", \"price\": 150, \"currency\": \"EUR\", \"boardName\": \"B&B\" }\n        ]\n      }\n    ],\n    \"hotels_count\": 1,\n    \"pages\": 1\n  }\n}"
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"uuid\": \"search-uuid\",\n    \"hotels\": [\n      {\n        \"source\": 129,\n        \"hotel\": {\n          \"hotelId\": 45,\n          \"name\": \"Hotel Paris\",\n          \"rating\": 4\n        },\n        \"rooms\": [\n          {\n            \"rateKey\": \"rate_123\",\n            \"price\": 150,\n            \"currency\": \"EUR\",\n            \"boardName\": \"B&B\"\n          }\n        ]\n      }\n    ],\n    \"search_code\": \"SRCH-001\",\n    \"hotels_count\": 1,\n    \"pages\": 1\n  }\n}"
+            },
+            {
+              "name": "422 — Missing city / city_id",
+              "status": "Unprocessable Entity",
+              "code": 422,
+              "body": "{\n  \"message\": \"The city field is required. (and 1 more error)\",\n  \"errors\": {\n    \"city\": [\n      \"The city field is required.\"\n    ],\n    \"city_id\": [\n      \"The city id field is required.\"\n    ]\n  }\n}"
             }
           ]
+        },
+        {
+          "name": "Search Hotels (flat shortcut)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"city\": \"{{hotel_city}}\",\n  \"city_id\": {{hotel_city_id}},\n  \"check_in\": \"2026-08-01\",\n  \"check_out\": \"2026-08-05\",\n  \"rooms\": 1,\n  \"adults\": 2,\n  \"children\": 0,\n  \"page\": 1\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/agency/{{tenant}}/api/v1/hotels/search",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "agency",
+                "{{tenant}}",
+                "api",
+                "v1",
+                "hotels",
+                "search"
+              ]
+            },
+            "description": "Alternate search body for simple adult-only occupancy. If `children` > 0, also send `children_ages` matching the count (or prefer structured `rooms[].children` ages on **Search Hotels**)."
+          },
+          "response": []
+        },
+        {
+          "name": "Search Hotels (with children ages)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"city\": \"{{hotel_city}}\",\n  \"city_id\": {{hotel_city_id}},\n  \"check_in\": \"2026-08-01\",\n  \"check_out\": \"2026-08-05\",\n  \"rooms\": [\n    { \"adult\": 2, \"children\": [5, 8] }\n  ],\n  \"page\": 1\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/agency/{{tenant}}/api/v1/hotels/search",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "agency",
+                "{{tenant}}",
+                "api",
+                "v1",
+                "hotels",
+                "search"
+              ]
+            },
+            "description": "Example with children: `rooms[].children` is an array of **ages** (not a child count)."
+          },
+          "response": []
         },
         {
           "name": "Hotel Details",
           "request": {
             "method": "GET",
             "url": {
-              "raw": "{{base_url}}/agency/{{tenant}}/api/v1/hotels/details?hotel_id=45&city_id=city_1",
+              "raw": "{{base_url}}/agency/{{tenant}}/api/v1/hotels/details?hotel_id=45&city_id={{hotel_city_id}}",
               "host": [
                 "{{base_url}}"
               ],
@@ -1463,7 +1586,8 @@
                 },
                 {
                   "key": "city_id",
-                  "value": "city_1"
+                  "value": "{{hotel_city_id}}",
+                  "description": "Numeric city id from autocomplete"
                 },
                 {
                   "key": "source",
@@ -1479,7 +1603,7 @@
               "name": "200",
               "status": "OK",
               "code": 200,
-              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"hotel\": {\n      \"response\": {\n        \"hotel\": {\n          \"name\": \"Hotel Paris\",\n          \"description\": \"A beautiful hotel...\",\n          \"images\": [\"img1.jpg\"]\n        }\n      }\n    }\n  }\n}"
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"hotel\": {\n      \"response\": {\n        \"hotel\": {\n          \"name\": \"Hotel Paris\",\n          \"description\": \"A beautiful hotel...\",\n          \"images\": [\n            \"img1.jpg\"\n          ]\n        }\n      }\n    }\n  }\n}"
             }
           ]
         },
@@ -1509,7 +1633,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"search_uuid\": \"{{hotel_search_uuid}}\",\n  \"rate_key\": \"rate_123\"\n}"
+              "raw": "{\n  \"search_uuid\": \"{{hotel_search_uuid}}\",\n  \"rate_key\": \"{{hotel_rate_key}}\",\n  \"search_code\": \"\",\n  \"language\": \"fr-FR\"\n}"
             },
             "url": {
               "raw": "{{base_url}}/agency/{{tenant}}/api/v1/hotels/select",
@@ -1525,14 +1649,14 @@
                 "select"
               ]
             },
-            "description": "Select a specific room/rate and check availability. Returns a booking UUID for the next step."
+            "description": "Select a room/rate and check availability. Requires a valid `search_uuid` from Search. Returns `booking_uuid` for Book."
           },
           "response": [
             {
               "name": "200",
               "status": "OK",
               "code": 200,
-              "body": "{\n  \"success\": true,\n  \"message\": \"Hotel selected. Proceed to book with guest details.\",\n  \"data\": {\n    \"booking_uuid\": \"booking-uuid\",\n    \"selected_offer\": { ... }\n  }\n}"
+              "body": "{\n  \"success\": true,\n  \"message\": \"Hotel selected. Proceed to book with guest details.\",\n  \"data\": {\n    \"booking_uuid\": \"booking-uuid\",\n    \"selected_offer\": {}\n  }\n}"
             }
           ]
         },
@@ -1548,7 +1672,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"booking_uuid\": \"{{hotel_booking_uuid}}\",\n  \"rooms\": [\n    {\n      \"guests\": [\n        { \"civility\": \"Mr\", \"first_name\": \"John\", \"last_name\": \"Doe\" },\n        { \"civility\": \"Mme\", \"first_name\": \"Jane\", \"last_name\": \"Doe\" }\n      ]\n    }\n  ],\n  \"customer\": {\n    \"first_name\": \"John\",\n    \"last_name\": \"Doe\",\n    \"email\": \"john@example.com\",\n    \"phone\": \"+218911234567\"\n  }\n}"
+              "raw": "{\n  \"booking_uuid\": \"{{hotel_booking_uuid}}\",\n  \"rooms\": [\n    {\n      \"guests\": [\n        {\n          \"civility\": \"Mr\",\n          \"first_name\": \"John\",\n          \"last_name\": \"Doe\"\n        },\n        {\n          \"civility\": \"Mme\",\n          \"first_name\": \"Jane\",\n          \"last_name\": \"Doe\"\n        }\n      ]\n    }\n  ],\n  \"customer\": {\n    \"first_name\": \"John\",\n    \"last_name\": \"Doe\",\n    \"email\": \"john@example.com\",\n    \"phone\": \"+218911234567\"\n  }\n}"
             },
             "url": {
               "raw": "{{base_url}}/agency/{{tenant}}/api/v1/hotels/book",
@@ -1571,17 +1695,17 @@
               "name": "201",
               "status": "Created",
               "code": 201,
-              "body": "{\n  \"success\": true,\n  \"message\": \"Hotel booked successfully.\",\n  \"data\": { \"booking\": { ... } }\n}"
+              "body": "{\n  \"success\": true,\n  \"message\": \"Hotel booked successfully.\",\n  \"data\": { \"booking\": {} }\n}"
             }
           ]
         }
       ]
     },
     {
-      "name": "\ud83d\udee1\ufe0f Insurance \u2014 Compulsory",
+      "name": "🛡️ Insurance — Compulsory",
       "item": [
         {
-          "name": "References \u2014 All Types",
+          "name": "References — All Types",
           "item": [
             {
               "name": "Durations",
@@ -1798,7 +1922,7 @@
                 "issue"
               ]
             },
-            "description": "Issue a compulsory vehicle insurance policy. Must call **Price Quote** first.\n\nAfter issue, use **Orders \u2192 Insurance Policy PDF** with the returned `order_id` and insurance item id to download the Al Baraka printable policy."
+            "description": "Issue a compulsory vehicle insurance policy. Must call **Price Quote** first.\n\nAfter issue, use **Orders → Insurance Policy PDF** with the returned `order_id` and insurance item id to download the Al Baraka printable policy."
           },
           "response": [
             {
@@ -1812,7 +1936,7 @@
       ]
     },
     {
-      "name": "\ud83d\udee1\ufe0f Insurance \u2014 Travel",
+      "name": "🛡️ Insurance — Travel",
       "item": [
         {
           "name": "References",
@@ -1952,7 +2076,7 @@
                 "issue"
               ]
             },
-            "description": "Issue travel insurance policies for all passengers in the quote. Requires `issue` ability.\n\nMust call **Price Quote** first. Then use **Orders \u2192 Insurance Policy PDF** to download each printable policy."
+            "description": "Issue travel insurance policies for all passengers in the quote. Requires `issue` ability.\n\nMust call **Price Quote** first. Then use **Orders → Insurance Policy PDF** to download each printable policy."
           },
           "response": [
             {
@@ -1962,7 +2086,7 @@
               "body": "{\n  \"success\": true,\n  \"message\": \"Travel insurance policies were issued successfully.\",\n  \"data\": {\n    \"order_id\": 12,\n    \"order_number\": \"ORD-2026-0003\",\n    \"total_amount\": 75.0,\n    \"currency\": \"LYD\",\n    \"items\": [\n      {\n        \"id\": 34,\n        \"policy_number\": \"TRV-8001\",\n        \"report_reference\": \"ENC-TRV-001\",\n        \"total\": 75.0,\n        \"currency\": \"LYD\"\n      }\n    ]\n  }\n}"
             },
             {
-              "name": "410 \u2014 Quote Expired",
+              "name": "410 — Quote Expired",
               "status": "Gone",
               "code": 410,
               "body": "{\n  \"success\": false,\n  \"message\": \"Quote expired. Please calculate price again.\"\n}"
@@ -1972,7 +2096,7 @@
       ]
     },
     {
-      "name": "\ud83d\udee1\ufe0f Insurance \u2014 Orange",
+      "name": "🛡️ Insurance — Orange",
       "item": [
         {
           "name": "References",
@@ -2109,7 +2233,7 @@
                 "issue"
               ]
             },
-            "description": "Issue an orange (Arab card) insurance policy. Requires `issue` ability.\n\nMust call **Price Quote** first. Then use **Orders \u2192 Insurance Policy PDF** to download the printable policy."
+            "description": "Issue an orange (Arab card) insurance policy. Requires `issue` ability.\n\nMust call **Price Quote** first. Then use **Orders → Insurance Policy PDF** to download the printable policy."
           },
           "response": [
             {
@@ -2119,7 +2243,7 @@
               "body": "{\n  \"success\": true,\n  \"message\": \"Orange insurance policy issued successfully.\",\n  \"data\": {\n    \"order_id\": 15,\n    \"order_number\": \"ORD-2026-0004\",\n    \"policy_number\": \"LBY/6825725\",\n    \"policy_id\": 67785,\n    \"report_reference\": \"ENC-ORANGE-001\",\n    \"total_amount\": 74.565,\n    \"currency\": \"LYD\"\n  }\n}"
             },
             {
-              "name": "410 \u2014 Quote Expired",
+              "name": "410 — Quote Expired",
               "status": "Gone",
               "code": 410,
               "body": "{\n  \"success\": false,\n  \"message\": \"Quote expired. Please calculate price again.\"\n}"
@@ -2129,11 +2253,11 @@
       ]
     },
     {
-      "name": "\ud83d\udcf1 eSIM",
-      "description": "eSIM catalogue and booking.\n\n**Flight upsell flow** (during flight booking): pass the destination airport IATA to **Airport Packages** \u2192 show bundles \u2192 if user picks one, run **Search** \u2192 **Select** \u2192 **Book**.\n\n**Standalone flow**: **List Countries** \u2192 **Search** \u2192 **Packages** \u2192 **Select** \u2192 **Book**\n\n**Abilities**: `read` for catalogue/airport packages; `write` for search/select/book; `issue` for refund.\n\nSearch and booking sessions expire after 60 minutes. Airport packages are cached ~30 minutes per country.",
+      "name": "📱 eSIM",
+      "description": "eSIM catalogue and booking.\n\n**Flight upsell flow** (during flight booking): pass the destination airport IATA to **Airport Packages** → show bundles → if user picks one, run **Search** → **Select** → **Book**.\n\n**Standalone flow**: **List Countries** → **Search** → **Packages** → **Select** → **Book**\n\n**Abilities**: `read` for catalogue/airport packages; `write` for search/select/book; `issue` for refund.\n\nSearch and booking sessions expire after 60 minutes. Airport packages are cached ~30 minutes per country.",
       "item": [
         {
-          "name": "Airport Packages \u2014 Flight Upsell",
+          "name": "Airport Packages — Flight Upsell",
           "event": [
             {
               "listen": "test",
@@ -2176,7 +2300,7 @@
               "body": "{\n  \"success\": true,\n  \"message\": \"Success.\",\n  \"data\": {\n    \"airport\": {\n      \"iata\": \"TUN\",\n      \"name\": \"Tunis Carthage International Airport\",\n      \"city\": \"Tunis\",\n      \"country_iso\": \"TN\",\n      \"country\": {\n        \"alpha2\": \"TN\",\n        \"name_en\": \"Tunisia\"\n      }\n    },\n    \"packages\": [\n      {\n        \"id\": \"esim_1GB_30D_TN_U\",\n        \"name\": \"Tunisia 1GB 30 Days\",\n        \"price\": 12.5,\n        \"currency\": \"USD\",\n        \"data_amount\": \"1GB\",\n        \"duration_days\": 30,\n        \"speed\": [\"4G\"],\n        \"unlimited\": false,\n        \"countries\": [{ \"iso\": \"TN\", \"name\": \"Tunisia\" }]\n      }\n    ]\n  }\n}"
             },
             {
-              "name": "404 \u2014 Airport Not Found",
+              "name": "404 — Airport Not Found",
               "status": "Not Found",
               "code": 404,
               "body": "{\n  \"success\": false,\n  \"message\": \"Airport not found.\"\n}"
@@ -2208,12 +2332,12 @@
               "name": "200",
               "status": "OK",
               "code": 200,
-              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"countries\": [\n      {\n        \"alpha2\": \"TN\",\n        \"name_en\": \"Tunisia\",\n        \"name_ar\": \"\u062a\u0648\u0646\u0633\",\n        \"name_fr\": \"Tunisie\",\n        \"esim_featured\": true\n      }\n    ],\n    \"featured_countries\": [\n      { \"alpha2\": \"TN\", \"name_en\": \"Tunisia\", \"name_ar\": \"\u062a\u0648\u0646\u0633\", \"name_fr\": \"Tunisie\" }\n    ]\n  }\n}"
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"countries\": [\n      {\n        \"alpha2\": \"TN\",\n        \"name_en\": \"Tunisia\",\n        \"name_ar\": \"تونس\",\n        \"name_fr\": \"Tunisie\",\n        \"esim_featured\": true\n      }\n    ],\n    \"featured_countries\": [\n      { \"alpha2\": \"TN\", \"name_en\": \"Tunisia\", \"name_ar\": \"تونس\", \"name_fr\": \"Tunisie\" }\n    ]\n  }\n}"
             }
           ]
         },
         {
-          "name": "1. Search \u2014 Start Country Search",
+          "name": "1. Search — Start Country Search",
           "event": [
             {
               "listen": "test",
@@ -2266,7 +2390,7 @@
           ]
         },
         {
-          "name": "2. Packages \u2014 Search Results",
+          "name": "2. Packages — Search Results",
           "event": [
             {
               "listen": "test",
@@ -2309,7 +2433,7 @@
               "body": "{\n  \"success\": true,\n  \"data\": {\n    \"packages\": [\n      {\n        \"id\": \"esim_1GB_30D_TN_U\",\n        \"name\": \"Tunisia 1GB 30 Days\",\n        \"price\": 12.5,\n        \"currency\": \"USD\",\n        \"data_amount\": \"1GB\",\n        \"duration_days\": 30,\n        \"speed\": [\"4G\"],\n        \"unlimited\": false\n      }\n    ]\n  }\n}"
             },
             {
-              "name": "410 \u2014 Search Expired",
+              "name": "410 — Search Expired",
               "status": "Gone",
               "code": 410,
               "body": "{\n  \"success\": false,\n  \"message\": \"eSIM search expired. Please search again.\"\n}"
@@ -2317,7 +2441,7 @@
           ]
         },
         {
-          "name": "3. Networks \u2014 Carrier Coverage",
+          "name": "3. Networks — Carrier Coverage",
           "request": {
             "method": "GET",
             "url": {
@@ -2401,7 +2525,7 @@
           ]
         },
         {
-          "name": "5. Book \u2014 Purchase eSIM",
+          "name": "5. Book — Purchase eSIM",
           "event": [
             {
               "listen": "test",
@@ -2443,23 +2567,23 @@
                 "book"
               ]
             },
-            "description": "Purchase the selected eSIM and create an issued order.\n\nMust call **4. Select Package** first. Charges the tenant eSIM provider wallet.\n\n**customer.name** and **customer.email** are required \u2014 the eSIM activation details are delivered to this email.\n\nRequires `write` ability."
+            "description": "Purchase the selected eSIM and create an issued order.\n\nMust call **4. Select Package** first. Charges the tenant eSIM provider wallet.\n\n**customer.name** and **customer.email** are required — the eSIM activation details are delivered to this email.\n\nRequires `write` ability."
           },
           "response": [
             {
-              "name": "201 \u2014 Purchased",
+              "name": "201 — Purchased",
               "status": "Created",
               "code": 201,
               "body": "{\n  \"success\": true,\n  \"message\": \"eSIM purchased successfully.\",\n  \"data\": {\n    \"order\": {\n      \"id\": \"01jx...\",\n      \"number\": \"ORD-2026-0042\",\n      \"status\": \"issued\",\n      \"grand_total\": 12.5,\n      \"currency\": \"USD\"\n    },\n    \"esim\": {\n      \"iccid\": \"8988247000100000999\",\n      \"activation_code\": \"MATCH-API-001\",\n      \"lpa_string\": \"LPA:1$smdp.example.com$MATCH-API-001\",\n      \"qr_code_url\": null,\n      \"status\": \"issued\",\n      \"provider_order_id\": \"L2-API-001\"\n    },\n    \"package\": { \"name\": \"Tunisia 1GB 30 Days\", \"country\": \"TN\" }\n  }\n}"
             },
             {
-              "name": "422 \u2014 Insufficient Balance",
+              "name": "422 — Insufficient Balance",
               "status": "Unprocessable Entity",
               "code": 422,
               "body": "{\n  \"success\": false,\n  \"message\": \"Insufficient provider balance. Required: $12.5 USD, available: $0 USD.\"\n}"
             },
             {
-              "name": "410 \u2014 Booking Expired",
+              "name": "410 — Booking Expired",
               "status": "Gone",
               "code": 410,
               "body": "{\n  \"success\": false,\n  \"message\": \"Selected eSIM package expired. Please search again.\"\n}"
@@ -2501,13 +2625,13 @@
           },
           "response": [
             {
-              "name": "200 \u2014 Refunded",
+              "name": "200 — Refunded",
               "status": "OK",
               "code": 200,
               "body": "{\n  \"success\": true,\n  \"message\": \"eSIM refunded successfully.\",\n  \"data\": {\n    \"order_id\": \"01jx...\",\n    \"item_id\": \"01jy...\",\n    \"iccid\": \"8988247000100000999\",\n    \"status\": \"refunded\"\n  }\n}"
             },
             {
-              "name": "422 \u2014 Not Issued",
+              "name": "422 — Not Issued",
               "status": "Unprocessable Entity",
               "code": 422,
               "body": "{\n  \"success\": false,\n  \"message\": \"Only issued eSIMs can be refunded.\"\n}"
@@ -2517,7 +2641,7 @@
       ]
     },
     {
-      "name": "\ud83d\udce6 Orders",
+      "name": "📦 Orders",
       "item": [
         {
           "name": "Order List",
@@ -2641,7 +2765,7 @@
           },
           "response": [
             {
-              "name": "200 \u2014 Insurance Order",
+              "name": "200 — Insurance Order",
               "status": "OK",
               "code": 200,
               "body": "{\n  \"success\": true,\n  \"data\": {\n    \"order\": {\n      \"id\": 12,\n      \"number\": \"ORD-2026-0002\",\n      \"status\": \"confirmed\",\n      \"items\": [\n        {\n          \"id\": 34,\n          \"type\": \"insurance\",\n          \"product_type\": \"insurance\",\n          \"product_subtype\": \"compulsory\",\n          \"provider\": \"albaraka\",\n          \"ticket_number\": \"CMP-58737\",\n          \"status\": \"confirmed\",\n          \"report_reference\": \"ENC789\",\n          \"total\": 150.0,\n          \"currency\": \"LYD\"\n        }\n      ]\n    }\n  }\n}"
@@ -2723,11 +2847,11 @@
                 "policy-pdf"
               ]
             },
-            "description": "Download the Al Baraka printable insurance policy PDF for compulsory, travel, or orange items.\n\nRequires `read` ability.\n\n**Flow**\n1. Issue policy (or load **Order Detail** / **Order List** with `product_type=insurance`)\n2. Ensure `order_id` and insurance `item_id` are set\n3. Call this endpoint \u2014 response is binary PDF (`Content-Type: application/pdf`), not JSON\n\nUses provider report references (`EncryptedId` / policy id / orange card number) with fallback when encrypted id fails.\n\n**Errors**\n- `422` \u2014 no printable policy reference on the item\n- `502` \u2014 Al Baraka report fetch failed"
+            "description": "Download the Al Baraka printable insurance policy PDF for compulsory, travel, or orange items.\n\nRequires `read` ability.\n\n**Flow**\n1. Issue policy (or load **Order Detail** / **Order List** with `product_type=insurance`)\n2. Ensure `order_id` and insurance `item_id` are set\n3. Call this endpoint — response is binary PDF (`Content-Type: application/pdf`), not JSON\n\nUses provider report references (`EncryptedId` / policy id / orange card number) with fallback when encrypted id fails.\n\n**Errors**\n- `422` — no printable policy reference on the item\n- `502` — Al Baraka report fetch failed"
           },
           "response": [
             {
-              "name": "200 \u2014 PDF",
+              "name": "200 — PDF",
               "status": "OK",
               "code": 200,
               "header": [
@@ -2743,7 +2867,7 @@
               "body": "%PDF-1.4 ..."
             },
             {
-              "name": "422 \u2014 Missing Reference",
+              "name": "422 — Missing Reference",
               "status": "Unprocessable Entity",
               "code": 422,
               "body": "{\n  \"message\": \"No printable policy reference was found for this insurance item.\"\n}"
@@ -2775,7 +2899,7 @@
       ]
     },
     {
-      "name": "\ud83d\udcca Dashboard & Reports",
+      "name": "📊 Dashboard & Reports",
       "item": [
         {
           "name": "Dashboard",
@@ -2870,7 +2994,7 @@
       ]
     },
     {
-      "name": "\ud83d\udcb0 Wallet",
+      "name": "💰 Wallet",
       "item": [
         {
           "name": "Balance",

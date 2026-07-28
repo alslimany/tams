@@ -54,16 +54,16 @@ Bearer token stored in `tenant_insurance_providers.credentials` (JSON: `{token, 
 
 ## Orange Policy Print (SPI Note)
 - Endpoint: `GET /api/Oranges/GetReportById`
-- `CardNumber` alone can return HTTP 200 with JSON error body:
-  `Certificate number doesnot exists or it doesnot exists under the user signed in.`
-  (Content-Type may still be `application/pdf` — always verify `%PDF` magic bytes.)
-- Working strategy (confirmed against production failure mode):
-  1. Prefer **both** `Id={policy_id}` and `CardNumber={card_number}` together.
-  2. Then try `EncryptedId` (+ optional `Id` / `CardNumber`).
-  3. Then numeric `EncryptedId={policy_id}` / `Id={policy_id}`.
-  4. Finally `CardNumber` alone as last resort.
-- Probe locally with:
-  `php artisan insurance:probe-orange-report {tenant} --card=LBY/6884971 --id=71223 --encrypted=...`
+- Production probe (`LBY/6884971`, policy id `71223`) confirmed:
+  - **Works:** `CardNumber={card}&Id={policy_id}` and `CardNumber={card}` alone
+  - **Fails:** `Id` alone, `EncryptedId={id|card}`, `CardNumber={numeric id}` (JSON certificate error)
+- Note: Al Baraka may still return HTTP 200 + `Content-Type: application/pdf` with a JSON error body.
+  Always verify `%PDF` magic bytes before treating the response as a printable policy.
+- App strategy:
+  1. Prefer `CardNumber` + `Id` when both are stored on the order item.
+  2. Fall back to `CardNumber` alone.
+- Probe locally/production with:
+  `php artisan insurance:probe-orange-report {tenant} --card=LBY/6884971 --id=71223`
 
 ## UI Patterns
 - Search page: dropdowns for durations, document types, seats, payload → price → redirect to beneficiary form.

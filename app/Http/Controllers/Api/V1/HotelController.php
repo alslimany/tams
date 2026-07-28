@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\V1;
 use App\Http\Controllers\Api\Controller;
 use App\Models\Tenant\TenantHotelProvider;
 use App\Services\Hotels\HotelApiException;
+use App\Services\Hotels\HotelAvailabilityPayloadFactory;
 use App\Services\Hotels\HotelProviderManager;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -16,6 +17,7 @@ class HotelController extends Controller
 {
     public function __construct(
         protected HotelProviderManager $providerManager,
+        protected HotelAvailabilityPayloadFactory $availabilityPayloadFactory,
     ) {}
 
     /**
@@ -35,7 +37,7 @@ class HotelController extends Controller
             ));
 
             return $this->success([
-                'destinations' => $items,
+                'destinations' => $this->normalizeAutocompleteDestinations($items),
             ]);
         } catch (Throwable $e) {
             report($e);
@@ -50,42 +52,84 @@ class HotelController extends Controller
     public function search(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'city_id' => ['required', 'string'],
+            'city' => ['required', 'string', 'max:120'],
+            'city_id' => ['required', 'integer', 'min:1'],
             'check_in' => ['required', 'date_format:Y-m-d'],
             'check_out' => ['required', 'date_format:Y-m-d', 'after:check_in'],
-            'rooms' => ['required', 'integer', 'min:1', 'max:5'],
-            'adults' => ['required', 'integer', 'min:1', 'max:10'],
+            // Preferred: rooms as occupancy list (same shape as tenant web / 3T).
+            // Shortcut: rooms as count + adults (+ optional children/children_ages).
+            'rooms' => ['required'],
+            'rooms.*.adult' => ['nullable', 'integer', 'min:1', 'max:9'],
+            'rooms.*.adults' => ['nullable', 'integer', 'min:1', 'max:9'],
+            'rooms.*.children' => ['nullable', 'array', 'max:6'],
+            'rooms.*.children.*' => ['integer', 'min:0', 'max:17'],
+            'adults' => ['nullable', 'integer', 'min:1', 'max:10'],
             'children' => ['nullable', 'integer', 'min:0', 'max:5'],
-            'language' => ['nullable', 'string', 'in:fr-FR,en-US,ar-AR'],
-            'source' => ['nullable', 'string'],
+            'children_ages' => ['nullable', 'array', 'max:5'],
+            'children_ages.*' => ['integer', 'min:0', 'max:17'],
+            'language' => ['nullable', 'string', 'max:10'],
             'page' => ['nullable', 'integer', 'min:1'],
         ]);
 
-        $uuid = (string) Str::uuid();
-        Cache::put("hotel_search_{$uuid}", $validated, now()->addMinutes(60));
+        $request->validate([
+            'rooms' => [
+                function (string $attribute, mixed $value, \Closure $fail) use ($validated): void {
+                    if (is_array($value) && array_is_list($value) && count($value) > 0) {
+                        foreach ($value as $index => $room) {
+                            if (! is_array($room)) {
+                                $fail("The rooms.{$index} field must be an object.");
 
-        $page = max(1, (int) ($validated['page'] ?? 1));
+                                return;
+                            }
+
+                            $adults = $room['adult'] ?? $room['adults'] ?? null;
+
+                            if (! is_numeric($adults) || (int) $adults < 1) {
+                                $fail("The rooms.{$index}.adult field is required.");
+
+                                return;
+                            }
+                        }
+
+                        return;
+                    }
+
+                    if (is_numeric($value) && (int) $value >= 1 && isset($validated['adults'])) {
+                        return;
+                    }
+
+                    $fail('The rooms field must be a list of room occupancies, or a room count with adults.');
+                },
+            ],
+        ]);
 
         try {
-            $providerSource = $this->providerManager->activeProviderSource();
-            $payload = $this->providerManager->provider()->availability([
-                'cityId' => (string) $validated['city_id'],
-                'checkIn' => (string) $validated['check_in'],
-                'checkOut' => (string) $validated['check_out'],
-                'rooms' => (int) $validated['rooms'],
-                'adults' => (int) $validated['adults'],
-                'children' => (int) ($validated['children'] ?? 0),
-                'language' => (string) ($validated['language'] ?? 'fr-FR'),
-                'source' => (string) ($validated['source'] ?? ''),
-                'page' => $page,
-            ]);
+            $normalizedRooms = $this->availabilityPayloadFactory->normalizeRooms($validated);
+        } catch (HotelApiException $exception) {
+            return $this->error($exception->getMessage(), 422);
+        }
+
+        $page = max(1, (int) ($validated['page'] ?? 1));
+        $searchCriteria = [
+            ...$validated,
+            'rooms' => $normalizedRooms,
+            'language' => (string) ($validated['language'] ?? 'fr-FR'),
+        ];
+
+        $uuid = (string) Str::uuid();
+        Cache::put("hotel_search_{$uuid}", $searchCriteria, now()->addMinutes(60));
+
+        try {
+            $payload = $this->providerManager->provider()->availability(
+                $this->availabilityPayloadFactory->make($searchCriteria, $page),
+            );
 
             return $this->success([
                 'uuid' => $uuid,
                 'hotels' => $payload['response'] ?? [],
                 'search_code' => (string) ($payload['search_code'] ?: data_get($payload, 'raw.searchCode', '')),
-                'pages' => (int) ($payload['pages'] ?? 1),
-                'hotels_count' => (int) ($payload['hotels_count'] ?? 0),
+                'pages' => (int) ($payload['pages'] ?? data_get($payload, 'raw.pages', 1)),
+                'hotels_count' => (int) ($payload['hotels_count'] ?? data_get($payload, 'raw.hotelsCount', 0)),
             ]);
         } catch (Throwable $e) {
             report($e);
@@ -141,7 +185,7 @@ class HotelController extends Controller
         try {
             $ratePayload = $this->providerManager->provider()->checkRate([
                 'rooms' => [['ratekey' => (string) $validated['rate_key']]],
-                'language' => (string) ($validated['language'] ?? 'fr-FR'),
+                'language' => str_replace('-', '_', (string) ($validated['language'] ?? $search['language'] ?? 'fr_FR')),
                 'searchCode' => (string) ($validated['search_code'] ?? ''),
             ]);
         } catch (Throwable $e) {
@@ -206,7 +250,7 @@ class HotelController extends Controller
             $search = $cached['search'];
 
             $bookingPayload = [
-                'language' => (string) ($search['language'] ?? 'fr-FR'),
+                'language' => str_replace('-', '_', (string) ($search['language'] ?? 'fr_FR')),
                 'recommandations' => (string) ($validated['recommandations'] ?? ''),
                 'searchCode' => (string) ($selectedOffer['search_code'] ?? ''),
                 'tokenForBook' => (string) data_get($cached, 'check_rate.token_for_book', ''),
@@ -229,5 +273,26 @@ class HotelController extends Controller
 
             return $this->error($e instanceof HotelApiException ? $e->getMessage() : 'Unable to complete hotel booking.', 422);
         }
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $items
+     * @return array<int, array<string, mixed>>
+     */
+    protected function normalizeAutocompleteDestinations(array $items): array
+    {
+        return array_values(array_map(function (array $item): array {
+            $code = (string) ($item['cityId'] ?? $item['hotelCode'] ?? $item['id'] ?? $item['uid'] ?? '');
+
+            return [
+                ...$item,
+                'id' => is_numeric($code) ? (int) $code : ($item['id'] ?? $code),
+                'code' => $code,
+                'city_id' => is_numeric($code) ? (int) $code : null,
+                'label' => (string) ($item['label'] ?? $item['name'] ?? ''),
+                'country' => (string) ($item['country'] ?? ''),
+                'category' => (string) ($item['category'] ?? ''),
+            ];
+        }, $items));
     }
 }

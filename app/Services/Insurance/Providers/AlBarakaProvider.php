@@ -616,10 +616,7 @@ class AlBarakaProvider implements InsuranceProviderInterface
      */
     protected function preferredOrangeReportQuery(string $reportReference): array
     {
-        if (ctype_digit($reportReference)) {
-            return ['Id' => $reportReference];
-        }
-
+        // Production probe: Id alone fails; CardNumber (optionally with Id) returns PDF.
         return ['CardNumber' => $reportReference];
     }
 
@@ -630,7 +627,6 @@ class AlBarakaProvider implements InsuranceProviderInterface
     protected function orangeReportQueryAttempts(string $reportReference, array $context = []): array
     {
         $cardNumber = trim((string) ($context['card_number'] ?? ''));
-        $encryptedId = trim((string) ($context['encrypted_id'] ?? ''));
         $policyId = $context['policy_id'] ?? null;
         $policyId = is_numeric($policyId) && (int) $policyId > 0 ? (string) ((int) $policyId) : '';
 
@@ -640,44 +636,20 @@ class AlBarakaProvider implements InsuranceProviderInterface
             $cardNumber = $trimmedReference;
         }
 
-        if ($encryptedId === '' && $trimmedReference !== '' && $trimmedReference !== $cardNumber && ! ctype_digit($trimmedReference)) {
-            $encryptedId = $trimmedReference;
-        }
-
         if ($policyId === '' && ctype_digit($trimmedReference)) {
             $policyId = $trimmedReference;
         }
 
         $attempts = [];
 
-        // Al Baraka indicated orange print needs both policy id and card/policy number.
+        // Production-confirmed: CardNumber+Id and CardNumber alone both return PDF.
+        // Id alone / EncryptedId(card|id) / CardNumber=numeric id all fail.
         if ($policyId !== '' && $cardNumber !== '') {
-            $attempts[] = ['Id' => $policyId, 'CardNumber' => $cardNumber];
             $attempts[] = ['CardNumber' => $cardNumber, 'Id' => $policyId];
-        }
-
-        if ($encryptedId !== '' && $policyId !== '') {
-            $attempts[] = ['EncryptedId' => $encryptedId, 'Id' => $policyId];
-            $attempts[] = ['Id' => $policyId, 'EncryptedId' => $encryptedId];
-        }
-
-        if ($encryptedId !== '' && $cardNumber !== '' && $encryptedId !== $cardNumber) {
-            $attempts[] = ['EncryptedId' => $encryptedId, 'CardNumber' => $cardNumber];
-            $attempts[] = ['CardNumber' => $cardNumber, 'EncryptedId' => $encryptedId];
-        }
-
-        if ($encryptedId !== '') {
-            $attempts[] = ['EncryptedId' => $encryptedId];
-        }
-
-        if ($policyId !== '') {
-            $attempts[] = ['EncryptedId' => $policyId];
-            $attempts[] = ['Id' => $policyId];
         }
 
         if ($cardNumber !== '') {
             $attempts[] = ['CardNumber' => $cardNumber];
-            $attempts[] = ['EncryptedId' => $cardNumber];
         }
 
         $unique = [];

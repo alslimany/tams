@@ -135,33 +135,35 @@ class ProbeOrangePolicyReportCommand extends Command
     {
         $attempts = [];
 
+        // Production-confirmed winners first.
         if ($policyId !== '' && $card !== '') {
-            $attempts[] = ['Id' => $policyId, 'CardNumber' => $card];
             $attempts[] = ['CardNumber' => $card, 'Id' => $policyId];
-        }
-
-        if ($encrypted !== '' && $policyId !== '') {
-            $attempts[] = ['EncryptedId' => $encrypted, 'Id' => $policyId];
-            $attempts[] = ['Id' => $policyId, 'EncryptedId' => $encrypted];
-        }
-
-        if ($encrypted !== '' && $card !== '') {
-            $attempts[] = ['EncryptedId' => $encrypted, 'CardNumber' => $card];
-            $attempts[] = ['CardNumber' => $card, 'EncryptedId' => $encrypted];
-        }
-
-        if ($encrypted !== '') {
-            $attempts[] = ['EncryptedId' => $encrypted];
-        }
-
-        if ($policyId !== '') {
-            $attempts[] = ['EncryptedId' => $policyId];
-            $attempts[] = ['Id' => $policyId];
-            $attempts[] = ['CardNumber' => $policyId];
         }
 
         if ($card !== '') {
             $attempts[] = ['CardNumber' => $card];
+        }
+
+        // Optional extras for debugging only when --encrypted is provided.
+        if ($encrypted !== '') {
+            $attempts[] = ['EncryptedId' => $encrypted];
+
+            if ($policyId !== '') {
+                $attempts[] = ['EncryptedId' => $encrypted, 'Id' => $policyId];
+            }
+
+            if ($card !== '') {
+                $attempts[] = ['EncryptedId' => $encrypted, 'CardNumber' => $card];
+            }
+        }
+
+        if ($policyId !== '') {
+            $attempts[] = ['Id' => $policyId];
+            $attempts[] = ['EncryptedId' => $policyId];
+            $attempts[] = ['CardNumber' => $policyId];
+        }
+
+        if ($card !== '') {
             $attempts[] = ['EncryptedId' => $card];
             $attempts[] = ['Id' => $card];
         }
