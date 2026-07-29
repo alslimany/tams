@@ -4,6 +4,7 @@ use App\Models\Tenant;
 use App\Models\Tenant\TenantHotelProvider;
 use App\Models\User;
 use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 
@@ -246,6 +247,74 @@ test('hotel select with expired search returns 410', function () {
         ]);
 
     $response->assertStatus(410);
+});
+
+test('hotel book maps guests to provider paxes payload', function () {
+    global $state;
+
+    Http::fake([
+        'https://btob.3t.tn/hotels-api?method=book' => Http::response([
+            'method' => 'book',
+            'error' => false,
+            'response' => ['bookingId' => 'BK-001'],
+        ]),
+    ]);
+
+    $bookingUuid = (string) Str::uuid();
+
+    Cache::put("hotel_booking_{$bookingUuid}", [
+        'search' => [
+            'city' => 'Djerba',
+            'city_id' => 12,
+            'language' => 'fr-FR',
+        ],
+        'selected_offer' => [
+            'rate_key' => 'RATE-ABC',
+            'search_code' => 'SRCH-9',
+        ],
+        'check_rate' => [
+            'token_for_book' => 'TOKEN-BOOK',
+        ],
+    ], now()->addMinutes(10));
+
+    $response = $this->withToken($state['token'])
+        ->postJson($state['apiUrl'].'/hotels/book', [
+            'booking_uuid' => $bookingUuid,
+            'rooms' => [[
+                'guests' => [[
+                    'civility' => 'Mr',
+                    'first_name' => 'Rayan',
+                    'last_name' => 'Fathi',
+                ]],
+            ]],
+            'customer' => [
+                'first_name' => 'rayan',
+                'last_name' => 'Fathi',
+                'email' => 'a.rayan@median.ly',
+                'phone' => '+218943215277',
+                'country' => 'Tunisie',
+                'city' => 'Djerba',
+            ],
+        ]);
+
+    $response->assertCreated()
+        ->assertJsonPath('success', true);
+
+    Http::assertSent(function (Request $request): bool {
+        if (! str_contains($request->url(), 'method=book')) {
+            return false;
+        }
+
+        $payload = $request->data();
+
+        return ($payload['tokenForBook'] ?? null) === 'TOKEN-BOOK'
+            && ($payload['rooms'][0]['ratekey'] ?? null) === 'RATE-ABC'
+            && ($payload['rooms'][0]['paxes'][0]['firstName'] ?? null) === 'Rayan'
+            && ($payload['rooms'][0]['paxes'][0]['lastName'] ?? null) === 'Fathi'
+            && ($payload['customer']['city'] ?? null) === 'Djerba'
+            && ($payload['customer']['country'] ?? null) === 'Tunisie'
+            && ! isset($payload['rooms'][0]['guests']);
+    });
 });
 
 test('hotel book validates customer city and country', function () {

@@ -221,10 +221,12 @@ class HotelController extends Controller
         $validated = $request->validate([
             'booking_uuid' => ['required', 'string'],
             'rooms' => ['required', 'array', 'min:1'],
+            'rooms.*.rate_key' => ['nullable', 'string'],
             'rooms.*.guests' => ['required', 'array', 'min:1'],
             'rooms.*.guests.*.civility' => ['required', 'string'],
-            'rooms.*.guests.*.first_name' => ['required', 'string'],
-            'rooms.*.guests.*.last_name' => ['required', 'string'],
+            'rooms.*.guests.*.first_name' => ['required', 'string', 'max:100'],
+            'rooms.*.guests.*.last_name' => ['required', 'string', 'max:100'],
+            'rooms.*.guests.*.age' => ['nullable', 'integer', 'min:0', 'max:17'],
             'customer' => ['required', 'array'],
             'customer.first_name' => ['required', 'string', 'max:100'],
             'customer.last_name' => ['required', 'string', 'max:100'],
@@ -248,6 +250,8 @@ class HotelController extends Controller
             return $this->error('Hotel provider is not configured.', 400);
         }
 
+        $fallbackRateKey = (string) data_get($cached, 'selected_offer.rate_key', '');
+
         try {
             $selectedOffer = $cached['selected_offer'];
             $search = $cached['search'];
@@ -258,7 +262,7 @@ class HotelController extends Controller
                 'recommandations' => (string) ($validated['recommandations'] ?? ''),
                 'searchCode' => (string) ($selectedOffer['search_code'] ?? ''),
                 'tokenForBook' => (string) data_get($cached, 'check_rate.token_for_book', ''),
-                'rooms' => $validated['rooms'],
+                'rooms' => $this->providerBookingRoomsPayload($validated['rooms'], $fallbackRateKey),
                 'payment' => [
                     'card' => '',
                     'ccv' => '',
@@ -284,6 +288,42 @@ class HotelController extends Controller
 
             return $this->error($e instanceof HotelApiException ? $e->getMessage() : 'Unable to complete hotel booking.', 422);
         }
+    }
+
+    /**
+     * Map API rooms/guests into the provider book shape (ratekey + paxes).
+     *
+     * @param  array<int, array<string, mixed>>  $rooms
+     * @return array<int, array<string, mixed>>
+     */
+    protected function providerBookingRoomsPayload(array $rooms, string $fallbackRateKey): array
+    {
+        return array_values(array_map(function (array $room) use ($fallbackRateKey): array {
+            $rateKey = (string) ($room['rate_key'] ?? $fallbackRateKey);
+
+            if ($rateKey === '') {
+                throw new HotelApiException('Missing rate key for room. Select a hotel offer again.');
+            }
+
+            return [
+                'ratekey' => $rateKey,
+                'evening' => '',
+                'supplements' => [],
+                'paxes' => array_values(array_map(function (array $guest): array {
+                    $payload = [
+                        'civility' => (string) $guest['civility'],
+                        'firstName' => (string) $guest['first_name'],
+                        'lastName' => (string) $guest['last_name'],
+                    ];
+
+                    if ($payload['civility'] === 'Enf' && isset($guest['age'])) {
+                        $payload['age'] = (int) $guest['age'];
+                    }
+
+                    return $payload;
+                }, $room['guests'] ?? [])),
+            ];
+        }, $rooms));
     }
 
     /**

@@ -1373,7 +1373,7 @@
     },
     {
       "name": "🏨 Hotels",
-      "description": "Hotel search and booking via the active tenant hotel provider (e.g. 3T).\n\n**Flow**: Autocomplete → Search → Details → Select → Book\n\n**Search requirements (provider-ready)**:\n- `city` — destination label from autocomplete (e.g. `Paris, France`)\n- `city_id` — **numeric** id from autocomplete (`city_id` / `code`)\n- `rooms` — occupancy list: `[{ \"adult\": 2, \"children\": [5] }]` (`children` = ages, not a count)\n- Optional flat shortcut: `rooms: 1`, `adults: 2`, `children: 0` (if `children` > 0, send `children_ages`)\n\nRun **Autocomplete** first — it saves `{{hotel_city}}` and `{{hotel_city_id}}`.\n\n**Book requirements**: `customer.city` and `customer.country` are required (3T rejects bookings without them).",
+      "description": "Hotel search and booking via the active tenant hotel provider (e.g. 3T).\n\n**Flow**: Autocomplete → Search → Details → Select → Book\n\n**Search requirements (provider-ready)**:\n- `city` — destination label from autocomplete (e.g. `Paris, France`)\n- `city_id` — **numeric** id from autocomplete (`city_id` / `code`)\n- `rooms` — occupancy list: `[{ \"adult\": 2, \"children\": [5] }]` (`children` = ages, not a count)\n- Optional flat shortcut: `rooms: 1`, `adults: 2`, `children: 0` (if `children` > 0, send `children_ages`)\n\nRun **Autocomplete** first — it saves `{{hotel_city}}` and `{{hotel_city_id}}`.\n\n**Book requirements**: `customer.city` and `customer.country` are required (3T rejects bookings without them).\n\n**Book note**: clients send `rooms[].guests`; the API maps to provider `rooms[].paxes` + `ratekey` automatically.",
       "item": [
         {
           "name": "Autocomplete — Destinations",
@@ -1688,7 +1688,7 @@
                 "book"
               ]
             },
-            "description": "Finalize hotel booking with guest details. Must call **Select Hotel Offer** first.\n\n**Required customer fields**\n| Field | Notes |\n|-------|-------|\n| `first_name` / `last_name` | Contact name |\n| `country` | Required by hotel provider (e.g. 3T) |\n| `city` | Required by hotel provider (e.g. 3T) |\n| `email` | Optional |\n| `phone` or `mobile` | Optional; mapped to provider `mobile` |\n\nMissing `customer.city` or `customer.country` returns HTTP 422 validation errors."
+            "description": "Finalize hotel booking with guest details. Must call **Select Hotel Offer** first.\n\nThe API accepts `rooms[].guests` and maps them to the provider `paxes` + `ratekey` shape (rate key comes from Select, or optional `rooms[].rate_key`).\n\n**Required customer fields**: `first_name`, `last_name`, `country`, `city`.\nOptional: `email`, `phone`/`mobile`.\n\nFor children use `civility: \"Enf\"` and `age`."
           },
           "response": [
             {
