@@ -308,6 +308,7 @@ test('hotel book maps guests to provider paxes payload', function () {
         $payload = $request->data();
 
         return ($payload['tokenForBook'] ?? null) === 'TOKEN-BOOK'
+            && ($payload['language'] ?? null) === 'fr-FR'
             && ($payload['rooms'][0]['ratekey'] ?? null) === 'RATE-ABC'
             && ($payload['rooms'][0]['paxes'][0]['firstName'] ?? null) === 'Rayan'
             && ($payload['rooms'][0]['paxes'][0]['lastName'] ?? null) === 'Fathi'

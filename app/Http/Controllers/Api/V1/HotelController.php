@@ -185,7 +185,9 @@ class HotelController extends Controller
         try {
             $ratePayload = $this->providerManager->provider()->checkRate([
                 'rooms' => [['ratekey' => (string) $validated['rate_key']]],
-                'language' => str_replace('-', '_', (string) ($validated['language'] ?? $search['language'] ?? 'fr_FR')),
+                'language' => $this->providerLanguage(
+                    (string) ($validated['language'] ?? $search['language'] ?? 'fr-FR'),
+                ),
                 'searchCode' => (string) ($validated['search_code'] ?? ''),
             ]);
         } catch (Throwable $e) {
@@ -258,7 +260,7 @@ class HotelController extends Controller
             $customer = $validated['customer'];
 
             $bookingPayload = [
-                'language' => str_replace('-', '_', (string) ($search['language'] ?? 'fr_FR')),
+                'language' => $this->providerLanguage((string) ($search['language'] ?? 'fr-FR')),
                 'recommandations' => (string) ($validated['recommandations'] ?? ''),
                 'searchCode' => (string) ($selectedOffer['search_code'] ?? ''),
                 'tokenForBook' => (string) data_get($cached, 'check_rate.token_for_book', ''),
@@ -288,6 +290,16 @@ class HotelController extends Controller
 
             return $this->error($e instanceof HotelApiException ? $e->getMessage() : 'Unable to complete hotel booking.', 422);
         }
+    }
+
+    /**
+     * Normalize language for 3T book / checkRate (expects fr-FR, not fr_FR).
+     */
+    protected function providerLanguage(string $language): string
+    {
+        $normalized = str_replace('_', '-', trim($language));
+
+        return $normalized !== '' ? $normalized : 'fr-FR';
     }
 
     /**
