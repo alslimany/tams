@@ -248,6 +248,31 @@ test('hotel select with expired search returns 410', function () {
     $response->assertStatus(410);
 });
 
+test('hotel book validates customer city and country', function () {
+    global $state;
+
+    $response = $this->withToken($state['token'])
+        ->postJson($state['apiUrl'].'/hotels/book', [
+            'booking_uuid' => '0905241a-99d3-444c-bad6-086ce9a1759a',
+            'rooms' => [[
+                'guests' => [[
+                    'civility' => 'Mr',
+                    'first_name' => 'Rayan',
+                    'last_name' => 'Fathi',
+                ]],
+            ]],
+            'customer' => [
+                'first_name' => 'Rayan',
+                'last_name' => 'Fathi',
+                'email' => 'a.rayan@median.ly',
+                'phone' => '+218943215277',
+            ],
+        ]);
+
+    $response->assertStatus(422)
+        ->assertJsonValidationErrors(['customer.city', 'customer.country']);
+});
+
 test('hotel book with expired booking returns 410', function () {
     global $state;
 
@@ -265,6 +290,8 @@ test('hotel book with expired booking returns 410', function () {
                 'first_name' => 'John',
                 'last_name' => 'Doe',
                 'email' => 'john@example.com',
+                'country' => 'Libya',
+                'city' => 'Tripoli',
             ],
         ]);
 

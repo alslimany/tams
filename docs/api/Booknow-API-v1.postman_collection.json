@@ -1373,7 +1373,7 @@
     },
     {
       "name": "🏨 Hotels",
-      "description": "Hotel search and booking via the active tenant hotel provider (e.g. 3T).\n\n**Flow**: Autocomplete → Search → Details → Select → Book\n\n**Search requirements (provider-ready)**:\n- `city` — destination label from autocomplete (e.g. `Paris, France`)\n- `city_id` — **numeric** id from autocomplete (`city_id` / `code`)\n- `rooms` — occupancy list: `[{ \"adult\": 2, \"children\": [5] }]` (`children` = ages, not a count)\n- Optional flat shortcut: `rooms: 1`, `adults: 2`, `children: 0` (if `children` > 0, send `children_ages`)\n\nRun **Autocomplete** first — it saves `{{hotel_city}}` and `{{hotel_city_id}}`.",
+      "description": "Hotel search and booking via the active tenant hotel provider (e.g. 3T).\n\n**Flow**: Autocomplete → Search → Details → Select → Book\n\n**Search requirements (provider-ready)**:\n- `city` — destination label from autocomplete (e.g. `Paris, France`)\n- `city_id` — **numeric** id from autocomplete (`city_id` / `code`)\n- `rooms` — occupancy list: `[{ \"adult\": 2, \"children\": [5] }]` (`children` = ages, not a count)\n- Optional flat shortcut: `rooms: 1`, `adults: 2`, `children: 0` (if `children` > 0, send `children_ages`)\n\nRun **Autocomplete** first — it saves `{{hotel_city}}` and `{{hotel_city_id}}`.\n\n**Book requirements**: `customer.city` and `customer.country` are required (3T rejects bookings without them).",
       "item": [
         {
           "name": "Autocomplete — Destinations",
@@ -1672,7 +1672,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"booking_uuid\": \"{{hotel_booking_uuid}}\",\n  \"rooms\": [\n    {\n      \"guests\": [\n        {\n          \"civility\": \"Mr\",\n          \"first_name\": \"John\",\n          \"last_name\": \"Doe\"\n        },\n        {\n          \"civility\": \"Mme\",\n          \"first_name\": \"Jane\",\n          \"last_name\": \"Doe\"\n        }\n      ]\n    }\n  ],\n  \"customer\": {\n    \"first_name\": \"John\",\n    \"last_name\": \"Doe\",\n    \"email\": \"john@example.com\",\n    \"phone\": \"+218911234567\"\n  }\n}"
+              "raw": "{\n  \"booking_uuid\": \"{{hotel_booking_uuid}}\",\n  \"rooms\": [\n    {\n      \"guests\": [\n        {\n          \"civility\": \"Mr\",\n          \"first_name\": \"John\",\n          \"last_name\": \"Doe\"\n        },\n        {\n          \"civility\": \"Mme\",\n          \"first_name\": \"Jane\",\n          \"last_name\": \"Doe\"\n        }\n      ]\n    }\n  ],\n  \"customer\": {\n    \"first_name\": \"John\",\n    \"last_name\": \"Doe\",\n    \"email\": \"john@example.com\",\n    \"phone\": \"+218911234567\",\n    \"country\": \"Libya\",\n    \"city\": \"Tripoli\"\n  }\n}"
             },
             "url": {
               "raw": "{{base_url}}/agency/{{tenant}}/api/v1/hotels/book",
@@ -1688,14 +1688,20 @@
                 "book"
               ]
             },
-            "description": "Finalize hotel booking with guest details. Must call **Select Hotel Offer** first."
+            "description": "Finalize hotel booking with guest details. Must call **Select Hotel Offer** first.\n\n**Required customer fields**\n| Field | Notes |\n|-------|-------|\n| `first_name` / `last_name` | Contact name |\n| `country` | Required by hotel provider (e.g. 3T) |\n| `city` | Required by hotel provider (e.g. 3T) |\n| `email` | Optional |\n| `phone` or `mobile` | Optional; mapped to provider `mobile` |\n\nMissing `customer.city` or `customer.country` returns HTTP 422 validation errors."
           },
           "response": [
             {
               "name": "201",
               "status": "Created",
               "code": 201,
-              "body": "{\n  \"success\": true,\n  \"message\": \"Hotel booked successfully.\",\n  \"data\": { \"booking\": {} }\n}"
+              "body": "{\n  \"success\": true,\n  \"message\": \"Hotel booked successfully. Order will be created by the staff.\",\n  \"data\": { \"booking\": {} }\n}"
+            },
+            {
+              "name": "422 — Missing customer city/country",
+              "status": "Unprocessable Entity",
+              "code": 422,
+              "body": "{\n  \"message\": \"The customer.city field is required. (and 1 more error)\",\n  \"errors\": {\n    \"customer.city\": [\n      \"The customer.city field is required.\"\n    ],\n    \"customer.country\": [\n      \"The customer.country field is required.\"\n    ]\n  }\n}"
             }
           ]
         }

@@ -226,11 +226,14 @@ class HotelController extends Controller
             'rooms.*.guests.*.first_name' => ['required', 'string'],
             'rooms.*.guests.*.last_name' => ['required', 'string'],
             'customer' => ['required', 'array'],
-            'customer.first_name' => ['required', 'string'],
-            'customer.last_name' => ['required', 'string'],
-            'customer.email' => ['nullable', 'email'],
-            'customer.phone' => ['nullable', 'string'],
-            'recommandations' => ['nullable', 'string'],
+            'customer.first_name' => ['required', 'string', 'max:100'],
+            'customer.last_name' => ['required', 'string', 'max:100'],
+            'customer.email' => ['nullable', 'email', 'max:255'],
+            'customer.phone' => ['nullable', 'string', 'max:50'],
+            'customer.mobile' => ['nullable', 'string', 'max:50'],
+            'customer.country' => ['required', 'string', 'max:100'],
+            'customer.city' => ['required', 'string', 'max:100'],
+            'recommandations' => ['nullable', 'string', 'max:1000'],
         ]);
 
         $cached = Cache::get("hotel_booking_{$validated['booking_uuid']}");
@@ -248,6 +251,7 @@ class HotelController extends Controller
         try {
             $selectedOffer = $cached['selected_offer'];
             $search = $cached['search'];
+            $customer = $validated['customer'];
 
             $bookingPayload = [
                 'language' => str_replace('-', '_', (string) ($search['language'] ?? 'fr_FR')),
@@ -260,7 +264,14 @@ class HotelController extends Controller
                     'ccv' => '',
                     'expire' => '',
                 ],
-                'customer' => $validated['customer'],
+                'customer' => [
+                    'firstName' => (string) $customer['first_name'],
+                    'lastName' => (string) $customer['last_name'],
+                    'email' => (string) ($customer['email'] ?? ''),
+                    'mobile' => (string) ($customer['mobile'] ?? $customer['phone'] ?? ''),
+                    'country' => (string) $customer['country'],
+                    'city' => (string) $customer['city'],
+                ],
             ];
 
             $providerBooking = $this->providerManager->provider()->book($bookingPayload);
