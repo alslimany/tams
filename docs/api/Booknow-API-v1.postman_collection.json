@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Booknow API v1",
-    "description": "## Booknow REST API v1 — Mobile Application\n\n**Base URL**: `{{base_url}}/agency/{{tenant}}/api/v1`  \n**Auth**: Bearer token (set via `{{token}}` variable after Login)  \n**Content-Type**: `application/json`\n\n### Token Abilities\n| Ability | Scope |\n|---------|-------|\n| `read` | Results, seat map, fare rules, orders, reports, wallet, eSIM catalogue |\n| `write` | Search, select, price, book (flights, hotels, insurance, eSIM) |\n| `issue` | Issue ticket, void/refund, change segment, eSIM refund |\n| `report` | Dashboard & reports |\n| `*` | Full access |\n\n### Quick Start\n1. Set `base_url` and `tenant` (e.g. `median`)\n2. Run **Login** — token is saved to `{{token}}` automatically\n3. Flights: Search → Results → Select → Seat Map → Price → Book\n4. eSIM upsell during flight booking: **Airport Packages** with destination IATA\n5. eSIM standalone: Search → Packages → Select → Book\n6. Hotels: Autocomplete → Search → Details → Select → Book (use `city` + numeric `city_id` + structured `rooms`)\n7. For ticket changes use **Change Segment** folder\n\n### Recent Updates\n- **Hotel search payload** — requires `city` + numeric `city_id` from autocomplete; `rooms` as `[{ \"adult\": 2, \"children\": [5] }]` (flat `rooms`/`adults`/`children` only when children is 0 or ages provided)\n- **Travel & Orange issue** — `POST /insurance/travel/issue`, `POST /insurance/orange/issue` (requires `issue`)\n- **API token management** — `POST /auth/tokens` create scoped token, `DELETE /auth/tokens/{tokenId}` revoke by id\n- **Insurance Policy PDF** — `GET /orders/{order}/insurance-items/{item}/policy-pdf` returns the Al Baraka printable policy PDF (compulsory, travel, orange)\n- Order detail insurance items include `report_reference` for print lookup\n- **eSIM API** — full catalogue and booking flow\n- `GET /esim/airport/{iata}/packages` — destination airport bundles for flight-booking upsell\n- `POST /esim/search` → `GET /esim/results/{uuid}/packages` → `POST /esim/select` → `POST /esim/book`\n- `POST /orders/{order}/esim-items/{item}/refund` — refund issued eSIM (requires `issue`)\n- Orders list filter: `product_type=esim`\n- Cabin filter: `cabin_class` = `all` | `Y` | `C` | `F`\n- Offers include `baggage`, `airline_logo_url`, `fare_id`, ISO8601 `duration` (`PT4H`, `PT2H10M`)\n- `POST /flights/open-reservation-availability` — check if open reservation (QQ) is allowed for an offer\n- `POST /flights/fare-rules` — plain-text rules (no line numbers)\n- `POST /flights/seatmap` — interactive seat map with per-seat pricing\n- `POST /flights/price` — total with seat fees and ancillaries\n- `POST /flights/book` accepts `extras.seats` for seat assignment\n- Draft booking: `ticketing_mode: draft` then `POST .../tickets/issue`\n- Change segment: search → results → quote → confirm\n\n### Response Format\n```json\n{ \"success\": true|false, \"message\": \"...\", \"data\": {...} }\n```",
+    "description": "## Booknow REST API v1 — Mobile Application\n\n**Base URL**: `{{base_url}}/agency/{{tenant}}/api/v1`  \n**Auth**: Bearer token (set via `{{token}}` variable after Login)  \n**Content-Type**: `application/json`\n\n### Token Abilities\n| Ability | Scope |\n|---------|-------|\n| `read` | Results, seat map, fare rules, orders, reports, wallet, eSIM catalogue |\n| `write` | Search, select, price, book (flights, hotels, insurance, eSIM) |\n| `issue` | Issue ticket, void/refund, change segment, eSIM refund |\n| `report` | Dashboard & reports |\n| `*` | Full access |\n\n### Quick Start\n1. Set `base_url` and `tenant` (e.g. `median`)\n2. Run **Login** — token is saved to `{{token}}` automatically\n3. Flights: Search → Results → Select → Seat Map → Price → Book\n4. eSIM upsell during flight booking: **Airport Packages** with destination IATA\n5. eSIM standalone: Search → Packages → Select → Book\n6. Hotels: Autocomplete → Search → Details → Select → Book (use `city` + numeric `city_id` + structured `rooms`)\n7. For ticket changes use **Change Segment** folder\n\n### Recent Updates\n- **Hotel book** — `201` returns full `data.order` (formatted TAMS order) + `data.booking` (provider); saves `order_id` / `item_id`\n- **eSIM usage & top-up** — L2 utilisation webhook + `GET .../esim-items/{item}/usage`, `GET .../topup-packages`, `POST .../topup`\n- **Hotel search payload** — requires `city` + numeric `city_id` from autocomplete; `rooms` as `[{ \"adult\": 2, \"children\": [5] }]` (flat `rooms`/`adults`/`children` only when children is 0 or ages provided)\n- **Travel & Orange issue** — `POST /insurance/travel/issue`, `POST /insurance/orange/issue` (requires `issue`)\n- **API token management** — `POST /auth/tokens` create scoped token, `DELETE /auth/tokens/{tokenId}` revoke by id\n- **Insurance Policy PDF** — `GET /orders/{order}/insurance-items/{item}/policy-pdf` returns the Al Baraka printable policy PDF (compulsory, travel, orange)\n- Order detail insurance items include `report_reference` for print lookup\n- **eSIM API** — full catalogue and booking flow\n- `GET /esim/airport/{iata}/packages` — destination airport bundles for flight-booking upsell\n- `POST /esim/search` → `GET /esim/results/{uuid}/packages` → `POST /esim/select` → `POST /esim/book`\n- `POST /orders/{order}/esim-items/{item}/refund` — refund issued eSIM (requires `issue`)\n- Orders list filter: `product_type=esim`\n- Cabin filter: `cabin_class` = `all` | `Y` | `C` | `F`\n- Offers include `baggage`, `airline_logo_url`, `fare_id`, ISO8601 `duration` (`PT4H`, `PT2H10M`)\n- `POST /flights/open-reservation-availability` — check if open reservation (QQ) is allowed for an offer\n- `POST /flights/fare-rules` — plain-text rules (no line numbers)\n- `POST /flights/seatmap` — interactive seat map with per-seat pricing\n- `POST /flights/price` — total with seat fees and ancillaries\n- `POST /flights/book` accepts `extras.seats` for seat assignment\n- Draft booking: `ticketing_mode: draft` then `POST .../tickets/issue`\n- Change segment: search → results → quote → confirm\n\n### Response Format\n```json\n{ \"success\": true|false, \"message\": \"...\", \"data\": {...} }\n```",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "auth": {
@@ -1373,7 +1373,7 @@
     },
     {
       "name": "🏨 Hotels",
-      "description": "Hotel search and booking via the active tenant hotel provider (e.g. 3T).\n\n**Flow**: Autocomplete → Search → Details → Select → Book\n\n**Search requirements (provider-ready)**:\n- `city` — destination label from autocomplete (e.g. `Paris, France`)\n- `city_id` — **numeric** id from autocomplete (`city_id` / `code`)\n- `rooms` — occupancy list: `[{ \"adult\": 2, \"children\": [5] }]` (`children` = ages, not a count)\n- Optional flat shortcut: `rooms: 1`, `adults: 2`, `children: 0` (if `children` > 0, send `children_ages`)\n\nRun **Autocomplete** first — it saves `{{hotel_city}}` and `{{hotel_city_id}}`.\n\n**Book requirements**: `customer.city` and `customer.country` are required (3T rejects bookings without them).\n\n**Book note**: clients send `rooms[].guests`; the API maps to provider `rooms[].paxes` + `ratekey` automatically.",
+      "description": "Hotel search and booking via the active tenant hotel provider (e.g. 3T).\n\n**Flow**: Autocomplete → Search → Details → Select → Book\n\n**Search requirements (provider-ready)**:\n- `city` — destination label from autocomplete (e.g. `Paris, France`)\n- `city_id` — **numeric** id from autocomplete (`city_id` / `code`)\n- `rooms` — occupancy list: `[{ \"adult\": 2, \"children\": [5] }]` (`children` = ages, not a count)\n- Optional flat shortcut: `rooms: 1`, `adults: 2`, `children: 0` (if `children` > 0, send `children_ages`)\n\nRun **Autocomplete** first — it saves `{{hotel_city}}` and `{{hotel_city_id}}`.\n\n**Book requirements**: `customer.city` and `customer.country` are required (3T rejects bookings without them).\n\n**Book note**: clients send `rooms[].guests`; the API maps to provider `rooms[].paxes` + `ratekey` automatically.\n\n**Book response**: `201` with `data.order` (full TAMS order) + `data.booking` (provider payload).",
       "item": [
         {
           "name": "Autocomplete — Destinations",
@@ -1688,20 +1688,61 @@
                 "book"
               ]
             },
-            "description": "Finalize hotel booking with guest details. Must call **Select Hotel Offer** first.\n\nThe API accepts `rooms[].guests` and maps them to the provider `paxes` + `ratekey` shape (rate key comes from Select, or optional `rooms[].rate_key`).\n\n**Required customer fields**: `first_name`, `last_name`, `country`, `city`.\nOptional: `email`, `phone`/`mobile`.\n\nFor children use `civility: \"Enf\"` and `age`."
+            "description": "Finalize hotel booking with guest details. Must call **Select Hotel Offer** first.\n\nOn success the API:\n1. Books with the hotel provider (e.g. 3T)\n2. Creates a TAMS **order** + hotel **order item**\n3. Debits the hotel provider wallet\n4. Returns `data.order` (use `order.id` with Orders endpoints)\n\nClients send `rooms[].guests`; the API maps to provider `paxes` + `ratekey`.\n\n**Required customer fields**: `first_name`, `last_name`, `country`, `city`.\nOptional: `email`, `phone`/`mobile`."
           },
           "response": [
             {
-              "name": "201",
+              "name": "201 — Order created",
               "status": "Created",
               "code": 201,
-              "body": "{\n  \"success\": true,\n  \"message\": \"Hotel booked successfully. Order will be created by the staff.\",\n  \"data\": { \"booking\": {} }\n}"
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"success\": true,\n  \"message\": \"Hotel booked successfully.\",\n  \"data\": {\n    \"order\": {\n      \"id\": 42,\n      \"number\": \"ORD-42\",\n      \"status\": \"issued\",\n      \"subtotal\": 265.63,\n      \"tax_total\": 0.0,\n      \"grand_total\": 265.63,\n      \"amount_paid\": 265.63,\n      \"amount_refunded\": 0.0,\n      \"currency\": \"LYD\",\n      \"payment_method\": \"provider_wallet\",\n      \"payment_reference\": \"37672\",\n      \"issued_at\": \"2026-07-27T12:00:00.000000Z\",\n      \"created_at\": \"2026-07-27T12:00:00.000000Z\",\n      \"owner\": {\n        \"id\": 3,\n        \"name\": \"Agent User\",\n        \"email\": \"agent@example.com\",\n        \"role\": \"agent\"\n      },\n      \"contact\": {\n        \"first_name\": \"John\",\n        \"last_name\": \"Doe\",\n        \"email\": \"john@example.com\",\n        \"phone\": \"+218911234567\",\n        \"country\": \"Libya\",\n        \"city\": \"Tripoli\"\n      },\n      \"items\": [\n        {\n          \"id\": 99,\n          \"type\": \"hotel\",\n          \"product_type\": \"hotel\",\n          \"product_subtype\": null,\n          \"provider\": \"3t\",\n          \"provider_reference\": \"37672\",\n          \"ticket_number\": null,\n          \"status\": \"issued\",\n          \"total\": 265.63,\n          \"net_fare\": 241.48,\n          \"commission_amount\": 24.15,\n          \"currency\": \"LYD\",\n          \"product_details\": {\n            \"hotel\": {\n              \"hotel_id\": \"669\",\n              \"hotel_uid\": \"669-623\",\n              \"name\": \"Le Grand Hôtel Djerba\"\n            },\n            \"stay\": {\n              \"check_in\": \"2026-09-01\",\n              \"check_out\": \"2026-09-02\",\n              \"nights\": 1,\n              \"city\": \"Djerba\"\n            },\n            \"rooms\": [\n              {\n                \"name\": \"Chambre Standard\",\n                \"board_name\": \"Logement Petit Déjeuner\",\n                \"rate_key\": \"RATE-ABC\"\n              }\n            ]\n          },\n          \"item_details\": {\n            \"booking_id\": \"37672\",\n            \"confirmed\": true,\n            \"provider_booking\": {\n              \"method\": \"book\",\n              \"error\": false,\n              \"response\": {\n                \"bookingId\": \"37672\",\n                \"confirmed\": true,\n                \"totalPurchase\": 241.48,\n                \"currency\": \"LYD\",\n                \"returnedPrice\": true,\n                \"comments\": \"Tourist tax payable at hotel.\"\n              }\n            },\n            \"comments\": \"Tourist tax payable at hotel.\"\n          }\n        }\n      ]\n    },\n    \"booking\": {\n      \"method\": \"book\",\n      \"error\": false,\n      \"response\": {\n        \"bookingId\": \"37672\",\n        \"confirmed\": true,\n        \"returnedPrice\": true,\n        \"totalPurchase\": 241.48,\n        \"currency\": \"LYD\",\n        \"comments\": \"Tourist tax payable at hotel.\",\n        \"booking\": {\n          \"hotel\": {\n            \"hotelId\": 669,\n            \"hotelUid\": \"669-623\",\n            \"hotelName\": \"Le Grand Hôtel Djerba\",\n            \"cityName\": \"Djerba\",\n            \"countryName\": \"Tunisie\"\n          },\n          \"from\": \"2026-09-01\",\n          \"to\": \"2026-09-02\",\n          \"rooms\": [\n            {\n              \"roomIndex\": 1,\n              \"rateKey\": \"RATE-ABC\",\n              \"name\": \"Chambre Standard\",\n              \"boardName\": \"Logement Petit Déjeuner\",\n              \"price\": 241.48,\n              \"currency\": \"LYD\"\n            }\n          ]\n        }\n      }\n    }\n  }\n}"
             },
             {
-              "name": "422 — Missing customer city/country",
+              "name": "410 — Booking expired",
+              "status": "Gone",
+              "code": 410,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"success\": false,\n  \"message\": \"Hotel booking session expired. Please select an offer again.\"\n}"
+            },
+            {
+              "name": "422 — Booking failed",
               "status": "Unprocessable Entity",
               "code": 422,
-              "body": "{\n  \"message\": \"The customer.city field is required. (and 1 more error)\",\n  \"errors\": {\n    \"customer.city\": [\n      \"The customer.city field is required.\"\n    ],\n    \"customer.country\": [\n      \"The customer.country field is required.\"\n    ]\n  }\n}"
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"success\": false,\n  \"message\": \"Unable to complete hotel booking.\"\n}"
+            }
+          ],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var json = pm.response.json();",
+                  "if (json.success && json.data && json.data.order && json.data.order.id) {",
+                  "    pm.collectionVariables.set('order_id', String(json.data.order.id));",
+                  "    if (json.data.order.items && json.data.order.items[0]) {",
+                  "        pm.collectionVariables.set('item_id', String(json.data.order.items[0].id));",
+                  "    }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
             }
           ]
         }
@@ -2260,7 +2301,7 @@
     },
     {
       "name": "📱 eSIM",
-      "description": "eSIM catalogue and booking.\n\n**Flight upsell flow** (during flight booking): pass the destination airport IATA to **Airport Packages** → show bundles → if user picks one, run **Search** → **Select** → **Book**.\n\n**Standalone flow**: **List Countries** → **Search** → **Packages** → **Select** → **Book**\n\n**Abilities**: `read` for catalogue/airport packages; `write` for search/select/book; `issue` for refund.\n\nSearch and booking sessions expire after 60 minutes. Airport packages are cached ~30 minutes per country.",
+      "description": "eSIM catalogue and booking.\n\n**Flight upsell flow** (during flight booking): pass the destination airport IATA to **Airport Packages** → show bundles → if user picks one, run **Search** → **Select** → **Book**.\n\n**Standalone flow**: **List Countries** → **Search** → **Packages** → **Select** → **Book**\n\n**Abilities**: `read` for catalogue/airport packages; `write` for search/select/book; `issue` for refund.\n\nSearch and booking sessions expire after 60 minutes. Airport packages are cached ~30 minutes per country.\n\n**Usage / top-up**: after book, L2 posts utilisation to `POST /webhooks/l2-esim`. Read remaining quota via **7. eSIM Usage** or Order Detail. Top up with **8/9**.",
       "item": [
         {
           "name": "Airport Packages — Flight Upsell",
@@ -2573,7 +2614,7 @@
                 "book"
               ]
             },
-            "description": "Purchase the selected eSIM and create an issued order.\n\nMust call **4. Select Package** first. Charges the tenant eSIM provider wallet.\n\n**customer.name** and **customer.email** are required — the eSIM activation details are delivered to this email.\n\nRequires `write` ability."
+            "description": "Purchase the selected eSIM and create an issued order.\n\nMust call **4. Select Package** first. Charges the tenant eSIM provider wallet.\n\n**customer.name** and **customer.email** are required — the eSIM activation details are delivered to this email.\n\nRequires `write` ability.\n\nAfter purchase: use **Order Detail** / **Order List** to get `item_id`, then **7. eSIM Usage**, **8. Top-up Packages**, or **9. Top-up eSIM**."
           },
           "response": [
             {
@@ -2641,6 +2682,186 @@
               "status": "Unprocessable Entity",
               "code": 422,
               "body": "{\n  \"success\": false,\n  \"message\": \"Only issued eSIMs can be refunded.\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "7. eSIM Usage",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/agency/{{tenant}}/api/v1/orders/{{order_id}}/esim-items/{{item_id}}/usage",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "agency",
+                "{{tenant}}",
+                "api",
+                "v1",
+                "orders",
+                "{{order_id}}",
+                "esim-items",
+                "{{item_id}}",
+                "usage"
+              ]
+            },
+            "description": "Latest utilisation snapshot from L2 webhooks (remaining_mb, percent_used). Requires `read`. Configure L2 portal webhook: POST {{base_url}}/agency/{{tenant}}/api/v1/webhooks/l2-esim"
+          },
+          "response": [
+            {
+              "name": "200 — With usage",
+              "status": "OK",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"order_id\": 42,\n    \"item_id\": 99,\n    \"iccid\": \"8988247000100000999\",\n    \"has_usage_data\": true,\n    \"usage\": {\n      \"alert_type\": \"Utilisation\",\n      \"iccid\": \"8988247000100000999\",\n      \"initial_quantity\": 1073741824,\n      \"remaining_quantity\": 536870912,\n      \"used_quantity\": 536870912,\n      \"unit\": \"BYTES\",\n      \"initial_mb\": 1024.0,\n      \"remaining_mb\": 512.0,\n      \"used_mb\": 512.0,\n      \"percent_used\": 50.0,\n      \"percent_remaining\": 50.0,\n      \"unlimited\": false,\n      \"start_time\": \"2026-06-01T00:00:00Z\",\n      \"end_time\": \"2026-06-30T23:59:59Z\",\n      \"valid_until\": \"2026-06-30T23:59:59Z\",\n      \"bundle_id\": null,\n      \"bundle_name\": \"esim_1GB_30D_TN_U\",\n      \"bundle_description\": \"\",\n      \"bundle_reference\": \"bundle-ref-1\",\n      \"updated_at\": \"2026-06-15T10:00:00.000000Z\"\n    }\n  }\n}"
+            },
+            {
+              "name": "200 — No webhook yet",
+              "status": "OK",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"order_id\": 42,\n    \"item_id\": 99,\n    \"iccid\": \"8988247000100000999\",\n    \"has_usage_data\": false,\n    \"usage\": null\n  }\n}"
+            }
+          ],
+          "description": "Latest utilisation snapshot from L2 webhooks (`remaining_mb`, `percent_used`, `valid_until`).\n\nRequires `read`. Set `order_id` / `item_id` from **5. Book**, **Order Detail**, or **Order List** (`product_type=esim`).\n\n**Webhook (configure in L2 portal):** `POST {{base_url}}/agency/{{tenant}}/api/v1/webhooks/l2-esim` with header `X-HMAC-Signature` = Base64(HMAC-SHA256(raw body, L2 API key)).\n\nQuota is only as fresh as the last threshold callback (1% / 50% / 80% / 100%)."
+        },
+        {
+          "name": "8. Top-up Packages",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/agency/{{tenant}}/api/v1/orders/{{order_id}}/esim-items/{{item_id}}/topup-packages",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "agency",
+                "{{tenant}}",
+                "api",
+                "v1",
+                "orders",
+                "{{order_id}}",
+                "esim-items",
+                "{{item_id}}",
+                "topup-packages"
+              ]
+            },
+            "description": "Catalogue packages available to top up this ICCID (same country). Requires `read`."
+          },
+          "response": [
+            {
+              "name": "200 — Packages",
+              "status": "OK",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"order_id\": 42,\n    \"item_id\": 99,\n    \"iccid\": \"8988247000100000999\",\n    \"packages\": [\n      {\n        \"id\": \"esim_1GB_30D_TN_U\",\n        \"name\": \"Tunisia 1GB 30 Days\",\n        \"data_amount_mb\": 1024,\n        \"validity_days\": 30,\n        \"price\": 12.5,\n        \"currency\": \"USD\",\n        \"country\": \"TN\"\n      },\n      {\n        \"id\": \"esim_3GB_30D_TN_U\",\n        \"name\": \"Tunisia 3GB 30 Days\",\n        \"data_amount_mb\": 3072,\n        \"validity_days\": 30,\n        \"price\": 24.0,\n        \"currency\": \"USD\",\n        \"country\": \"TN\"\n      }\n    ]\n  }\n}"
+            }
+          ],
+          "description": "Catalogue packages available to top up this ICCID (same destination country as the issued eSIM).\n\nRequires `read`. Use a returned `package.id` as `{{esim_package_id}}` for **9. Top-up eSIM**.",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "var json = pm.response.json();",
+                  "if (json.success && json.data && json.data.packages && json.data.packages[0]) {",
+                  "    pm.collectionVariables.set('esim_package_id', json.data.packages[0].id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "9. Top-up eSIM",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"package_id\": \"{{esim_package_id}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/agency/{{tenant}}/api/v1/orders/{{order_id}}/esim-items/{{item_id}}/topup",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "agency",
+                "{{tenant}}",
+                "api",
+                "v1",
+                "orders",
+                "{{order_id}}",
+                "esim-items",
+                "{{item_id}}",
+                "topup"
+              ]
+            },
+            "description": "Add extra quota to an existing eSIM via L2 processOrders with iccid. Creates a new top-up order. Requires `write`."
+          },
+          "response": [
+            {
+              "name": "201 — Topped up",
+              "status": "Created",
+              "code": 201,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"success\": true,\n  \"message\": \"eSIM topped up successfully.\",\n  \"data\": {\n    \"order\": {\n      \"id\": 43,\n      \"number\": \"ORD-43\",\n      \"status\": \"issued\",\n      \"grand_total\": 12.5,\n      \"currency\": \"USD\"\n    },\n    \"esim\": {\n      \"iccid\": \"8988247000100000999\",\n      \"status\": \"issued\",\n      \"provider_order_id\": \"L2-TOPUP-001\",\n      \"transaction_type\": \"topup\",\n      \"parent_order_id\": 42,\n      \"parent_item_id\": 99\n    },\n    \"package\": {\n      \"id\": \"esim_1GB_30D_TN_U\",\n      \"name\": \"Tunisia 1GB 30 Days\",\n      \"country\": \"TN\",\n      \"price\": 12.5,\n      \"currency\": \"USD\"\n    }\n  }\n}"
+            },
+            {
+              "name": "422 — Insufficient Balance",
+              "status": "Unprocessable Entity",
+              "code": 422,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"success\": false,\n  \"message\": \"Insufficient provider balance. Required: $12.5 USD, available: $0 USD.\"\n}"
+            }
+          ],
+          "description": "Add extra quota to an existing eSIM via L2 `processOrders` with `item` + `iccid`.\n\nCreates a **new** top-up order and debits the eSIM provider wallet (same finance path as purchase).\n\nRequires `write`. Call **8. Top-up Packages** first (or set `{{esim_package_id}}`).",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "var json = pm.response.json();",
+                  "if (json.success && json.data && json.data.order && json.data.order.id) {",
+                  "    pm.collectionVariables.set('order_id', String(json.data.order.id));",
+                  "    pm.collectionVariables.set('booking_id', String(json.data.order.id));",
+                  "}"
+                ]
+              }
             }
           ]
         }
@@ -2767,7 +2988,7 @@
                 "{{order_id}}"
               ]
             },
-            "description": "Full order details with items, passengers, segments, and wallet transactions.\n\nInsurance items include `report_reference` used by **Insurance Policy PDF**."
+            "description": "Full order details with items, passengers, segments, and wallet transactions.\n\nInsurance items include `report_reference` used by **Insurance Policy PDF**.\n\neSIM items include `esim.iccid`, activation fields, and `esim.usage` when an L2 utilisation webhook has been received."
           },
           "response": [
             {

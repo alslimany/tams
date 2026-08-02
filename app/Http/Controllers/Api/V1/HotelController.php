@@ -2,8 +2,16 @@
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Actions\Finance\CreateOrderFromHotelBooking;
+use App\Actions\Finance\ProcessHotelProviderWalletTransactions;
+use App\Exceptions\InsufficientWalletBalanceException;
 use App\Http\Controllers\Api\Controller;
+use App\Models\Tenant\Order;
 use App\Models\Tenant\TenantHotelProvider;
+use App\Models\User;
+use App\Notifications\Orders\HotelBooked;
+use App\Notifications\Orders\OrderContact;
+use App\Services\AgencyNetwork\MerchantAgencyWalletManager;
 use App\Services\Hotels\HotelApiException;
 use App\Services\Hotels\HotelAvailabilityPayloadFactory;
 use App\Services\Hotels\HotelProviderManager;
@@ -18,6 +26,9 @@ class HotelController extends Controller
     public function __construct(
         protected HotelProviderManager $providerManager,
         protected HotelAvailabilityPayloadFactory $availabilityPayloadFactory,
+        protected CreateOrderFromHotelBooking $createOrderFromHotelBooking,
+        protected ProcessHotelProviderWalletTransactions $hotelProviderWalletTransactions,
+        protected MerchantAgencyWalletManager $merchantAgencyWalletManager,
     ) {}
 
     /**
@@ -56,8 +67,6 @@ class HotelController extends Controller
             'city_id' => ['required', 'integer', 'min:1'],
             'check_in' => ['required', 'date_format:Y-m-d'],
             'check_out' => ['required', 'date_format:Y-m-d', 'after:check_in'],
-            // Preferred: rooms as occupancy list (same shape as tenant web / 3T).
-            // Shortcut: rooms as count + adults (+ optional children/children_ages).
             'rooms' => ['required'],
             'rooms.*.adult' => ['nullable', 'integer', 'min:1', 'max:9'],
             'rooms.*.adults' => ['nullable', 'integer', 'min:1', 'max:9'],
@@ -197,14 +206,16 @@ class HotelController extends Controller
         }
 
         $bookingUuid = (string) Str::uuid();
+        $providerWithSource = $this->providerManager->activeProviderWithSource();
 
         Cache::put("hotel_booking_{$bookingUuid}", [
             'search' => $search,
-            'selected_offer' => [
-                'room' => $ratePayload['response'][0] ?? $ratePayload,
-                'search_code' => (string) ($validated['search_code'] ?? ''),
-                'rate_key' => (string) $validated['rate_key'],
-            ],
+            'selected_offer' => $this->normalizeSelectedOfferFromCheckRate(
+                (string) $validated['rate_key'],
+                (string) ($validated['search_code'] ?? $ratePayload['search_code'] ?? ''),
+                $ratePayload,
+                is_array($providerWithSource['source'] ?? null) ? $providerWithSource['source'] : null,
+            ),
             'check_rate' => $ratePayload,
             'created_at' => now()->toISOString(),
         ], now()->addMinutes(60));
@@ -216,7 +227,7 @@ class HotelController extends Controller
     }
 
     /**
-     * Book a hotel with guest details.
+     * Book a hotel with guest details and create a TAMS order.
      */
     public function book(Request $request): JsonResponse
     {
@@ -240,6 +251,12 @@ class HotelController extends Controller
             'recommandations' => ['nullable', 'string', 'max:1000'],
         ]);
 
+        $issuer = $request->user();
+
+        if (! $issuer instanceof User) {
+            return $this->error('Authentication is required to book hotels.', 401);
+        }
+
         $cached = Cache::get("hotel_booking_{$validated['booking_uuid']}");
 
         if (! $cached) {
@@ -252,44 +269,233 @@ class HotelController extends Controller
             return $this->error('Hotel provider is not configured.', 400);
         }
 
-        $fallbackRateKey = (string) data_get($cached, 'selected_offer.rate_key', '');
+        $selectedOffer = is_array($cached['selected_offer'] ?? null) ? $cached['selected_offer'] : [];
+        $providerSource = is_array($selectedOffer['provider_source'] ?? null)
+            ? $selectedOffer['provider_source']
+            : ($this->providerManager->activeProviderSource() ?? []);
+        $search = is_array($cached['search'] ?? null) ? $cached['search'] : [];
+        $fallbackRateKey = (string) ($selectedOffer['rate_key'] ?? '');
+        $currency = strtoupper((string) ($selectedOffer['currency'] ?? 'LYD'));
+        $providerCost = round((float) ($selectedOffer['provider_price'] ?? $selectedOffer['price'] ?? 0), 2);
 
         try {
-            $selectedOffer = $cached['selected_offer'];
-            $search = $cached['search'];
+            if ((string) data_get($providerSource, 'source_type') === 'agency_network') {
+                $this->merchantAgencyWalletManager->assertCanWithdrawForSource(
+                    $issuer,
+                    $providerSource,
+                    $currency,
+                    round((float) ($selectedOffer['price'] ?? $providerCost), 2),
+                );
+            }
+
+            $this->hotelProviderWalletTransactions->assertCanWithdrawForSource(
+                $providerSource,
+                $hotelProvider,
+                $currency,
+                $providerCost,
+            );
+        } catch (InsufficientWalletBalanceException $exception) {
+            return $this->error($exception->getMessage(), 422);
+        }
+
+        try {
             $customer = $validated['customer'];
+            $providerCustomer = [
+                'firstName' => (string) $customer['first_name'],
+                'lastName' => (string) $customer['last_name'],
+                'email' => (string) ($customer['email'] ?? ''),
+                'mobile' => (string) ($customer['mobile'] ?? $customer['phone'] ?? ''),
+                'country' => (string) $customer['country'],
+                'city' => (string) $customer['city'],
+            ];
+            $orderCustomer = [
+                ...$providerCustomer,
+                'first_name' => (string) $customer['first_name'],
+                'last_name' => (string) $customer['last_name'],
+                'phone' => (string) ($customer['phone'] ?? $customer['mobile'] ?? ''),
+            ];
+            $roomsPayload = $this->providerBookingRoomsPayload($validated['rooms'], $fallbackRateKey);
 
             $bookingPayload = [
                 'language' => $this->providerLanguage((string) ($search['language'] ?? 'fr-FR')),
                 'recommandations' => (string) ($validated['recommandations'] ?? ''),
                 'searchCode' => (string) ($selectedOffer['search_code'] ?? ''),
                 'tokenForBook' => (string) data_get($cached, 'check_rate.token_for_book', ''),
-                'rooms' => $this->providerBookingRoomsPayload($validated['rooms'], $fallbackRateKey),
+                'rooms' => $roomsPayload,
                 'payment' => [
                     'card' => '',
                     'ccv' => '',
                     'expire' => '',
                 ],
-                'customer' => [
-                    'firstName' => (string) $customer['first_name'],
-                    'lastName' => (string) $customer['last_name'],
-                    'email' => (string) ($customer['email'] ?? ''),
-                    'mobile' => (string) ($customer['mobile'] ?? $customer['phone'] ?? ''),
-                    'country' => (string) $customer['country'],
-                    'city' => (string) $customer['city'],
-                ],
+                'customer' => $providerCustomer,
             ];
 
             $providerBooking = $this->providerManager->provider()->book($bookingPayload);
+            $selectedOffer = $this->enrichSelectedOfferFromBooking($selectedOffer, $providerBooking);
+
+            $order = $this->createOrderFromHotelBooking->create(
+                userId: $issuer->id,
+                booking: $providerBooking,
+                selectedOffer: $selectedOffer,
+                customer: $orderCustomer,
+                rooms: $roomsPayload,
+                search: $search,
+                provider: $hotelProvider,
+                providerSource: $providerSource,
+            );
+
+            if ((string) data_get($providerSource, 'source_type') === 'agency_network') {
+                $order->loadMissing('items');
+
+                foreach ($order->items as $item) {
+                    $this->merchantAgencyWalletManager->withdrawForOrderItem($order, $item, $issuer);
+                }
+            }
+
+            $this->hotelProviderWalletTransactions->execute($order, $hotelProvider);
+
+            Cache::forget("hotel_booking_{$validated['booking_uuid']}");
+
+            $order->loadMissing(['owner', 'items']);
+
+            $contact = OrderContact::fromOrder($order);
+            if (filled($contact->email) || filled($contact->phone)) {
+                $contact->notify(new HotelBooked($order, $order->items->first()));
+            }
 
             return $this->success([
+                'order' => $this->formatOrder($order),
                 'booking' => $providerBooking,
-            ], 'Hotel booked successfully. Order will be created by the staff.', 201);
+            ], 'Hotel booked successfully.', 201);
+        } catch (InsufficientWalletBalanceException $exception) {
+            return $this->error($exception->getMessage(), 422);
         } catch (Throwable $e) {
             report($e);
 
             return $this->error($e instanceof HotelApiException ? $e->getMessage() : 'Unable to complete hotel booking.', 422);
         }
+    }
+
+    /**
+     * @param  array<string, mixed>  $ratePayload
+     * @param  array<string, mixed>|null  $providerSource
+     * @return array<string, mixed>
+     */
+    protected function normalizeSelectedOfferFromCheckRate(
+        string $rateKey,
+        string $searchCode,
+        array $ratePayload,
+        ?array $providerSource = null,
+    ): array {
+        $rooms = $this->checkRateRooms($ratePayload);
+        $matchedRoom = collect($rooms)->first(
+            fn (array $room): bool => (string) ($room['rateKey'] ?? $room['ratekey'] ?? '') === $rateKey,
+        ) ?? ($rooms[0] ?? []);
+
+        $providerPrice = round((float) ($matchedRoom['price'] ?? 0), 2);
+        $markupPercent = $this->hotelMarkupPercent();
+        $sellingPrice = $this->applyHotelMarkup($providerPrice, $markupPercent);
+        $currency = strtoupper((string) ($matchedRoom['currency'] ?? data_get($ratePayload, 'raw.currency', 'LYD')));
+
+        return [
+            'hotel_id' => (string) data_get($matchedRoom, 'hotelId', data_get($ratePayload, 'response.0.hotelId', '')),
+            'hotel_uid' => (string) data_get($matchedRoom, 'hotelUid', ''),
+            'hotel_name' => (string) data_get($matchedRoom, 'hotelName', data_get($matchedRoom, 'name', 'Hotel')),
+            'source' => data_get($matchedRoom, 'source'),
+            'rate_key' => $rateKey,
+            'rate_keys' => [$rateKey],
+            'room_name' => (string) ($matchedRoom['name'] ?? $matchedRoom['roomName'] ?? 'Room'),
+            'board_name' => (string) ($matchedRoom['boardName'] ?? ''),
+            'price' => $sellingPrice,
+            'provider_price' => $providerPrice,
+            'markup_percent' => $markupPercent,
+            'markup_amount' => round($sellingPrice - $providerPrice, 2),
+            'currency' => $currency,
+            'available' => (bool) ($matchedRoom['available'] ?? true),
+            'cancellation_policies' => $matchedRoom['cancellationPolicies'] ?? [],
+            'search_code' => $searchCode,
+            'token_for_book' => (string) ($ratePayload['token_for_book'] ?? ''),
+            'provider_source' => $providerSource,
+            'hotel' => [
+                'hotel_id' => (string) data_get($matchedRoom, 'hotelId', ''),
+                'hotel_uid' => (string) data_get($matchedRoom, 'hotelUid', ''),
+                'name' => (string) data_get($matchedRoom, 'hotelName', data_get($matchedRoom, 'name', 'Hotel')),
+            ],
+            'room' => $matchedRoom,
+            'raw' => [
+                'check_rate' => $ratePayload['raw'] ?? [],
+            ],
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $selectedOffer
+     * @param  array<string, mixed>  $providerBooking
+     * @return array<string, mixed>
+     */
+    protected function enrichSelectedOfferFromBooking(array $selectedOffer, array $providerBooking): array
+    {
+        $bookingResponse = is_array($providerBooking['response'] ?? null) ? $providerBooking['response'] : [];
+        $providerTotal = round((float) ($bookingResponse['totalPurchase'] ?? 0), 2);
+        $currency = strtoupper((string) ($bookingResponse['currency'] ?? $selectedOffer['currency'] ?? 'LYD'));
+        $providerHotel = is_array(data_get($bookingResponse, 'booking.hotel'))
+            ? data_get($bookingResponse, 'booking.hotel')
+            : [];
+
+        if ($providerTotal > 0 && round((float) ($selectedOffer['provider_price'] ?? 0), 2) <= 0) {
+            $markupPercent = (float) ($selectedOffer['markup_percent'] ?? $this->hotelMarkupPercent());
+            $sellingPrice = $this->applyHotelMarkup($providerTotal, $markupPercent);
+
+            $selectedOffer['provider_price'] = $providerTotal;
+            $selectedOffer['price'] = $sellingPrice;
+            $selectedOffer['markup_percent'] = $markupPercent;
+            $selectedOffer['markup_amount'] = round($sellingPrice - $providerTotal, 2);
+        }
+
+        $selectedOffer['currency'] = $currency;
+
+        if ($providerHotel !== []) {
+            $selectedOffer['hotel'] = [
+                ...(is_array($selectedOffer['hotel'] ?? null) ? $selectedOffer['hotel'] : []),
+                'hotel_id' => (string) ($providerHotel['hotelId'] ?? data_get($selectedOffer, 'hotel.hotel_id', '')),
+                'hotel_uid' => (string) ($providerHotel['hotelUid'] ?? data_get($selectedOffer, 'hotel.hotel_uid', '')),
+                'name' => (string) ($providerHotel['hotelName'] ?? data_get($selectedOffer, 'hotel.name', 'Hotel')),
+            ];
+            $selectedOffer['hotel_id'] = (string) ($providerHotel['hotelId'] ?? $selectedOffer['hotel_id'] ?? '');
+            $selectedOffer['hotel_name'] = (string) ($providerHotel['hotelName'] ?? $selectedOffer['hotel_name'] ?? 'Hotel');
+            $selectedOffer['source'] = $selectedOffer['source'] ?? ($providerHotel['supplierSourceId'] ?? null);
+        }
+
+        return $selectedOffer;
+    }
+
+    /**
+     * @param  array<string, mixed>  $ratePayload
+     * @return array<int, array<string, mixed>>
+     */
+    protected function checkRateRooms(array $ratePayload): array
+    {
+        $groups = data_get($ratePayload, 'response.0.rooms', []);
+
+        return collect(is_array($groups) ? $groups : [])
+            ->flatMap(fn (mixed $group): array => is_array($group) ? $group : [])
+            ->filter(fn (mixed $room): bool => is_array($room))
+            ->values()
+            ->all();
+    }
+
+    protected function hotelMarkupPercent(): float
+    {
+        $provider = $this->providerManager->activeProvider();
+
+        return $provider instanceof TenantHotelProvider
+            ? max(0.0, $provider->markupForProductType('hotel'))
+            : 0.0;
+    }
+
+    protected function applyHotelMarkup(float $amount, float $markupPercent): float
+    {
+        return round($amount + (($amount * $markupPercent) / 100), 2);
     }
 
     /**
@@ -336,6 +542,58 @@ class HotelController extends Controller
                 }, $room['guests'] ?? [])),
             ];
         }, $rooms));
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    protected function formatOrder(Order $order): array
+    {
+        return [
+            'id' => $order->id,
+            'number' => $order->number,
+            'status' => $order->status,
+            'subtotal' => (float) $order->subtotal,
+            'tax_total' => (float) $order->tax_total,
+            'grand_total' => (float) $order->grand_total,
+            'amount_paid' => (float) $order->amount_paid,
+            'amount_refunded' => (float) ($order->amount_refunded ?? 0),
+            'currency' => $order->currency,
+            'payment_method' => $order->payment_method,
+            'payment_reference' => $order->payment_reference,
+            'issued_at' => $order->issued_at?->toISOString(),
+            'created_at' => $order->created_at?->toISOString(),
+            'owner' => $order->owner ? [
+                'id' => $order->owner->id,
+                'name' => $order->owner->name,
+                'email' => $order->owner->email,
+                'role' => $order->owner->role,
+            ] : null,
+            'contact' => $order->contact,
+            'items' => $order->items->map(function ($item) {
+                return [
+                    'id' => $item->id,
+                    'type' => $item->type,
+                    'product_type' => $item->product_type,
+                    'product_subtype' => $item->product_subtype,
+                    'provider' => $item->provider,
+                    'provider_reference' => $item->provider_reference,
+                    'ticket_number' => $item->ticket_number,
+                    'status' => $item->status,
+                    'total' => (float) $item->total_amount,
+                    'net_fare' => (float) $item->net_fare,
+                    'commission_amount' => (float) $item->commission_amount,
+                    'currency' => $item->currency,
+                    'product_details' => $item->product_details,
+                    'item_details' => [
+                        'booking_id' => data_get($item->item_details, 'booking_id'),
+                        'confirmed' => data_get($item->item_details, 'confirmed'),
+                        'provider_booking' => data_get($item->item_details, 'provider_booking'),
+                        'comments' => data_get($item->item_details, 'comments'),
+                    ],
+                ];
+            })->values(),
+        ];
     }
 
     /**

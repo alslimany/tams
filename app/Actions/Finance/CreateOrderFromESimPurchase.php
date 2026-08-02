@@ -24,6 +24,7 @@ class CreateOrderFromESimPurchase
      * @param  array<string, mixed>  $packageData
      * @param  array<string, mixed>  $customerData
      * @param  array<string, mixed>  $providerSource
+     * @param  array{transaction_type?: string, parent_order_item_id?: int|null, parent_order_id?: int|null}  $options
      */
     public function execute(
         int $userId,
@@ -32,6 +33,7 @@ class CreateOrderFromESimPurchase
         array $customerData,
         array $providerSource = [],
         ?TenantEsimProvider $esimProvider = null,
+        array $options = [],
     ): Order {
         $issuer = User::query()->find($userId);
 
@@ -39,7 +41,7 @@ class CreateOrderFromESimPurchase
             throw (new ModelNotFoundException)->setModel(User::class, [$userId]);
         }
 
-        return DB::transaction(function () use ($issuer, $orderResult, $packageData, $customerData, $providerSource, $esimProvider): Order {
+        return DB::transaction(function () use ($issuer, $orderResult, $packageData, $customerData, $providerSource, $esimProvider, $options): Order {
             $currency = strtoupper((string) ($packageData['currency'] ?? 'USD'));
             $price = round((float) ($packageData['price'] ?? 0), 2);
             $providerCurrency = strtoupper((string) ($packageData['provider_currency'] ?? 'USD'));
@@ -52,6 +54,12 @@ class CreateOrderFromESimPurchase
             $defaultAgencyTenantId = $this->resolveDefaultAgencyTenantId();
             $providerSourceDetails = $this->providerSourceItemDetails($providerSource);
             $financialSource = $this->financialSourceForProviderSource($providerSource);
+            $transactionType = (string) ($options['transaction_type'] ?? 'purchase');
+            $parentOrderItemId = isset($options['parent_order_item_id']) ? (int) $options['parent_order_item_id'] : null;
+            $parentOrderId = isset($options['parent_order_id']) ? (int) $options['parent_order_id'] : null;
+            $iccid = $orderResult->iccid !== ''
+                ? $orderResult->iccid
+                : (string) ($packageData['iccid'] ?? '');
 
             $order = Order::query()->create([
                 'owner_type' => $issuer::class,
@@ -76,10 +84,10 @@ class CreateOrderFromESimPurchase
             $order->items()->create([
                 'type' => 'esim',
                 'product_type' => 'esim',
-                'product_subtype' => 'esim',
+                'product_subtype' => $transactionType === 'topup' ? 'esim_topup' : 'esim',
                 'provider' => $esimProvider?->provider_type ?? 'l2',
                 'provider_reference' => $orderResult->orderId,
-                'ticket_number' => $orderResult->iccid,
+                'ticket_number' => $iccid,
                 'item_details' => array_merge($providerSourceDetails, [
                     'financial_source' => $financialSource,
                     'default_agency_tenant_id' => $defaultAgencyTenantId,
@@ -92,7 +100,7 @@ class CreateOrderFromESimPurchase
                     'provider_order_id' => $orderResult->orderId,
                     'provider_cost' => $providerPrice,
                     'provider_currency' => $providerCurrency,
-                    'iccid' => $orderResult->iccid,
+                    'iccid' => $iccid,
                     'activation_code' => $orderResult->activationCode,
                     'smdp_address' => $orderResult->smdpAddress,
                     'lpa_string' => $orderResult->smdpAddress && $orderResult->activationCode
@@ -102,6 +110,18 @@ class CreateOrderFromESimPurchase
                     'status' => $orderResult->status,
                     'assigned' => $orderResult->assigned,
                     'customer' => $customerData,
+                    'transaction_type' => $transactionType,
+                    'parent_order_item_id' => $parentOrderItemId,
+                    'parent_order_id' => $parentOrderId,
+                    'package' => [
+                        'id' => (string) ($packageData['id'] ?? ''),
+                        'name' => (string) ($packageData['name'] ?? ''),
+                        'country' => (string) ($packageData['country'] ?? ''),
+                        'data_mb' => (int) ($packageData['data_mb'] ?? 0),
+                        'validity_days' => (int) ($packageData['validity_days'] ?? 0),
+                        'price' => $price,
+                        'currency' => $currency,
+                    ],
                 ]),
                 'product_details' => [
                     'provider' => $esimProvider?->name ?? 'L2 Travel eSIM',
@@ -110,7 +130,7 @@ class CreateOrderFromESimPurchase
                     'country' => (string) ($packageData['country'] ?? ''),
                     'data_mb' => (int) ($packageData['data_mb'] ?? 0),
                     'validity_days' => (int) ($packageData['validity_days'] ?? 0),
-                    'iccid' => $orderResult->iccid,
+                    'iccid' => $iccid,
                     'activation_code' => $orderResult->activationCode,
                     'smdp_address' => $orderResult->smdpAddress,
                     'lpa_string' => $orderResult->smdpAddress && $orderResult->activationCode
@@ -120,6 +140,9 @@ class CreateOrderFromESimPurchase
                     'customer' => $customerData,
                     'provider_cost' => $providerPrice,
                     'provider_currency' => $providerCurrency,
+                    'transaction_type' => $transactionType,
+                    'parent_order_item_id' => $parentOrderItemId,
+                    'parent_order_id' => $parentOrderId,
                 ],
                 'price' => $price,
                 'net_fare' => $price,
@@ -130,7 +153,7 @@ class CreateOrderFromESimPurchase
                 'currency' => $currency,
                 'exchange_rate' => $exchangeRate,
                 'status' => 'issued',
-                'transaction_type' => 'purchase',
+                'transaction_type' => $transactionType,
                 'commission_percent' => $commissionPercent,
                 'commission_amount' => $commissionAmount,
                 'net_after_commission' => round($price - $commissionAmount, 2),

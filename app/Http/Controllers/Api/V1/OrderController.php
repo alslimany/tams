@@ -6,6 +6,7 @@ use App\Actions\Insurance\FetchInsurancePolicyReport;
 use App\Http\Controllers\Api\Controller;
 use App\Models\Tenant\Order;
 use App\Models\Tenant\OrderItem;
+use App\Services\ESim\ESimUsagePresenter;
 use App\Services\Insurance\InsuranceApiException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -13,6 +14,10 @@ use Illuminate\Http\Response;
 
 class OrderController extends Controller
 {
+    public function __construct(
+        protected ESimUsagePresenter $esimUsagePresenter,
+    ) {}
+
     /**
      * Paginated order list.
      */
@@ -179,8 +184,27 @@ class OrderController extends Controller
                     'currency' => $item->currency,
                     'report_reference' => data_get($item->product_details, 'policy_details.report_reference')
                         ?? data_get($item->item_details, 'insurance.report_reference'),
+                    'product_details' => $item->product_details,
                     'passengers' => data_get($item->item_details, 'passengers'),
                     'segments' => data_get($item->item_details, 'segments'),
+                    'hotel' => ((string) $item->product_type === 'hotel' || (string) $item->type === 'hotel') ? [
+                        'booking_id' => data_get($item->item_details, 'booking_id'),
+                        'confirmed' => data_get($item->item_details, 'confirmed'),
+                        'stay' => data_get($item->product_details, 'stay'),
+                        'hotel' => data_get($item->product_details, 'hotel'),
+                        'rooms' => data_get($item->product_details, 'rooms'),
+                        'comments' => data_get($item->product_details, 'comments'),
+                    ] : null,
+                    'esim' => ((string) $item->product_type === 'esim' || (string) $item->type === 'esim') ? [
+                        'iccid' => (string) ($item->ticket_number ?: data_get($item->item_details, 'iccid', '')),
+                        'activation_code' => data_get($item->item_details, 'activation_code'),
+                        'lpa_string' => data_get($item->item_details, 'lpa_string'),
+                        'qr_code_url' => data_get($item->item_details, 'qr_code_url'),
+                        'package' => data_get($item->item_details, 'package'),
+                        'transaction_type' => data_get($item->item_details, 'transaction_type', $item->transaction_type),
+                        'parent_order_item_id' => data_get($item->item_details, 'parent_order_item_id'),
+                        'usage' => $this->esimUsagePresenter->fromOrderItem($item),
+                    ] : null,
                 ];
             })->values(),
         ];

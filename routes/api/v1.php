@@ -12,6 +12,7 @@ use App\Http\Controllers\Api\V1\FlightChangeController;
 use App\Http\Controllers\Api\V1\FlightController;
 use App\Http\Controllers\Api\V1\HotelController;
 use App\Http\Controllers\Api\V1\InsuranceController;
+use App\Http\Controllers\Api\V1\L2ESimWebhookController;
 use App\Http\Controllers\Api\V1\OrderController;
 use App\Http\Controllers\Api\V1\ReportController;
 use App\Http\Controllers\Api\V1\WalletController;
@@ -40,6 +41,9 @@ use Illuminate\Support\Facades\Route;
 
 // ── Public Auth ────────────────────────────────────────────────
 Route::post('auth/token', [AuthController::class, 'login']);
+
+// ── Public provider webhooks (no Sanctum) ──────────────────────
+Route::post('webhooks/l2-esim', L2ESimWebhookController::class);
 
 // ── Authenticated Routes ───────────────────────────────────────
 Route::middleware(['auth:sanctum', 'throttle:api', 'audit.api', 'idempotency'])->group(function (): void {
@@ -90,6 +94,8 @@ Route::middleware(['auth:sanctum', 'throttle:api', 'audit.api', 'idempotency'])-
         Route::get('orders/{order}/hotel-items/{item}/voucher-pdf', [OrderController::class, 'hotelVoucherPdf']);
         Route::get('orders/{order}/insurance-items/{item}/policy-pdf', [OrderController::class, 'insurancePolicyPdf']);
         Route::get('orders/{order}/summary-pdf', [OrderController::class, 'orderSummaryPdf']);
+        Route::get('orders/{order}/esim-items/{item}/usage', [ESimController::class, 'usage']);
+        Route::get('orders/{order}/esim-items/{item}/topup-packages', [ESimController::class, 'topupPackages']);
 
         // Wallet
         Route::get('wallet/balance', [WalletController::class, 'balance']);
@@ -115,6 +121,7 @@ Route::middleware(['auth:sanctum', 'throttle:api', 'audit.api', 'idempotency'])-
         Route::post('esim/search', [ESimController::class, 'search']);
         Route::post('esim/select', [ESimController::class, 'select']);
         Route::post('esim/book', [ESimController::class, 'book']);
+        Route::post('orders/{order}/esim-items/{item}/topup', [ESimController::class, 'topup']);
     });
 
     // ── Issue-gated routes (ability: issue OR *) ────────────────

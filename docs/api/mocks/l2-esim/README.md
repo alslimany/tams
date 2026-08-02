@@ -99,9 +99,9 @@ See [`responses/process-order-pending.json`](responses/process-order-pending.jso
 
 ## 3. Callback (inbound webhook)
 
-L2 posts usage/lifecycle events to a URL configured in the L2 portal (not called by TAMS today).
+L2 posts usage/lifecycle events to a URL configured in the L2 portal. TAMS receives them at:
 
-`POST https://your-tenant.example/webhooks/l2-esim`
+`POST {base}/agency/{tenant}/api/v1/webhooks/l2-esim` (HMAC `X-HMAC-Signature`)
 
 ### Headers
 

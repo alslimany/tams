@@ -43,4 +43,12 @@ class OrderContact
     {
         return $this->phone;
     }
+
+    /**
+     * Identifier for notification fakes / anonymous notifiables.
+     */
+    public function getKey(): string
+    {
+        return $this->email !== '' ? $this->email : ($this->phone !== '' ? $this->phone : 'order-contact');
+    }
 }

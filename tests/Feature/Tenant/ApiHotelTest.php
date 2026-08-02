@@ -1,11 +1,13 @@
 <?php
 
 use App\Models\Tenant;
+use App\Models\Tenant\Order;
 use App\Models\Tenant\TenantHotelProvider;
 use App\Models\User;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Str;
 
 /** @var array<string, mixed> $state */
@@ -249,28 +251,75 @@ test('hotel select with expired search returns 410', function () {
     $response->assertStatus(410);
 });
 
-test('hotel book maps guests to provider paxes payload', function () {
+test('hotel book creates order and returns it', function () {
     global $state;
 
     Http::fake([
         'https://btob.3t.tn/hotels-api?method=book' => Http::response([
             'method' => 'book',
             'error' => false,
-            'response' => ['bookingId' => 'BK-001'],
+            'response' => [
+                'bookingId' => '37672',
+                'confirmed' => true,
+                'booking' => [
+                    'hotel' => [
+                        'hotelId' => 669,
+                        'hotelUid' => '669-623',
+                        'hotelName' => 'Le Grand Hôtel Djerba',
+                        'cityName' => 'Djerba',
+                        'countryName' => 'Tunisie',
+                    ],
+                    'from' => '2026-09-01',
+                    'to' => '2026-09-02',
+                    'rooms' => [[
+                        'roomIndex' => 1,
+                        'rateKey' => 'RATE-ABC',
+                        'name' => 'Chambre Standard',
+                        'boardName' => 'Logement Petit Déjeuner',
+                        'price' => 241.48,
+                        'currency' => 'LYD',
+                    ]],
+                ],
+                'returnedPrice' => true,
+                'totalPurchase' => 241.48,
+                'currency' => 'LYD',
+                'comments' => 'Tourist tax payable at hotel.',
+            ],
         ]),
     ]);
+
+    Notification::fake();
+
+    $provider = TenantHotelProvider::query()->where('provider_type', '3t')->firstOrFail();
+    $provider->getOrCreateCurrencyWallet('LYD')->depositFloat(1000, ['type' => 'test_provider_fund']);
 
     $bookingUuid = (string) Str::uuid();
 
     Cache::put("hotel_booking_{$bookingUuid}", [
         'search' => [
             'city' => 'Djerba',
-            'city_id' => 12,
+            'city_id' => 18,
+            'check_in' => '2026-09-01',
+            'check_out' => '2026-09-02',
             'language' => 'fr-FR',
         ],
         'selected_offer' => [
             'rate_key' => 'RATE-ABC',
             'search_code' => 'SRCH-9',
+            'price' => 265.63,
+            'provider_price' => 241.48,
+            'markup_percent' => 10,
+            'markup_amount' => 24.15,
+            'currency' => 'LYD',
+            'hotel_name' => 'Le Grand Hôtel Djerba',
+            'hotel' => [
+                'hotel_id' => '669',
+                'name' => 'Le Grand Hôtel Djerba',
+            ],
+            'provider_source' => [
+                'source_type' => 'own',
+                'source_provider_id' => $provider->id,
+            ],
         ],
         'check_rate' => [
             'token_for_book' => 'TOKEN-BOOK',
@@ -298,7 +347,18 @@ test('hotel book maps guests to provider paxes payload', function () {
         ]);
 
     $response->assertCreated()
-        ->assertJsonPath('success', true);
+        ->assertJsonPath('success', true)
+        ->assertJsonPath('data.order.status', 'issued')
+        ->assertJsonPath('data.order.payment_reference', '37672')
+        ->assertJsonPath('data.order.items.0.provider_reference', '37672')
+        ->assertJsonPath('data.order.items.0.product_type', 'hotel');
+
+    $orderId = $response->json('data.order.id');
+    expect($orderId)->not->toBeNull();
+
+    $order = Order::query()->findOrFail($orderId);
+    expect($order->items)->toHaveCount(1)
+        ->and((string) $order->items->first()->provider_reference)->toBe('37672');
 
     Http::assertSent(function (Request $request): bool {
         if (! str_contains($request->url(), 'method=book')) {

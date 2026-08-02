@@ -12,6 +12,7 @@ use App\Services\ESim\ESimApiException;
 use App\Services\ESim\ESimBookingService;
 use App\Services\ESim\ESimCatalogueService;
 use App\Services\ESim\ESimProviderManager;
+use App\Services\ESim\ESimUsagePresenter;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use RuntimeException;
@@ -23,6 +24,7 @@ class ESimController extends Controller
         protected ESimBookingService $bookingService,
         protected ESimCatalogueService $catalogueService,
         protected ESimProviderManager $providerManager,
+        protected ESimUsagePresenter $usagePresenter,
     ) {}
 
     /**
@@ -213,6 +215,106 @@ class ESimController extends Controller
 
             return $this->error(
                 $exception instanceof ESimApiException ? $exception->getMessage() : 'Unable to complete eSIM purchase right now.',
+                422,
+            );
+        }
+    }
+
+    /**
+     * Latest utilisation / remaining quota for an issued eSIM item.
+     */
+    public function usage(Order $order, OrderItem $item): JsonResponse
+    {
+        abort_unless($item->order_id === $order->id, 404);
+        abort_unless($item->type === 'esim' || $item->product_type === 'esim', 404);
+
+        $usage = $this->usagePresenter->fromOrderItem($item);
+
+        return $this->success([
+            'order_id' => $order->id,
+            'item_id' => $item->id,
+            'iccid' => (string) ($item->ticket_number ?: data_get($item->item_details, 'iccid', '')),
+            'usage' => $usage,
+            'has_usage_data' => $usage !== null,
+        ]);
+    }
+
+    /**
+     * Catalogue packages available to top up this eSIM (same country).
+     */
+    public function topupPackages(Order $order, OrderItem $item): JsonResponse
+    {
+        abort_unless($item->order_id === $order->id, 404);
+
+        try {
+            return $this->success([
+                'order_id' => $order->id,
+                'item_id' => $item->id,
+                'iccid' => (string) ($item->ticket_number ?: data_get($item->item_details, 'iccid', '')),
+                'packages' => $this->bookingService->topupPackagesForItem($item),
+            ]);
+        } catch (RuntimeException $exception) {
+            return $this->error($exception->getMessage(), 422);
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return $this->error($exception->getMessage() ?: 'Unable to load top-up packages.', 422);
+        }
+    }
+
+    /**
+     * Add extra quota to an existing eSIM (L2 processOrders with iccid).
+     */
+    public function topup(Request $request, Order $order, OrderItem $item): JsonResponse
+    {
+        abort_unless($item->order_id === $order->id, 404);
+
+        $validated = $request->validate([
+            'package_id' => ['required', 'string'],
+        ]);
+
+        $issuer = $request->user();
+
+        if (! $issuer instanceof User) {
+            return $this->error('Authentication is required to top up eSIM.', 401);
+        }
+
+        try {
+            $topupOrder = $this->bookingService->topup(
+                $issuer,
+                $item,
+                (string) $validated['package_id'],
+            );
+
+            $topupItem = $topupOrder->items->first();
+
+            return $this->success([
+                'order' => [
+                    'id' => $topupOrder->id,
+                    'number' => $topupOrder->number,
+                    'status' => $topupOrder->status,
+                    'grand_total' => (float) $topupOrder->grand_total,
+                    'currency' => $topupOrder->currency,
+                ],
+                'esim' => [
+                    'iccid' => $topupItem?->ticket_number,
+                    'status' => $topupItem?->status,
+                    'provider_order_id' => data_get($topupItem?->item_details, 'provider_order_id'),
+                    'transaction_type' => 'topup',
+                    'parent_order_id' => $order->id,
+                    'parent_item_id' => $item->id,
+                ],
+                'package' => data_get($topupItem?->item_details, 'package'),
+            ], 'eSIM topped up successfully.', 201);
+        } catch (RuntimeException $exception) {
+            return $this->error($exception->getMessage(), 422);
+        } catch (InsufficientWalletBalanceException $exception) {
+            return $this->error($exception->getMessage(), 422);
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return $this->error(
+                $exception instanceof ESimApiException ? $exception->getMessage() : 'Unable to complete eSIM top-up right now.',
                 422,
             );
         }
