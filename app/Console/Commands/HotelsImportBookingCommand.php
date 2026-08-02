@@ -22,19 +22,25 @@ class HotelsImportBookingCommand extends Command
         {--booking-id= : Provider booking id, e.g. 37672}
         {--user-id= : Order owner user id}
         {--payload= : Path to JSON file with the 3T book envelope / response (+ optional customer)}
+        {--customer-first-name= : Guest first name when payload has no customer}
+        {--customer-last-name= : Guest last name when payload has no customer}
+        {--customer-email= : Guest email (defaults to owner user email)}
+        {--customer-phone= : Guest phone / mobile}
+        {--customer-country= : Guest country (defaults to hotel countryName)}
+        {--customer-city= : Guest city (defaults to hotel cityName)}
         {--debit-wallet : Debit hotel provider wallet after create (same as a normal book)}
         {--dry-run : Show what would be created without writing}';
 
     protected $description = <<<'DESC'
 Import a hotel provider booking that succeeded externally but was never stored as a TAMS order.
 
-Payload JSON (from Telescope HTTP client / book response) should include at least:
-  response.bookingId, response.confirmed, response.totalPurchase, response.currency,
-  response.booking.hotel, response.booking.rooms
-Optional top-level customer: firstName/lastName/email/mobile/country/city
-  (or snake_case equivalents from the API book request).
+Payload JSON may be a raw 3T book body (Telescope) with only:
+  response.bookingId, response.totalPurchase, response.currency, response.booking.*
 
-Example — recover median booking 37672 (debit wallet):
+Customer is optional in the JSON. Prefer --user-id= (name/email used as contact fallback),
+or pass --customer-first-name / --customer-last-name (and optional email/phone/country/city).
+
+Example — recover median booking 37672 from a raw 3T response file:
   php artisan hotels:import-booking median \
     --booking-id=37672 \
     --user-id=3 \
@@ -80,8 +86,9 @@ DESC;
             $payload = $this->loadPayload();
             $booking = $this->normalizeBookingEnvelope($payload);
             $bookingId = $this->resolveBookingId($booking);
-            $customer = $this->normalizeCustomer($payload);
-            $user = $this->resolveUser($customer);
+            $user = $this->resolveUserFromOption();
+            $customer = $this->normalizeCustomer($payload, $booking, $user);
+            $user ??= $this->resolveUserFromCustomer($customer);
             $providerWithSource = $hotelProviderManager->activeProviderWithSource();
             $provider = $providerWithSource['provider'] ?? null;
             $providerSource = is_array($providerWithSource['source'] ?? null) ? $providerWithSource['source'] : [];
@@ -280,9 +287,10 @@ DESC;
 
     /**
      * @param  array<string, mixed>  $payload
+     * @param  array<string, mixed>  $booking
      * @return array<string, string>
      */
-    protected function normalizeCustomer(array $payload): array
+    protected function normalizeCustomer(array $payload, array $booking, ?User $user = null): array
     {
         $customer = [];
 
@@ -292,15 +300,52 @@ DESC;
             $customer = data_get($payload, 'request.customer');
         }
 
-        $firstName = (string) ($customer['first_name'] ?? $customer['firstName'] ?? '');
-        $lastName = (string) ($customer['last_name'] ?? $customer['lastName'] ?? '');
-        $email = (string) ($customer['email'] ?? '');
-        $mobile = (string) ($customer['mobile'] ?? $customer['phone'] ?? '');
-        $country = (string) ($customer['country'] ?? '');
-        $city = (string) ($customer['city'] ?? '');
+        [$userFirstName, $userLastName] = $user instanceof User
+            ? $this->splitPersonName((string) $user->name)
+            : ['', ''];
+
+        $hotel = is_array(data_get($booking, 'response.booking.hotel'))
+            ? data_get($booking, 'response.booking.hotel')
+            : [];
+
+        $firstName = $this->firstFilledString([
+            $this->option('customer-first-name'),
+            $customer['first_name'] ?? null,
+            $customer['firstName'] ?? null,
+            $userFirstName,
+        ]);
+        $lastName = $this->firstFilledString([
+            $this->option('customer-last-name'),
+            $customer['last_name'] ?? null,
+            $customer['lastName'] ?? null,
+            $userLastName !== '' ? $userLastName : $userFirstName,
+        ]);
+        $email = $this->firstFilledString([
+            $this->option('customer-email'),
+            $customer['email'] ?? null,
+            $user?->email,
+        ]);
+        $mobile = $this->firstFilledString([
+            $this->option('customer-phone'),
+            $customer['mobile'] ?? null,
+            $customer['phone'] ?? null,
+        ]);
+        $country = $this->firstFilledString([
+            $this->option('customer-country'),
+            $customer['country'] ?? null,
+            $hotel['countryName'] ?? null,
+        ]);
+        $city = $this->firstFilledString([
+            $this->option('customer-city'),
+            $customer['city'] ?? null,
+            $hotel['cityName'] ?? null,
+        ]);
 
         if ($firstName === '' || $lastName === '') {
-            throw new \InvalidArgumentException('Payload customer must include first_name/last_name (or firstName/lastName).');
+            throw new \InvalidArgumentException(
+                'Customer first/last name required. Pass --customer-first-name / --customer-last-name, '
+                .'include customer in the JSON, or use --user-id= so the owner name can be used.'
+            );
         }
 
         return [
@@ -316,23 +361,28 @@ DESC;
         ];
     }
 
-    /**
-     * @param  array<string, string>  $customer
-     */
-    protected function resolveUser(array $customer): User
+    protected function resolveUserFromOption(): ?User
     {
         $userId = $this->option('user-id');
 
-        if (is_numeric($userId) && (int) $userId > 0) {
-            $user = User::query()->find((int) $userId);
-
-            if (! $user instanceof User) {
-                throw new \InvalidArgumentException("User id [{$userId}] was not found in this tenant.");
-            }
-
-            return $user;
+        if (! is_numeric($userId) || (int) $userId <= 0) {
+            return null;
         }
 
+        $user = User::query()->find((int) $userId);
+
+        if (! $user instanceof User) {
+            throw new \InvalidArgumentException("User id [{$userId}] was not found in this tenant.");
+        }
+
+        return $user;
+    }
+
+    /**
+     * @param  array<string, string>  $customer
+     */
+    protected function resolveUserFromCustomer(array $customer): User
+    {
         $email = (string) ($customer['email'] ?? '');
 
         if ($email !== '') {
@@ -344,6 +394,45 @@ DESC;
         }
 
         throw new \InvalidArgumentException('Provide --user-id= or include a customer.email that matches a tenant user.');
+    }
+
+    /**
+     * @param  list<mixed>  $candidates
+     */
+    protected function firstFilledString(array $candidates): string
+    {
+        foreach ($candidates as $candidate) {
+            if (! is_scalar($candidate)) {
+                continue;
+            }
+
+            $value = trim((string) $candidate);
+
+            if ($value !== '') {
+                return $value;
+            }
+        }
+
+        return '';
+    }
+
+    /**
+     * @return array{0: string, 1: string}
+     */
+    protected function splitPersonName(string $fullName): array
+    {
+        $parts = preg_split('/\s+/', trim($fullName)) ?: [];
+        $parts = array_values(array_filter($parts, fn (string $part): bool => $part !== ''));
+
+        if ($parts === []) {
+            return ['', ''];
+        }
+
+        if (count($parts) === 1) {
+            return [$parts[0], $parts[0]];
+        }
+
+        return [$parts[0], implode(' ', array_slice($parts, 1))];
     }
 
     /**

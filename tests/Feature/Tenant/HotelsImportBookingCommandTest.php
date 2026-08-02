@@ -187,3 +187,60 @@ test('hotels:import-booking dry-run does not create an order', function () {
 
     expect(Order::query()->where('payment_reference', '352')->exists())->toBeFalse();
 });
+
+test('hotels:import-booking accepts raw 3T response without customer when user-id is set', function () {
+    global $state;
+
+    $rawPath = storage_path('framework/testing/hotel-import-37672-raw.json');
+    File::put($rawPath, json_encode([
+        'response' => [
+            'bookingId' => '37672',
+            'confirmed' => true,
+            'booking' => [
+                'hotel' => [
+                    'hotelUid' => '669-623',
+                    'hotelId' => 669,
+                    'hotelName' => 'Le Grand Hôtel Djerba',
+                    'countryName' => 'Tunisie',
+                    'cityId' => 18,
+                    'cityName' => 'Djerba',
+                    'supplierSourceId' => '623',
+                ],
+                'from' => '2026-09-01',
+                'to' => '2026-09-02',
+                'rooms' => [[
+                    'roomIndex' => 1,
+                    'paxes' => [
+                        'adult' => '1',
+                        'child' => ['value' => '0', 'age' => ''],
+                    ],
+                    'rateKey' => 'RATE-37672',
+                    'boardName' => 'Logement Petit Déjeuner',
+                    'price' => 241.480605184,
+                    'currency' => 'LYD',
+                    'name' => 'Chambre Standard',
+                ]],
+            ],
+            'returnedPrice' => true,
+            'totalPurchase' => 241.480605184,
+            'currency' => 'LYD',
+        ],
+    ], JSON_PRETTY_PRINT));
+
+    $this->artisan('hotels:import-booking', [
+        'tenant' => $state['tenant']->id,
+        '--booking-id' => '37672',
+        '--user-id' => (string) $state['user']->id,
+        '--payload' => $rawPath,
+        '--debit-wallet' => true,
+    ])->assertSuccessful();
+
+    $order = Order::query()->where('payment_reference', '37672')->first();
+
+    expect($order)->not->toBeNull()
+        ->and(data_get($order->contact, 'email'))->toBe('agent@example.com')
+        ->and(data_get($order->contact, 'city'))->toBe('Djerba')
+        ->and(data_get($order->contact, 'country'))->toBe('Tunisie');
+
+    File::delete($rawPath);
+});
