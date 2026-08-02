@@ -4,9 +4,11 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Actions\Finance\CreateOrderFromHotelBooking;
 use App\Actions\Finance\ProcessHotelProviderWalletTransactions;
+use App\Actions\Hotels\CancelHotelBooking;
 use App\Exceptions\InsufficientWalletBalanceException;
 use App\Http\Controllers\Api\Controller;
 use App\Models\Tenant\Order;
+use App\Models\Tenant\OrderItem;
 use App\Models\Tenant\TenantHotelProvider;
 use App\Models\User;
 use App\Notifications\Orders\HotelBooked;
@@ -19,6 +21,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
+use RuntimeException;
 use Throwable;
 
 class HotelController extends Controller
@@ -29,6 +32,7 @@ class HotelController extends Controller
         protected CreateOrderFromHotelBooking $createOrderFromHotelBooking,
         protected ProcessHotelProviderWalletTransactions $hotelProviderWalletTransactions,
         protected MerchantAgencyWalletManager $merchantAgencyWalletManager,
+        protected CancelHotelBooking $cancelHotelBooking,
     ) {}
 
     /**
@@ -373,6 +377,45 @@ class HotelController extends Controller
             report($e);
 
             return $this->error($e instanceof HotelApiException ? $e->getMessage() : 'Unable to complete hotel booking.', 422);
+        }
+    }
+
+    /**
+     * Cancel / refund a hotel order item via the provider (credits hotel provider wallet on success).
+     */
+    public function cancel(Order $order, OrderItem $item): JsonResponse
+    {
+        abort_unless($item->order_id === $order->id, 404);
+        abort_unless((string) $item->product_type === 'hotel' || (string) $item->type === 'hotel', 404);
+
+        try {
+            $result = $this->cancelHotelBooking->execute($order, $item);
+            $cancelledItem = $result['item'];
+            $cancelledOrder = $result['order'];
+
+            return $this->success([
+                'outcome' => $result['outcome'],
+                'order_id' => $cancelledOrder->id,
+                'order_number' => $cancelledOrder->number,
+                'order_status' => $cancelledOrder->status,
+                'item_id' => $cancelledItem->id,
+                'item_status' => $cancelledItem->status,
+                'booking_id' => data_get($cancelledItem->item_details, 'booking_id', $cancelledItem->provider_reference),
+                'cancellation_fee' => $result['cancellation_fee'],
+                'refund_amount' => $result['refund_amount'],
+                'currency' => $cancelledItem->currency ?? $cancelledOrder->currency,
+                'amount_refunded' => (float) ($cancelledOrder->amount_refunded ?? 0),
+                'cancellation' => data_get($cancelledItem->item_details, 'cancellation'),
+                'cancellation_request' => data_get($cancelledItem->item_details, 'cancellation_request'),
+            ], $result['message']);
+        } catch (RuntimeException $exception) {
+            return $this->error($exception->getMessage(), 422);
+        } catch (HotelApiException $exception) {
+            return $this->error($exception->getMessage(), 422);
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return $this->error($exception->getMessage() ?: 'Unable to cancel hotel booking right now.', 422);
         }
     }
 

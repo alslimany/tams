@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Tenant;
 
 use App\Actions\Finance\CreateOrderFromHotelBooking;
 use App\Actions\Finance\ProcessHotelProviderWalletTransactions;
+use App\Actions\Hotels\CancelHotelBooking;
 use App\Exceptions\InsufficientWalletBalanceException;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Tenant\Hotel\HotelBookRequest;
@@ -25,7 +26,6 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -39,6 +39,7 @@ class HotelBookingController extends Controller
         protected CreateOrderFromHotelBooking $createOrderFromHotelBooking,
         protected ProcessHotelProviderWalletTransactions $hotelProviderWalletTransactions,
         protected MerchantAgencyWalletManager $merchantAgencyWalletManager,
+        protected CancelHotelBooking $cancelHotelBooking,
     ) {}
 
     public function index(): Response
@@ -347,122 +348,19 @@ class HotelBookingController extends Controller
 
     public function cancel(Order $order, OrderItem $item): RedirectResponse
     {
-        if ($item->order_id !== $order->id || (string) $item->product_type !== 'hotel') {
+        if ($item->order_id !== $order->id || ((string) $item->product_type !== 'hotel' && (string) $item->type !== 'hotel')) {
             abort(404);
         }
 
-        $hotelProvider = $this->providerManager->activeProvider();
-
-        if (! $hotelProvider instanceof TenantHotelProvider) {
-            return back()->with('error', '3T hotel provider is not configured.');
-        }
-
         try {
-            try {
-                $payload = $this->providerManager->provider()->cancel([
-                    'bookingId' => data_get($item->item_details, 'booking_id'),
-                    'bookingSource' => data_get($item->item_details, 'booking_source'),
-                ]);
-            } catch (HotelApiException $exception) {
-                if ($this->isThreeTCancellationRequestCreated($exception)) {
-                    $this->markHotelCancellationRequested($order, $item, $exception->context()['response'] ?? [], $exception->getMessage());
+            $result = $this->cancelHotelBooking->execute($order, $item);
 
-                    return back()->with('success', 'Auto cancellation was denied by 3T, but a cancellation request has been sent for your booking.');
-                }
-
-                throw $exception;
-            }
-
-            $response = is_array($payload['response'] ?? null) ? $payload['response'] : [];
-            $canceled = (bool) ($response['canceled'] ?? false);
-
-            if (! $canceled) {
-                return back()->with('error', (string) ($payload['message'] ?? 'Hotel cancellation was not confirmed by provider.'));
-            }
-
-            $cancellationFee = round((float) ($response['cancellationFee'] ?? 0), 2);
-            $refundAmount = max(0.0, round((float) data_get($item->item_details, 'provider_cost', $item->net_fare ?? 0) - $cancellationFee, 2));
-
-            DB::transaction(function () use ($order, $item, $hotelProvider, $payload, $cancellationFee, $refundAmount): void {
-                $details = (array) $item->item_details;
-                $details['cancellation'] = [
-                    'provider_response' => $payload,
-                    'cancellation_fee' => $cancellationFee,
-                    'refund_amount' => $refundAmount,
-                    'cancelled_at' => now()->toISOString(),
-                ];
-
-                if ($refundAmount > 0) {
-                    $wallet = $hotelProvider->getOrCreateCurrencyWallet((string) ($item->currency ?? $order->currency ?? 'USD'));
-                    $refund = $wallet->depositFloat($refundAmount, [
-                        'type' => 'cancellation',
-                        'provider_type' => 'hotel',
-                        'hotel_provider_type' => $hotelProvider->provider_type,
-                        'provider_id' => $hotelProvider->id,
-                        'tenant_id' => tenant()?->id,
-                        'order_id' => $order->id,
-                        'order_item_id' => $item->id,
-                        'product_type' => 'hotel',
-                        'provider_reference' => (string) $item->provider_reference,
-                        'cancellation_fee' => $cancellationFee,
-                    ]);
-
-                    $details['cancellation']['provider_wallet_transaction_id'] = $refund->uuid;
-                }
-
-                $item->update([
-                    'status' => 'cancelled',
-                    'refund_status' => $refundAmount > 0 ? 'refunded' : 'none',
-                    'item_details' => $details,
-                ]);
-
-                $order->update([
-                    'status' => 'cancelled',
-                    'amount_refunded' => $refundAmount,
-                ]);
-            });
+            return back()->with('success', $result['message']);
         } catch (Throwable $exception) {
             report($exception);
 
             return back()->with('error', $exception->getMessage() ?: 'Unable to cancel hotel booking right now.');
         }
-
-        return back()->with('success', 'Hotel booking cancelled successfully.');
-    }
-
-    protected function isThreeTCancellationRequestCreated(HotelApiException $exception): bool
-    {
-        $response = $exception->context()['response'] ?? [];
-        $message = strtolower($exception->getMessage());
-
-        return (string) ($response['method'] ?? '') === 'cancel'
-            && (string) ($response['errorCode'] ?? '') === '502'
-            && str_contains($message, 'cancellation request')
-            && str_contains($message, 'sent');
-    }
-
-    /**
-     * @param  array<string, mixed>  $providerResponse
-     */
-    protected function markHotelCancellationRequested(Order $order, OrderItem $item, array $providerResponse, string $message): void
-    {
-        DB::transaction(function () use ($order, $item, $providerResponse, $message): void {
-            $details = (array) $item->item_details;
-            $details['cancellation_request'] = [
-                'status' => 'requested',
-                'message' => $message,
-                'provider_response' => $providerResponse,
-                'requested_at' => now()->toISOString(),
-                'auto_cancellation_denied' => true,
-            ];
-
-            $item->update([
-                'status' => 'cancellation',
-                'item_details' => $details,
-            ]);
-
-            $order->update(['status' => 'cancellation']);
-        });
     }
 
     /**

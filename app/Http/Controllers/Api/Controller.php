@@ -21,11 +21,16 @@ abstract class Controller
 
     protected function error(string $message, int $status = 400, mixed $errors = null): JsonResponse
     {
-        return response()->json(array_filter([
+        $payload = [
             'success' => false,
             'message' => $message,
-            'errors' => $errors,
-        ]), $status);
+        ];
+
+        if ($errors !== null) {
+            $payload['errors'] = $errors;
+        }
+
+        return response()->json($payload, $status);
     }
 
     protected function notFound(string $message = 'Resource not found'): JsonResponse

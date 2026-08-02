@@ -193,7 +193,11 @@ class OrderController extends Controller
                         'stay' => data_get($item->product_details, 'stay'),
                         'hotel' => data_get($item->product_details, 'hotel'),
                         'rooms' => data_get($item->product_details, 'rooms'),
-                        'comments' => data_get($item->product_details, 'comments'),
+                        'comments' => data_get($item->product_details, 'comments')
+                            ?? data_get($item->item_details, 'comments'),
+                        'cancellation' => data_get($item->item_details, 'cancellation'),
+                        'cancellation_request' => data_get($item->item_details, 'cancellation_request'),
+                        'can_cancel' => ! in_array((string) $item->status, ['cancelled', 'refunded', 'cancellation'], true),
                     ] : null,
                     'esim' => ((string) $item->product_type === 'esim' || (string) $item->type === 'esim') ? [
                         'iccid' => (string) ($item->ticket_number ?: data_get($item->item_details, 'iccid', '')),

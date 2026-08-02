@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Booknow API v1",
-    "description": "## Booknow REST API v1 — Mobile Application\n\n**Base URL**: `{{base_url}}/agency/{{tenant}}/api/v1`  \n**Auth**: Bearer token (set via `{{token}}` variable after Login)  \n**Content-Type**: `application/json`\n\n### Token Abilities\n| Ability | Scope |\n|---------|-------|\n| `read` | Results, seat map, fare rules, orders, reports, wallet, eSIM catalogue |\n| `write` | Search, select, price, book (flights, hotels, insurance, eSIM) |\n| `issue` | Issue ticket, void/refund, change segment, eSIM refund |\n| `report` | Dashboard & reports |\n| `*` | Full access |\n\n### Quick Start\n1. Set `base_url` and `tenant` (e.g. `median`)\n2. Run **Login** — token is saved to `{{token}}` automatically\n3. Flights: Search → Results → Select → Seat Map → Price → Book\n4. eSIM upsell during flight booking: **Airport Packages** with destination IATA\n5. eSIM standalone: Search → Packages → Select → Book\n6. Hotels: Autocomplete → Search → Details → Select → Book (use `city` + numeric `city_id` + structured `rooms`)\n7. For ticket changes use **Change Segment** folder\n\n### Recent Updates\n- **Hotel book** — `201` returns full `data.order` (formatted TAMS order) + `data.booking` (provider); saves `order_id` / `item_id`\n- **eSIM usage & top-up** — L2 utilisation webhook + `GET .../esim-items/{item}/usage`, `GET .../topup-packages`, `POST .../topup`\n- **Hotel search payload** — requires `city` + numeric `city_id` from autocomplete; `rooms` as `[{ \"adult\": 2, \"children\": [5] }]` (flat `rooms`/`adults`/`children` only when children is 0 or ages provided)\n- **Travel & Orange issue** — `POST /insurance/travel/issue`, `POST /insurance/orange/issue` (requires `issue`)\n- **API token management** — `POST /auth/tokens` create scoped token, `DELETE /auth/tokens/{tokenId}` revoke by id\n- **Insurance Policy PDF** — `GET /orders/{order}/insurance-items/{item}/policy-pdf` returns the Al Baraka printable policy PDF (compulsory, travel, orange)\n- Order detail insurance items include `report_reference` for print lookup\n- **eSIM API** — full catalogue and booking flow\n- `GET /esim/airport/{iata}/packages` — destination airport bundles for flight-booking upsell\n- `POST /esim/search` → `GET /esim/results/{uuid}/packages` → `POST /esim/select` → `POST /esim/book`\n- `POST /orders/{order}/esim-items/{item}/refund` — refund issued eSIM (requires `issue`)\n- Orders list filter: `product_type=esim`\n- Cabin filter: `cabin_class` = `all` | `Y` | `C` | `F`\n- Offers include `baggage`, `airline_logo_url`, `fare_id`, ISO8601 `duration` (`PT4H`, `PT2H10M`)\n- `POST /flights/open-reservation-availability` — check if open reservation (QQ) is allowed for an offer\n- `POST /flights/fare-rules` — plain-text rules (no line numbers)\n- `POST /flights/seatmap` — interactive seat map with per-seat pricing\n- `POST /flights/price` — total with seat fees and ancillaries\n- `POST /flights/book` accepts `extras.seats` for seat assignment\n- Draft booking: `ticketing_mode: draft` then `POST .../tickets/issue`\n- Change segment: search → results → quote → confirm\n\n### Response Format\n```json\n{ \"success\": true|false, \"message\": \"...\", \"data\": {...} }\n```",
+    "description": "## Booknow REST API v1 — Mobile Application\n\n**Base URL**: `{{base_url}}/agency/{{tenant}}/api/v1`  \n**Auth**: Bearer token (set via `{{token}}` variable after Login)  \n**Content-Type**: `application/json`\n\n### Token Abilities\n| Ability | Scope |\n|---------|-------|\n| `read` | Results, seat map, fare rules, orders, reports, wallet, eSIM catalogue |\n| `write` | Search, select, price, book (flights, hotels, insurance, eSIM) |\n| `issue` | Issue ticket, void/refund, change segment, eSIM refund, hotel cancel |\n| `report` | Dashboard & reports |\n| `*` | Full access |\n\n### Quick Start\n1. Set `base_url` and `tenant` (e.g. `median`)\n2. Run **Login** — token is saved to `{{token}}` automatically\n3. Flights: Search → Results → Select → Seat Map → Price → Book\n4. eSIM upsell during flight booking: **Airport Packages** with destination IATA\n5. eSIM standalone: Search → Packages → Select → Book\n6. Hotels: Autocomplete → Search → Details → Select → Book (use `city` + numeric `city_id` + structured `rooms`)\n7. For ticket changes use **Change Segment** folder\n\n### Recent Updates\n- **Hotel cancel / refund** — `POST /orders/{order}/hotel-items/{item}/cancel` (requires `issue`); order detail exposes `hotel.can_cancel`\n- **Hotel book** — `201` returns full `data.order` (formatted TAMS order) + `data.booking` (provider); saves `order_id` / `item_id`\n- **eSIM usage & top-up** — L2 utilisation webhook + `GET .../esim-items/{item}/usage`, `GET .../topup-packages`, `POST .../topup`\n- **Hotel search payload** — requires `city` + numeric `city_id` from autocomplete; `rooms` as `[{ \"adult\": 2, \"children\": [5] }]` (flat `rooms`/`adults`/`children` only when children is 0 or ages provided)\n- **Travel & Orange issue** — `POST /insurance/travel/issue`, `POST /insurance/orange/issue` (requires `issue`)\n- **API token management** — `POST /auth/tokens` create scoped token, `DELETE /auth/tokens/{tokenId}` revoke by id\n- **Insurance Policy PDF** — `GET /orders/{order}/insurance-items/{item}/policy-pdf` returns the Al Baraka printable policy PDF (compulsory, travel, orange)\n- Order detail insurance items include `report_reference` for print lookup\n- **eSIM API** — full catalogue and booking flow\n- `GET /esim/airport/{iata}/packages` — destination airport bundles for flight-booking upsell\n- `POST /esim/search` → `GET /esim/results/{uuid}/packages` → `POST /esim/select` → `POST /esim/book`\n- `POST /orders/{order}/esim-items/{item}/refund` — refund issued eSIM (requires `issue`)\n- Orders list filter: `product_type=esim`\n- Cabin filter: `cabin_class` = `all` | `Y` | `C` | `F`\n- Offers include `baggage`, `airline_logo_url`, `fare_id`, ISO8601 `duration` (`PT4H`, `PT2H10M`)\n- `POST /flights/open-reservation-availability` — check if open reservation (QQ) is allowed for an offer\n- `POST /flights/fare-rules` — plain-text rules (no line numbers)\n- `POST /flights/seatmap` — interactive seat map with per-seat pricing\n- `POST /flights/price` — total with seat fees and ancillaries\n- `POST /flights/book` accepts `extras.seats` for seat assignment\n- Draft booking: `ticketing_mode: draft` then `POST .../tickets/issue`\n- Change segment: search → results → quote → confirm\n\n### Response Format\n```json\n{ \"success\": true|false, \"message\": \"...\", \"data\": {...} }\n```",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "auth": {
@@ -1373,7 +1373,7 @@
     },
     {
       "name": "🏨 Hotels",
-      "description": "Hotel search and booking via the active tenant hotel provider (e.g. 3T).\n\n**Flow**: Autocomplete → Search → Details → Select → Book\n\n**Search requirements (provider-ready)**:\n- `city` — destination label from autocomplete (e.g. `Paris, France`)\n- `city_id` — **numeric** id from autocomplete (`city_id` / `code`)\n- `rooms` — occupancy list: `[{ \"adult\": 2, \"children\": [5] }]` (`children` = ages, not a count)\n- Optional flat shortcut: `rooms: 1`, `adults: 2`, `children: 0` (if `children` > 0, send `children_ages`)\n\nRun **Autocomplete** first — it saves `{{hotel_city}}` and `{{hotel_city_id}}`.\n\n**Book requirements**: `customer.city` and `customer.country` are required (3T rejects bookings without them).\n\n**Book note**: clients send `rooms[].guests`; the API maps to provider `rooms[].paxes` + `ratekey` automatically.\n\n**Book response**: `201` with `data.order` (full TAMS order) + `data.booking` (provider payload).",
+      "description": "Hotel search, booking, and order management via the active tenant hotel provider (e.g. 3T).\n\n**Book flow**: Autocomplete → Search → Details → Select → Book\n\n**After book**:\n- Use **Orders → Order Detail** (`product_type=hotel`) — includes `items[].hotel.can_cancel`, stay, rooms\n- **Orders → Hotel Voucher PDF** — download voucher\n- **Cancel / Refund Hotel** (this folder) — cancels with 3T and credits the hotel provider wallet on success\n\n**Search requirements**: `city` + numeric `city_id` from autocomplete; `rooms` as `[{ \"adult\": 2, \"children\": [5] }]`.\n\n**Book requirements**: `customer.city` and `customer.country` required. Clients send `rooms[].guests`; API maps to provider `paxes` + `ratekey`.",
       "item": [
         {
           "name": "Autocomplete — Destinations",
@@ -1743,6 +1743,81 @@
                 ],
                 "type": "text/javascript"
               }
+            }
+          ]
+        },
+        {
+          "name": "Cancel / Refund Hotel",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            },
+            "url": {
+              "raw": "{{base_url}}/agency/{{tenant}}/api/v1/orders/{{order_id}}/hotel-items/{{item_id}}/cancel",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "agency",
+                "{{tenant}}",
+                "api",
+                "v1",
+                "orders",
+                "{{order_id}}",
+                "hotel-items",
+                "{{item_id}}",
+                "cancel"
+              ]
+            },
+            "description": "Cancel an issued hotel booking with the provider (3T) and refund the **hotel provider wallet** (provider cost minus `cancellationFee`).\n\nSame behaviour as the tenant web Order Show cancel action.\n\n**Outcomes**:\n- `cancelled` — provider confirmed cancel; wallet credited; item/order status `cancelled`\n- `cancellation_requested` — 3T denied auto-cancel but queued a request; status `cancellation`; **no** wallet credit\n\nSet `order_id` / `item_id` from **Book Hotel** or **Order Detail**. Blocked when status is already `cancelled`, `refunded`, or `cancellation`.\n\nRequires `issue` ability."
+          },
+          "response": [
+            {
+              "name": "200 — Cancelled with refund",
+              "originalRequest": {},
+              "status": "OK",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"success\": true,\n  \"message\": \"Hotel booking cancelled successfully.\",\n  \"data\": {\n    \"outcome\": \"cancelled\",\n    \"order_id\": 42,\n    \"order_number\": \"ORD-42\",\n    \"order_status\": \"cancelled\",\n    \"item_id\": 99,\n    \"item_status\": \"cancelled\",\n    \"booking_id\": \"37672\",\n    \"cancellation_fee\": 25.5,\n    \"refund_amount\": 225.0,\n    \"currency\": \"LYD\",\n    \"amount_refunded\": 225.0,\n    \"cancellation\": {\n      \"cancellation_fee\": 25.5,\n      \"refund_amount\": 225.0,\n      \"cancelled_at\": \"2026-08-02T12:00:00.000000Z\"\n    },\n    \"cancellation_request\": null\n  }\n}"
+            },
+            {
+              "name": "200 — Cancellation requested (pending)",
+              "originalRequest": {},
+              "status": "OK",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"success\": true,\n  \"message\": \"Auto cancellation was denied by 3T, but a cancellation request has been sent for your booking.\",\n  \"data\": {\n    \"outcome\": \"cancellation_requested\",\n    \"order_id\": 42,\n    \"order_number\": \"ORD-42\",\n    \"order_status\": \"cancellation\",\n    \"item_id\": 99,\n    \"item_status\": \"cancellation\",\n    \"booking_id\": \"37672\",\n    \"cancellation_fee\": null,\n    \"refund_amount\": null,\n    \"currency\": \"LYD\",\n    \"amount_refunded\": 0,\n    \"cancellation\": null,\n    \"cancellation_request\": {\n      \"status\": \"requested\",\n      \"auto_cancellation_denied\": true\n    }\n  }\n}"
+            },
+            {
+              "name": "422 — Not cancellable",
+              "originalRequest": {},
+              "status": "Unprocessable Entity",
+              "code": 422,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"success\": false,\n  \"message\": \"This hotel booking cannot be cancelled in its current status.\"\n}"
             }
           ]
         }
@@ -2988,7 +3063,7 @@
                 "{{order_id}}"
               ]
             },
-            "description": "Full order details with items, passengers, segments, and wallet transactions.\n\nInsurance items include `report_reference` used by **Insurance Policy PDF**.\n\neSIM items include `esim.iccid`, activation fields, and `esim.usage` when an L2 utilisation webhook has been received."
+            "description": "Full order details with items, passengers, segments, and wallet transactions.\n\nInsurance items include `report_reference` used by **Insurance Policy PDF**.\n\neSIM items include `esim.iccid`, activation fields, and `esim.usage` when an L2 utilisation webhook has been received.\n\nHotel items include `hotel.can_cancel`, `hotel.cancellation`, and `hotel.cancellation_request` after cancel flows."
           },
           "response": [
             {

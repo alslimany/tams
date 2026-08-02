@@ -127,6 +127,7 @@ Route::middleware(['auth:sanctum', 'throttle:api', 'audit.api', 'idempotency'])-
     // ── Issue-gated routes (ability: issue OR *) ────────────────
     Route::middleware('ability:issue')->group(function (): void {
         Route::post('orders/{order}/esim-items/{item}/refund', [ESimController::class, 'refund']);
+        Route::post('orders/{order}/hotel-items/{item}/cancel', [HotelController::class, 'cancel']);
         Route::post('flights/{order}/items/{item}/change/search', [FlightChangeController::class, 'search']);
         Route::get('flights/{order}/items/{item}/change-quote', [FlightChangeController::class, 'changeQuote']);
         Route::post('flights/{order}/items/{item}/change-confirm', [FlightChangeController::class, 'confirmChange']);
