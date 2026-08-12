@@ -76,28 +76,69 @@ class VidecomClient
 
     /**
      * Run command using Expert Logon session.
+     *
+     * Cached sessions can expire on Videcom's side while Laravel still caches them.
+     * NotSinedInException (and HTTP 500 variants) trigger a forced re-login + retry.
      */
     protected function runSessionCommand(string $command): string
     {
-        $username = $this->config['username'] ?? '';
-        $cacheKey = 'videcom_session_'.md5($this->baseUrl.$username);
-        $session = Cache::get($cacheKey);
+        $response = $this->sendCommandWithSession($command, $this->resolveSession(forceRefresh: false));
 
-        if (! $session) {
-            $session = $this->login();
-            Cache::put($cacheKey, $session, now()->addMinutes(20));
+        if (! $this->isNotSignedInResponse($response)) {
+            return $response;
         }
 
-        $response = $this->sendCommandWithSession($command, $session);
+        Log::warning('Videcom session expired; forcing re-login.', [
+            'base_url' => $this->baseUrl,
+            'username' => $this->config['username'] ?? null,
+            'airline_code' => $this->config['airline_code'] ?? null,
+            'command' => $command,
+        ]);
 
-        // Check if session expired (NotSinedInException)
-        if (str_contains($response, 'VARS.SystemLibrary.NotSinedInException')) {
-            $session = $this->login();
-            Cache::put($cacheKey, $session, now()->addMinutes(20));
-            $response = $this->sendCommandWithSession($command, $session);
+        $response = $this->sendCommandWithSession($command, $this->resolveSession(forceRefresh: true));
+
+        if ($this->isNotSignedInResponse($response)) {
+            throw new Exception('Videcom session expired and re-login did not restore access.');
         }
 
         return $response;
+    }
+
+    /**
+     * Get a cached Expert Logon session, or login and store a new one.
+     */
+    protected function resolveSession(bool $forceRefresh = false): string
+    {
+        $cacheKey = $this->sessionCacheKey();
+
+        if ($forceRefresh) {
+            Cache::forget($cacheKey);
+        }
+
+        $session = $forceRefresh ? null : Cache::get($cacheKey);
+
+        if (is_string($session) && $session !== '') {
+            return $session;
+        }
+
+        $session = $this->login();
+        Cache::put($cacheKey, $session, now()->addMinutes(20));
+
+        return $session;
+    }
+
+    protected function sessionCacheKey(): string
+    {
+        $username = (string) ($this->config['username'] ?? '');
+        $passwordFingerprint = hash('sha256', (string) ($this->config['password'] ?? ''));
+        $tenantId = (string) (tenant()?->getTenantKey() ?? tenant()?->id ?? 'central');
+
+        return 'videcom_session_'.md5(implode('|', [
+            $tenantId,
+            $this->baseUrl,
+            $username,
+            $passwordFingerprint,
+        ]));
     }
 
     /**
@@ -146,7 +187,13 @@ class VidecomClient
             $sessionId = end($exploded);
         }
 
-        return "VarsSessionID={$sessionId}";
+        $sessionId = trim((string) $sessionId);
+
+        if ($sessionId === '') {
+            throw new Exception('Videcom login failed: VarsSessionID missing from NextURL.');
+        }
+
+        return 'VarsSessionID='.$sessionId;
     }
 
     /**
@@ -167,18 +214,69 @@ class VidecomClient
                 'VRSCommand' => $command,
             ]);
 
+            $payload = $this->extractSessionCommandPayload($response->body(), $response->json());
+
+            // Expired sessions often come back as HTTP 5xx with NotSinedInException in the body.
+            // Surface that as a normal payload so runSessionCommand can re-login and retry.
+            if ($this->isNotSignedInResponse($payload)) {
+                return $payload;
+            }
+
             if ($response->failed()) {
                 throw new Exception('Videcom command failed: '.$response->body());
             }
 
-            return $response->json('d')['Data'] ?? '';
+            return $payload;
         } catch (Exception $e) {
+            if ($this->isNotSignedInResponse($e->getMessage())) {
+                return $e->getMessage();
+            }
+
             Log::error('Videcom Session Command Error: '.$e->getMessage(), [
                 'base_url' => $this->baseUrl,
                 'command' => $command,
             ]);
             throw $e;
         }
+    }
+
+    /**
+     * Normalize EmulatorWS JSON / ASP.NET error envelopes into a single string payload.
+     *
+     * @param  array<string, mixed>|null  $json
+     */
+    protected function extractSessionCommandPayload(string $rawBody, ?array $json): string
+    {
+        if (is_array($json)) {
+            $data = $json['d'] ?? null;
+
+            if (is_array($data)) {
+                foreach (['Data', 'Message', 'ErrorMessage', 'msg'] as $key) {
+                    if (isset($data[$key]) && is_scalar($data[$key]) && (string) $data[$key] !== '') {
+                        return (string) $data[$key];
+                    }
+                }
+            }
+
+            foreach (['Message', 'ExceptionMessage', 'errorMessage', 'msg'] as $key) {
+                if (isset($json[$key]) && is_scalar($json[$key]) && (string) $json[$key] !== '') {
+                    return (string) $json[$key];
+                }
+            }
+        }
+
+        return $rawBody;
+    }
+
+    protected function isNotSignedInResponse(string $payload): bool
+    {
+        $normalized = strtolower($payload);
+
+        return str_contains($payload, 'VARS.SystemLibrary.NotSinedInException')
+            || str_contains($payload, 'VARS.SystemLibrary.NotSignedInException')
+            || str_contains($normalized, 'notsinedinexception')
+            || str_contains($normalized, 'notsignedinexception')
+            || (str_contains($normalized, 'not signed in') && str_contains($normalized, 'exception'));
     }
 
     /**
