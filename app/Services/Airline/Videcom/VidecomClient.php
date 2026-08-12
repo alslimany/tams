@@ -75,10 +75,14 @@ class VidecomClient
     }
 
     /**
-     * Run command using Expert Logon session.
+     * Run command using Expert Logon session (username/password auth mode only).
      *
-     * Cached sessions can expire on Videcom's side while Laravel still caches them.
-     * NotSinedInException (and HTTP 500 variants) trigger a forced re-login + retry.
+     * Flow:
+     * 1. Use cached session when present, otherwise login and cache a new one
+     * 2. Send the VRS command
+     * 3. On NotSinedInException: drop the cached session, login again, retry once
+     *
+     * Login always uses the airline token credentials — never the end user.
      */
     protected function runSessionCommand(string $command): string
     {
@@ -88,17 +92,27 @@ class VidecomClient
             return $response;
         }
 
-        Log::warning('Videcom session expired; forcing re-login.', [
+        Log::warning('Videcom session expired; clearing cache and issuing a new login session.', [
             'base_url' => $this->baseUrl,
             'username' => $this->config['username'] ?? null,
             'airline_code' => $this->config['airline_code'] ?? null,
             'command' => $command,
         ]);
 
+        // Step 5 from auth-mode flow: expired session must be removed so a fresh
+        // Expert Logon can be issued in this same request (or on the next command).
+        $this->forgetCachedSession();
+
         $response = $this->sendCommandWithSession($command, $this->resolveSession(forceRefresh: true));
 
         if ($this->isNotSignedInResponse($response)) {
-            throw new Exception('Videcom session expired and re-login did not restore access.');
+            // Keep cache empty so the next command starts with a clean login.
+            $this->forgetCachedSession();
+
+            throw new Exception(
+                'Videcom Expert Logon session could not be established after renewal. '
+                .'Check the airline token username/password credentials.'
+            );
         }
 
         return $response;
@@ -117,14 +131,24 @@ class VidecomClient
 
         $session = $forceRefresh ? null : Cache::get($cacheKey);
 
-        if (is_string($session) && $session !== '') {
+        if (is_string($session) && $session !== '' && $this->sessionQueryLooksValid($session)) {
             return $session;
+        }
+
+        if (is_string($session) && $session !== '') {
+            // Drop corrupted legacy cache values (e.g. full NextURL path stored as session id).
+            Cache::forget($cacheKey);
         }
 
         $session = $this->login();
         Cache::put($cacheKey, $session, now()->addMinutes(20));
 
         return $session;
+    }
+
+    protected function forgetCachedSession(): void
+    {
+        Cache::forget($this->sessionCacheKey());
     }
 
     protected function sessionCacheKey(): string
@@ -171,29 +195,84 @@ class VidecomClient
         }
 
         $data = $response->json('d');
-        if (empty($data['NextURL'])) {
+
+        if (! is_array($data)) {
+            Log::error('Videcom Login Response Missing payload', ['body' => $response->body()]);
+            throw new Exception('Videcom login failed: Invalid login response.');
+        }
+
+        $errorMsg = trim((string) ($data['ErrorMsg'] ?? ''));
+        if ($errorMsg !== '' || strcasecmp((string) ($data['Result'] ?? ''), 'Error') === 0) {
+            Log::error('Videcom Login Rejected', ['data' => $data]);
+            throw new Exception('Videcom login failed: '.($errorMsg !== '' ? $errorMsg : 'Invalid credentials or account locked.'));
+        }
+
+        $nextUrl = (string) ($data['NextURL'] ?? '');
+        if ($nextUrl === '') {
             Log::error('Videcom Login Response Missing NextURL', ['data' => $data]);
             throw new Exception('Videcom login failed: Invalid credentials or account locked.');
         }
 
-        $nextUrl = $data['NextURL'];
+        return 'VarsSessionID='.$this->extractSessionIdFromNextUrl($nextUrl);
+    }
+
+    /**
+     * NextURL shapes vary by airline host, e.g.:
+     * - .../Home.aspx?VarsSessionID={uuid}
+     * - /VARS/Agent/res/pnr.aspx?page=1.1&VARSSessionID={uuid}
+     *
+     * Older parsing treated the whole path as the session id when casing differed
+     * (VARSSessionID vs VarsSessionID), which produced permanent NotSinedInException.
+     */
+    protected function extractSessionIdFromNextUrl(string $nextUrl): string
+    {
         $parts = parse_url($nextUrl);
-        parse_str($parts['query'] ?? '', $query);
+        $query = [];
 
-        $sessionId = $query['VarsSessionID'] ?? null;
-
-        if (! $sessionId) {
-            $exploded = explode('VarsSessionID=', $nextUrl);
-            $sessionId = end($exploded);
+        if (is_array($parts) && isset($parts['query'])) {
+            parse_str((string) $parts['query'], $query);
         }
 
-        $sessionId = trim((string) $sessionId);
+        foreach ($query as $key => $value) {
+            if (strcasecmp((string) $key, 'VarsSessionID') !== 0) {
+                continue;
+            }
 
-        if ($sessionId === '') {
-            throw new Exception('Videcom login failed: VarsSessionID missing from NextURL.');
+            $sessionId = trim((string) $value);
+
+            if ($sessionId !== '' && ! str_contains($sessionId, '/') && ! str_contains($sessionId, '?')) {
+                return $sessionId;
+            }
         }
 
-        return 'VarsSessionID='.$sessionId;
+        if (preg_match('/(?:^|[?&])VARSSessionID=([^&\s#]+)/i', $nextUrl, $matches) === 1) {
+            $sessionId = trim(urldecode($matches[1]));
+
+            if ($sessionId !== '' && ! str_contains($sessionId, '/') && ! str_contains($sessionId, '?')) {
+                return $sessionId;
+            }
+        }
+
+        Log::error('Videcom Login NextURL missing usable VarsSessionID', ['next_url' => $nextUrl]);
+
+        throw new Exception('Videcom login failed: VarsSessionID missing from NextURL.');
+    }
+
+    /**
+     * Reject legacy/corrupt cache values that embedded a full NextURL path.
+     */
+    protected function sessionQueryLooksValid(string $sessionQuery): bool
+    {
+        if (! str_starts_with($sessionQuery, 'VarsSessionID=')) {
+            return false;
+        }
+
+        $sessionId = substr($sessionQuery, strlen('VarsSessionID='));
+
+        return $sessionId !== ''
+            && ! str_contains($sessionId, '/')
+            && ! str_contains($sessionId, '?')
+            && ! str_contains($sessionId, '&');
     }
 
     /**

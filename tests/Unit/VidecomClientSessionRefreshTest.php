@@ -209,3 +209,64 @@ it('stores a fresh session in cache after forced re-login', function () {
 
     expect(Cache::get($cacheKey))->toBe('VarsSessionID=CACHED-NEW');
 });
+
+it('extracts VarsSessionID from path-style NextURL with VARSSessionID casing', function () {
+    Http::fake([
+        'customer3.videcom.com/OYA/VARS/Agent/WebServices/LoginWs.asmx/DoLogin*' => Http::response([
+            'd' => [
+                'Result' => 'OK',
+                'NextURL' => '/VARS/Agent/res/pnr.aspx?page=1.1&VARSSessionID=4cb6df4d-89b3-41ef-ae7e-580fd21c3041',
+            ],
+        ]),
+        'customer3.videcom.com/OYA/VARS/Agent/res/EmulatorWS.asmx/SendCommand*' => Http::response([
+            'd' => ['Data' => 'PNR EMPTY'],
+        ]),
+    ]);
+
+    $response = videcomSessionClient()->runCommand('*R');
+
+    expect($response)->toBe('PNR EMPTY');
+
+    Http::assertSent(function (Request $request): bool {
+        return str_contains($request->url(), 'SendCommand')
+            && str_contains($request->url(), 'VarsSessionID=4cb6df4d-89b3-41ef-ae7e-580fd21c3041')
+            && ! str_contains($request->url(), 'pnr.aspx');
+    });
+});
+
+it('discards corrupt cached sessions that embedded a NextURL path', function () {
+    Http::fake([
+        'customer3.videcom.com/OYA/VARS/Agent/WebServices/LoginWs.asmx/DoLogin*' => Http::response([
+            'd' => [
+                'NextURL' => '/MedSky/VARS/Agent/res/pnr.aspx?page=1.1&VARSSessionID=19cbe126-d82b-4483-9cac-20eb7194db4a',
+            ],
+        ]),
+        'customer3.videcom.com/OYA/VARS/Agent/res/EmulatorWS.asmx/SendCommand*' => Http::response([
+            'd' => ['Data' => 'RECOVERED FROM CORRUPT CACHE'],
+        ]),
+    ]);
+
+    $cacheKey = 'videcom_session_'.md5(implode('|', [
+        'central',
+        'https://customer3.videcom.com/OYA',
+        'SINE01',
+        hash('sha256', 'secret'),
+    ]));
+
+    Cache::put(
+        $cacheKey,
+        'VarsSessionID=/MedSky/VARS/Agent/res/pnr.aspx?page=1.1&VARSSessionID=19cbe126-d82b-4483-9cac-20eb7194db4a',
+        now()->addMinutes(20),
+    );
+
+    $response = videcomSessionClient()->runCommand('*R');
+
+    expect($response)->toBe('RECOVERED FROM CORRUPT CACHE')
+        ->and(Cache::get($cacheKey))->toBe('VarsSessionID=19cbe126-d82b-4483-9cac-20eb7194db4a');
+
+    Http::assertSent(fn (Request $request): bool => str_contains($request->url(), 'DoLogin'));
+    Http::assertSent(function (Request $request): bool {
+        return str_contains($request->url(), 'SendCommand')
+            && str_ends_with($request->url(), 'VarsSessionID=19cbe126-d82b-4483-9cac-20eb7194db4a');
+    });
+});
