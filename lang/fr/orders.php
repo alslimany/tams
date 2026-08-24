@@ -52,6 +52,7 @@ return [
     'manage_booking' => 'Gérer la réservation',
     'cancellation_requested' => 'Annulation demandée',
     'cancel_booking' => 'Annuler la réservation',
+    'print_voucher' => 'Imprimer le bon',
     'location' => 'Emplacement',
     'stay' => 'Séjour',
     'nights' => 'Nuits',

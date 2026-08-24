@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Actions\Insurance\FetchInsurancePolicyReport;
 use App\Http\Controllers\Api\Controller;
+use App\Http\Controllers\Tenant\OrderController as TenantOrderController;
 use App\Models\Tenant\Order;
 use App\Models\Tenant\OrderItem;
 use App\Services\ESim\ESimUsagePresenter;
@@ -90,6 +91,10 @@ class OrderController extends Controller
             ->name('ticket-'.$item->provider_reference.'.pdf');
     }
 
+    /**
+     * Hotel reservation voucher PDF. Renders the same Blade template as the tenant
+     * web controller so browser and API consumers receive an identical document.
+     */
     public function hotelVoucherPdf(Order $order, OrderItem $item): \Spatie\LaravelPdf\PdfBuilder
     {
         abort_unless($item->order_id === $order->id, 404);
@@ -97,13 +102,13 @@ class OrderController extends Controller
 
         $order->loadMissing('owner');
 
-        $filename = 'hotel-voucher-'.preg_replace('/[^A-Za-z0-9_-]/', '-', (string) ($item->provider_reference ?: $order->number)).'.pdf';
+        $payload = TenantOrderController::hotelPdfData($order, $item);
 
         return \Spatie\LaravelPdf\Support\pdf()
-            ->view('pdf.hotel-voucher', ['order' => $order, 'item' => $item])
+            ->view('pdf.hotel-voucher', $payload)
             ->format(\Spatie\LaravelPdf\Enums\Format::A4)
             ->margins(8, 8, 8, 8, \Spatie\LaravelPdf\Enums\Unit::Millimeter)
-            ->inline($filename);
+            ->inline($payload['filename']);
     }
 
     /**

@@ -530,7 +530,7 @@ const roomTravellers = (bookedRoom, submittedRoom) => {
     return [`${adultCount} adult${adultCount === 1 ? '' : 's'}`, `${childCount} child${childCount === 1 ? '' : 'ren'}`].filter((value) => !value.startsWith('0 '));
 };
 
-export function HotelOrderItemCard({ item, canManage, onCancel }) {
+export function HotelOrderItemCard({ item, canManage, onCancel, onPrintVoucher }) {
     const { t } = useTranslation();
     const details = item.item_details ?? {};
     const product = item.product_details ?? {};
@@ -554,7 +554,7 @@ export function HotelOrderItemCard({ item, canManage, onCancel }) {
             total={item.total_amount ?? item.total}
             currency={item.currency}
             provider={item.provider}
-            actions={canManage ? (
+            actions={(
                 <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                         <Button variant="outline" size="sm" className="h-8 px-2 text-xs">
@@ -564,19 +564,31 @@ export function HotelOrderItemCard({ item, canManage, onCancel }) {
                     <DropdownMenuContent align="end" className="w-52">
                         <DropdownMenuLabel>{t('orders.manage_booking')}</DropdownMenuLabel>
                         <DropdownMenuSeparator />
-                        <DropdownMenuItem
-                            disabled={!canCancel}
-                            className={canCancel ? 'text-rose-600 focus:text-rose-700' : ''}
-                            onSelect={(event) => {
-                                event.preventDefault();
-                                onCancel(item);
-                            }}
-                        >
-                            {item.status === 'cancellation' ? t('orders.cancellation_requested') : t('orders.cancel_booking')}
-                        </DropdownMenuItem>
+                        {onPrintVoucher ? (
+                            <DropdownMenuItem
+                                onSelect={(event) => {
+                                    event.preventDefault();
+                                    onPrintVoucher(item);
+                                }}
+                            >
+                                {t('orders.print_voucher')}
+                            </DropdownMenuItem>
+                        ) : null}
+                        {canManage ? (
+                            <DropdownMenuItem
+                                disabled={!canCancel}
+                                className={canCancel ? 'text-rose-600 focus:text-rose-700' : ''}
+                                onSelect={(event) => {
+                                    event.preventDefault();
+                                    onCancel(item);
+                                }}
+                            >
+                                {item.status === 'cancellation' ? t('orders.cancellation_requested') : t('orders.cancel_booking')}
+                            </DropdownMenuItem>
+                        ) : null}
                     </DropdownMenuContent>
                 </DropdownMenu>
-            ) : null}
+            )}
         >
             <div className="space-y-3">
                 <div className="grid gap-3 text-sm md:grid-cols-4">
@@ -857,7 +869,7 @@ export function ESimOrderItemCard({ item, canManage, onRefund }) {
     );
 }
 
-export function OrderItemsSection({ order, canManageItems, canManageInsurance, canManageHotels, onVoid, onRefund, onChangeTicket, onPrintTickets, onInsuranceCancel, onPrintPolicy, onHotelCancel, isInsuranceCancellationApproved, onEsimRefund }) {
+export function OrderItemsSection({ order, canManageItems, canManageInsurance, canManageHotels, onVoid, onRefund, onChangeTicket, onPrintTickets, onInsuranceCancel, onPrintPolicy, onHotelCancel, onPrintHotelVoucher, isInsuranceCancellationApproved, onEsimRefund }) {
     return (
         <div className="space-y-3">
             {(order.items ?? []).map((item) => {
@@ -881,6 +893,7 @@ export function OrderItemsSection({ order, canManageItems, canManageInsurance, c
                             item={item}
                             canManage={canManageHotels}
                             onCancel={onHotelCancel}
+                            onPrintVoucher={onPrintHotelVoucher}
                         />
                     );
                 }

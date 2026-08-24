@@ -189,16 +189,56 @@ class OrderController extends Controller
 
         $order->loadMissing('owner');
 
-        $filename = 'hotel-voucher-'.preg_replace('/[^A-Za-z0-9_-]/', '-', (string) ($item->provider_reference ?: $order->number)).'.pdf';
+        $payload = self::hotelPdfData($order, $item);
 
         return pdf()
-            ->view('pdf.hotel-voucher', [
-                'order' => $order,
-                'item' => $item,
-            ])
+            ->view('pdf.hotel-voucher', $payload)
             ->format(Format::A4)
             ->margins(8, 8, 8, 8, Unit::Millimeter)
-            ->inline($filename);
+            ->inline($payload['filename']);
+    }
+
+    /**
+     * Build the shared payload for the hotel voucher Blade view. Used by both the tenant
+     * web controller and the API v1 controller so both endpoints render an identical PDF.
+     *
+     * @return array{
+     *     order: Order,
+     *     item: OrderItem,
+     *     agency: array<string, string|null>,
+     *     providerBadge: array<string, string|null>,
+     *     filename: string,
+     * }
+     */
+    public static function hotelPdfData(Order $order, OrderItem $item): array
+    {
+        $centralTenant = CentralTenant::query()->find(tenant('id'));
+
+        $agencySettings = data_get($centralTenant?->settings, 'branding', []);
+
+        $agency = [
+            'company_name' => $centralTenant?->company_name,
+            'email' => $centralTenant?->owner_email,
+            'phone' => $centralTenant?->owner_phone,
+            'address' => is_array($agencySettings) ? ($agencySettings['address'] ?? null) : null,
+        ];
+
+        $providerBadge = [
+            'name' => data_get($item->product_details, 'provider')
+                ?? (string) $item->provider,
+        ];
+
+        $filename = 'hotel-voucher-'
+            .preg_replace('/[^A-Za-z0-9_-]/', '-', (string) ($item->provider_reference ?: $order->number))
+            .'.pdf';
+
+        return [
+            'order' => $order,
+            'item' => $item,
+            'agency' => $agency,
+            'providerBadge' => $providerBadge,
+            'filename' => $filename,
+        ];
     }
 
     public function insurancePolicyPdf(Order $order, OrderItem $item): \Spatie\LaravelPdf\PdfBuilder

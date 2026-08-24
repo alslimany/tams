@@ -4,7 +4,9 @@ namespace App\Services\ESim;
 
 use App\DTOs\ESim\ESimPackage;
 use App\Models\Tenant\TenantEsimProvider;
+use App\Services\ESim\Pricing\L2EsimRrpPrices;
 use Illuminate\Support\Facades\Cache;
+use RuntimeException;
 
 class ESimCatalogueService
 {
@@ -87,6 +89,10 @@ class ESimCatalogueService
 
         foreach ($packages as $package) {
             if ($package->id === $packageId) {
+                if ($package->price <= 0) {
+                    throw new RuntimeException('Selected eSIM package is unavailable.');
+                }
+
                 $presented = $package->toArray();
 
                 if ($provider instanceof TenantEsimProvider) {
@@ -98,7 +104,12 @@ class ESimCatalogueService
         }
 
         $bundle = $this->providerManager->provider()->bundles($packageId);
-        $usdPrice = (float) ($bundle['price'] ?? 0);
+        $usdPrice = $this->resolveUsdPrice($packageId, (float) ($bundle['price'] ?? 0));
+
+        if ($usdPrice <= 0) {
+            throw new RuntimeException('Selected eSIM package is unavailable.');
+        }
+
         $presented = array_merge($bundle, [
             'id' => $packageId,
             'price' => $usdPrice,
@@ -110,6 +121,18 @@ class ESimCatalogueService
         }
 
         return $presented;
+    }
+
+    /**
+     * Apply temporary L2 RRP fallback when the provider returns a zero price.
+     */
+    private function resolveUsdPrice(string $packageId, float $providerPrice): float
+    {
+        if ($providerPrice > 0) {
+            return $providerPrice;
+        }
+
+        return L2EsimRrpPrices::get($packageId) ?? 0.0;
     }
 
     /**

@@ -8,6 +8,7 @@ use App\DTOs\ESim\ESimOrderResult;
 use App\DTOs\ESim\ESimPackage;
 use App\Models\Tenant\TenantEsimProvider;
 use App\Services\ESim\ESimApiException;
+use App\Services\ESim\Pricing\L2EsimRrpPrices;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
@@ -49,7 +50,18 @@ class L2Provider implements ESimProviderInterface
         $packages = [];
 
         foreach ($bundles as $item) {
-            $packages[] = $this->mapBundle($item);
+            if (! is_array($item)) {
+                continue;
+            }
+
+            $package = $this->mapBundle($item);
+
+            // Hide packages that remain at zero after temporary RRP fallback.
+            if ($package->price <= 0) {
+                continue;
+            }
+
+            $packages[] = $package;
         }
 
         return $packages;
@@ -171,6 +183,16 @@ class L2Provider implements ESimProviderInterface
         $duration = (int) ($item['duration'] ?? 0);
         $unlimited = (bool) ($item['unlimited'] ?? false);
         $price = (float) ($item['price'] ?? 0);
+
+        // Temporary L2 catalogue bug: prices may arrive as 0 — fall back to RRP sheet.
+        if ($price <= 0 && $bundleName !== '') {
+            $fallback = L2EsimRrpPrices::get($bundleName);
+
+            if ($fallback !== null) {
+                $price = $fallback;
+            }
+        }
+
         $speeds = is_array($item['speed'] ?? null) ? $item['speed'] : [];
         $description = (string) ($item['description'] ?? '');
 

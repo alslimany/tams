@@ -52,6 +52,7 @@ return [
     'manage_booking' => 'Manage booking',
     'cancellation_requested' => 'Cancellation requested',
     'cancel_booking' => 'Cancel booking',
+    'print_voucher' => 'Print voucher',
     'location' => 'Location',
     'stay' => 'Stay',
     'nights' => 'Nights',

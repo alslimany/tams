@@ -156,6 +156,12 @@ export default function Show({ order, itemTransactions, voidRefundAccount }) {
         window.open(url, '_blank', 'noopener,noreferrer');
     };
 
+    const openHotelVoucherPdf = (item) => {
+        const url = route('orders.hotel-items.voucher-pdf', { order: order.id, item: item.id });
+
+        window.open(url, '_blank', 'noopener,noreferrer');
+    };
+
     const openRefundModal = (item) => {
         setRefundTarget(item);
         setRefundQuote(null);
@@ -396,6 +402,7 @@ export default function Show({ order, itemTransactions, voidRefundAccount }) {
                     onInsuranceCancel={openCancelModal}
                     onPrintPolicy={openPolicyReport}
                     onHotelCancel={cancelHotelBooking}
+                    onPrintHotelVoucher={openHotelVoucherPdf}
                     onEsimRefund={refundEsim}
                     isInsuranceCancellationApproved={isInsuranceCancellationApproved}
                 />

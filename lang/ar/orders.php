@@ -52,6 +52,7 @@ return [
     'manage_booking' => 'إدارة الحجز',
     'cancellation_requested' => 'تم طلب الإلغاء',
     'cancel_booking' => 'إلغاء الحجز',
+    'print_voucher' => 'طباعة القسيمة',
     'location' => 'الموقع',
     'stay' => 'الإقامة',
     'nights' => 'الليالي',

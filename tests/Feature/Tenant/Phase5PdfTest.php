@@ -313,7 +313,82 @@ test('hotel voucher PDF route returns PDF response', function () {
     global $state;
 
     $order = p5MakeOrder();
-    $item = p5MakeItem($order, 'hotel');
+    $item = p5MakeItem($order, 'hotel', [
+        'ticket_number' => 'REF-3T-999',
+        'provider_reference' => 'BID-3T-999',
+        'net_fare' => 450,
+        'commission_amount' => 50,
+        'total_amount' => 500,
+        'item_details' => [
+            'booking_id' => 'BID-3T-999',
+            'booking_ref' => 'REF-3T-999',
+            'confirmed' => true,
+            'total_purchase' => 450,
+            'markup_amount' => 50,
+            'markup_percent' => 10,
+            'provider_currency' => 'LYD',
+            'comments' => 'Room reserved with early check-in.',
+            'provider_booking' => [
+                'hotel' => [
+                    'hotel_name' => 'Paradise Beach Resort',
+                    'city_name' => 'Zurich',
+                    'country_name' => 'Switzerland',
+                    'rating' => 5,
+                ],
+                'from' => '2026-11-01',
+                'to' => '2026-11-04',
+                'deadline' => '2026-10-25',
+                'rooms' => [
+                    [
+                        'roomIndex' => 1,
+                        'name' => 'Executive Suite',
+                        'board_name' => 'Bed & Breakfast',
+                        'paxes' => [
+                            ['civility' => 'Mr', 'firstName' => 'Ali', 'lastName' => 'Hassan', 'type' => 'AD'],
+                        ],
+                    ],
+                ],
+            ],
+            'selected_offer' => [
+                'room_name' => 'Executive Suite',
+                'board_name' => 'Bed & Breakfast',
+                'cancellation_policies' => [
+                    ['dateFrom' => '2026-10-28', 'amount' => 100, 'type' => 'fixed'],
+                ],
+            ],
+            'customer' => [
+                'name' => 'Ali Hassan',
+                'email' => 'ali@example.com',
+                'phone' => '+218912345678',
+            ],
+        ],
+        'product_details' => [
+            'provider' => '3T Hotels',
+            'product_subtype' => 'hotel',
+            'hotel' => [
+                'hotel_name' => 'Paradise Beach Resort',
+                'name' => 'Paradise Beach Resort',
+                'city_name' => 'Zurich',
+                'country_name' => 'Switzerland',
+                'rating' => 5,
+            ],
+            'stay' => [
+                'from' => '2026-11-01',
+                'to' => '2026-11-04',
+                'deadline' => '2026-10-25',
+            ],
+            'rooms' => [
+                [
+                    'roomIndex' => 1,
+                    'name' => 'Executive Suite',
+                    'board_name' => 'Bed & Breakfast',
+                    'paxes' => [
+                        ['civility' => 'Mr', 'firstName' => 'Ali', 'lastName' => 'Hassan', 'type' => 'AD'],
+                    ],
+                ],
+            ],
+        ],
+    ]);
 
     $this->actingAs($state['user'])
         ->get(route('orders.hotel-items.voucher-pdf', ['order' => $order->id, 'item' => $item->id]))
