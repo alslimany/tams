@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Booknow API v1",
-    "description": "## Booknow REST API v1 — Mobile Application\n\n**Base URL**: `{{base_url}}/agency/{{tenant}}/api/v1`  \n**Auth**: Bearer token (set via `{{token}}` variable after Login)  \n**Content-Type**: `application/json`\n\n### Token Abilities\n| Ability | Scope |\n|---------|-------|\n| `read` | Results, seat map, fare rules, orders, reports, wallet, eSIM catalogue |\n| `write` | Search, select, price, book (flights, hotels, insurance, eSIM) |\n| `issue` | Issue ticket, void/refund, change segment, eSIM refund, hotel cancel |\n| `report` | Dashboard & reports |\n| `*` | Full access |\n\n### Quick Start\n1. Set `base_url` and `tenant` (e.g. `median`)\n2. Run **Login** — token is saved to `{{token}}` automatically\n3. Flights: Search → Results → Select → Seat Map → Price → Book\n4. eSIM upsell during flight booking: **Airport Packages** with destination IATA\n5. eSIM standalone: Search → Packages → Select → Book\n6. Hotels: Autocomplete → Search → Details → Select → Book (use `city` + numeric `city_id` + structured `rooms`)\n7. For ticket changes use **Change Segment** folder\n\n### Recent Updates\n- **Hotel cancel / refund** — `POST /orders/{order}/hotel-items/{item}/cancel` (requires `issue`); order detail exposes `hotel.can_cancel`\n- **Hotel book** — `201` returns full `data.order` (formatted TAMS order) + `data.booking` (provider); saves `order_id` / `item_id`\n- **eSIM usage & top-up** — L2 utilisation webhook + `GET .../esim-items/{item}/usage`, `GET .../topup-packages`, `POST .../topup`\n- **Hotel search payload** — requires `city` + numeric `city_id` from autocomplete; `rooms` as `[{ \"adult\": 2, \"children\": [5] }]` (flat `rooms`/`adults`/`children` only when children is 0 or ages provided)\n- **Travel & Orange issue** — `POST /insurance/travel/issue`, `POST /insurance/orange/issue` (requires `issue`)\n- **API token management** — `POST /auth/tokens` create scoped token, `DELETE /auth/tokens/{tokenId}` revoke by id\n- **Insurance Policy PDF** — `GET /orders/{order}/insurance-items/{item}/policy-pdf` returns the Al Baraka printable policy PDF (compulsory, travel, orange)\n- Order detail insurance items include `report_reference` for print lookup\n- **eSIM API** — full catalogue and booking flow\n- `GET /esim/airport/{iata}/packages` — destination airport bundles for flight-booking upsell\n- `POST /esim/search` → `GET /esim/results/{uuid}/packages` → `POST /esim/select` → `POST /esim/book`\n- `POST /orders/{order}/esim-items/{item}/refund` — refund issued eSIM (requires `issue`)\n- Orders list filter: `product_type=esim`\n- Cabin filter: `cabin_class` = `all` | `Y` | `C` | `F`\n- Offers include `baggage`, `airline_logo_url`, `fare_id`, ISO8601 `duration` (`PT4H`, `PT2H10M`)\n- `POST /flights/open-reservation-availability` — check if open reservation (QQ) is allowed for an offer\n- `POST /flights/fare-rules` — plain-text rules (no line numbers)\n- `POST /flights/seatmap` — interactive seat map with per-seat pricing\n- `POST /flights/price` — total with seat fees and ancillaries\n- `POST /flights/book` accepts `extras.seats` for seat assignment\n- Draft booking: `ticketing_mode: draft` then `POST .../tickets/issue`\n- Change segment: search → results → quote → confirm\n\n### Response Format\n```json\n{ \"success\": true|false, \"message\": \"...\", \"data\": {...} }\n```",
+    "description": "## Booknow REST API v1 — Mobile Application\n\n**Base URL**: `{{base_url}}/agency/{{tenant}}/api/v1`  \n**Auth**: Bearer token (set via `{{token}}` variable after Login)  \n**Content-Type**: `application/json`\n\n### Token Abilities\n| Ability | Scope |\n|---------|-------|\n| `read` | Results, seat map, fare rules, orders, reports, wallet, eSIM catalogue |\n| `write` | Search, select, price, book (flights, hotels, insurance, eSIM) |\n| `issue` | Issue ticket, void/refund, change segment, eSIM refund, hotel cancel |\n| `report` | Dashboard & reports |\n| `*` | Full access |\n\n### Quick Start\n1. Set `base_url` and `tenant` (e.g. `median`)\n2. Run **Login** — token is saved to `{{token}}` automatically\n3. Flights: Search → Results → Select → Seat Map → Price → Book\n3b. Round-trip matrix: **Round-Trip Offer Search** → poll **Round-Trip Offer Results** → Select with `{ uuid, offer }` → Price → Book\n4. eSIM upsell during flight booking: **Airport Packages** with destination IATA\n5. eSIM standalone: Search → Packages → Select → Book\n6. Hotels: Autocomplete → Search → Details → Select → Book (use `city` + numeric `city_id` + structured `rooms`)\n7. For ticket changes use **Change Segment** folder\n\n### Recent Updates\n- **Round-trip matrix search** — `POST /flights/roundtrip-search` → poll `GET /flights/roundtrip-results/{uuid}` → `POST /flights/select` with `{ uuid, offer }`\n- **Hotel cancel / refund** — `POST /orders/{order}/hotel-items/{item}/cancel` (requires `issue`); order detail exposes `hotel.can_cancel`\n- **Hotel book** — `201` returns full `data.order` (formatted TAMS order) + `data.booking` (provider); saves `order_id` / `item_id`\n- **eSIM usage & top-up** — L2 utilisation webhook + `GET .../esim-items/{item}/usage`, `GET .../topup-packages`, `POST .../topup`\n- **Hotel search payload** — requires `city` + numeric `city_id` from autocomplete; `rooms` as `[{ \"adult\": 2, \"children\": [5] }]` (flat `rooms`/`adults`/`children` only when children is 0 or ages provided)\n- **Travel & Orange issue** — `POST /insurance/travel/issue`, `POST /insurance/orange/issue` (requires `issue`)\n- **API token management** — `POST /auth/tokens` create scoped token, `DELETE /auth/tokens/{tokenId}` revoke by id\n- **Insurance Policy PDF** — `GET /orders/{order}/insurance-items/{item}/policy-pdf` returns the Al Baraka printable policy PDF (compulsory, travel, orange)\n- Order detail insurance items include `report_reference` for print lookup\n- **eSIM API** — full catalogue and booking flow\n- `GET /esim/airport/{iata}/packages` — destination airport bundles for flight-booking upsell\n- `POST /esim/search` → `GET /esim/results/{uuid}/packages` → `POST /esim/select` → `POST /esim/book`\n- `POST /orders/{order}/esim-items/{item}/refund` — refund issued eSIM (requires `issue`)\n- Orders list filter: `product_type=esim`\n- Cabin filter: `cabin_class` = `all` | `Y` | `C` | `F`\n- Offers include `baggage`, `airline_logo_url`, `fare_id`, ISO8601 `duration` (`PT4H`, `PT2H10M`)\n- `POST /flights/open-reservation-availability` — check if open reservation (QQ) is allowed for an offer\n- `POST /flights/fare-rules` — plain-text rules (no line numbers)\n- `POST /flights/seatmap` — interactive seat map with per-seat pricing\n- `POST /flights/price` — total with seat fees and ancillaries\n- `POST /flights/book` accepts `extras.seats` for seat assignment\n- Draft booking: `ticketing_mode: draft` then `POST .../tickets/issue`\n- Change segment: search → results → quote → confirm\n\n### Response Format\n```json\n{ \"success\": true|false, \"message\": \"...\", \"data\": {...} }\n```",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "auth": {
@@ -32,6 +32,10 @@
     },
     {
       "key": "flight_provider_id",
+      "value": ""
+    },
+    {
+      "key": "flight_rt_offer",
       "value": ""
     },
     {
@@ -495,7 +499,7 @@
     },
     {
       "name": "✈️ Flights",
-      "description": "Flight search, pricing, and booking flow.\n\n**Book flow**: Search → Results → (Open Reservation check) → (Fare Rules) → Select → Seatmap → Price → Book (`ticketing_mode: final` or `draft`)\n\n**Open reservation**: After **2. Fetch Results**, call **2c. Open Reservation Availability** per offer. If `allowed: true`, pass `reservation_type: QQ` in **5. Select Flight**.\n\n**Seat flow**: **5b. Seat Map** → pick seats → **5c. Price** (with `extras.seats`) → **6. Book** (same `extras.seats`)\n\n**Draft flow**: Book with `ticketing_mode: draft` → Issue Ticket\n\n**Change flow**: See **Change Segment** folder",
+      "description": "Flight search, pricing, and booking flow.\n\n**Book flow (one-way / classic RT)**: Search → Results → (Open Reservation check) → (Fare Rules) → Select → Seatmap → Price → Book (`ticketing_mode: final` or `draft`)\n\n**Round-trip matrix (async)**: **4b. Round-Trip Offer Search** → poll **4c. Round-Trip Offer Results** until `status: complete` → **5. Select Flight** with `{ uuid, offer }` → Price → Book\n\n**Open reservation**: After **2. Fetch Results**, call **2c. Open Reservation Availability** per offer. If `allowed: true`, pass `reservation_type: QQ` in **5. Select Flight**.\n\n**Seat flow**: **5b. Seat Map** → pick seats → **5c. Price** (with `extras.seats`) → **6. Book** (same `extras.seats`)\n\n**Draft flow**: Book with `ticketing_mode: draft` → Issue Ticket\n\n**Change flow**: See **Change Segment** folder",
       "item": [
         {
           "name": "1. Search Flights",
@@ -750,7 +754,7 @@
                 "return-options"
               ]
             },
-            "description": "Fetch return flight options for a round-trip booking. Pass the selected outbound flight."
+            "description": "Fetch return flight options for a round-trip booking. Pass the selected outbound flight.\n\nPrefer **4b/4c** (matrix search) when the client needs all outbound×return combinations in one progressive response."
           },
           "response": [
             {
@@ -758,6 +762,122 @@
               "status": "OK",
               "code": 200,
               "body": "{\n  \"return_options\": [ ... ],\n  \"outbound_provider_id\": 1,\n  \"return_date\": \"2026-06-20\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "4b. Round-Trip Offer Search (matrix)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var json = pm.response.json();",
+                  "if (json.success && json.data.uuid) {",
+                  "    pm.collectionVariables.set('flight_uuid', json.data.uuid);",
+                  "    if (json.data.providers && json.data.providers[0]) {",
+                  "        pm.collectionVariables.set('flight_provider_id', json.data.providers[0].id || '');",
+                  "    }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"origin\": \"MJI\",\n  \"destination\": \"IST\",\n  \"date\": \"2026-06-15\",\n  \"return_date\": \"2026-06-20\",\n  \"adults\": 1,\n  \"children\": 0,\n  \"infants\": 0,\n  \"cabin_class\": \"all\",\n  \"cheap_only\": false\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/agency/{{tenant}}/api/v1/flights/roundtrip-search",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "agency",
+                "{{tenant}}",
+                "api",
+                "v1",
+                "flights",
+                "roundtrip-search"
+              ]
+            },
+            "description": "Start an **async** round-trip matrix search across all allowed airline tokens.\n\nBuilds every outbound×return combination in background chunks (one job per outbound token).\n\n- Same token both legs → Videcom **round-trip** pricing\n- Mixed tokens → **one-way** price per leg (no RT discount bleed)\n- Respects airport-scoped accounts (e.g. LB EUR MLA/FCO)\n- Availability is cached and shared with one-way `GET /flights/results`\n\n**Optional fields**:\n- `cheap_only: true` — poll results return only the cheapest offer\n- `provider_ids: [1, 2]` — limit to specific tokens\n\nSaves `flight_uuid` automatically. Poll **4c** until `status` is `complete`.\n\nRequires `write` ability."
+          },
+          "response": [
+            {
+              "name": "200",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"success\": true,\n  \"message\": \"Round-trip search started. Poll /flights/roundtrip-results/{uuid}.\",\n  \"data\": {\n    \"uuid\": \"550e8400-e29b-41d4-a716-446655440000\",\n    \"status\": \"pending\",\n    \"providers\": [\n      {\n        \"id\": 1,\n        \"airline_code\": \"YI\",\n        \"airline_name\": \"Oya\",\n        \"provider_type\": \"videcom\",\n        \"account_name\": \"Default Account\",\n        \"currency\": \"LYD\"\n      }\n    ],\n    \"search_params\": {\n      \"origin\": \"MJI\",\n      \"destination\": \"IST\",\n      \"date\": \"2026-06-15\",\n      \"return_date\": \"2026-06-20\",\n      \"cheap_only\": false\n    }\n  }\n}"
+            },
+            {
+              "name": "422 — Validation",
+              "status": "Unprocessable Entity",
+              "code": 422,
+              "body": "{\n  \"message\": \"The return date field is required.\",\n  \"errors\": {\n    \"return_date\": [\"The return date field is required.\"]\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "4c. Round-Trip Offer Results (poll)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var json = pm.response.json();",
+                  "if (json.success && json.data && json.data.offers && json.data.offers[0]) {",
+                  "    pm.collectionVariables.set('flight_rt_offer', JSON.stringify(json.data.offers[0]));",
+                  "    var leg0 = json.data.offers[0].legs && json.data.offers[0].legs[0];",
+                  "    if (leg0 && leg0.provider_id) {",
+                  "        pm.collectionVariables.set('flight_provider_id', String(leg0.provider_id));",
+                  "    }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/agency/{{tenant}}/api/v1/flights/roundtrip-results/{{flight_uuid}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "agency",
+                "{{tenant}}",
+                "api",
+                "v1",
+                "flights",
+                "roundtrip-results",
+                "{{flight_uuid}}"
+              ]
+            },
+            "description": "Poll progressive round-trip offers for a matrix search session.\n\n`status`: `pending` → `partial` → `complete`\n\nEach offer:\n- `offer_id`\n- `pricing`: `{ total, currency, method: roundtrip|oneway, outbound_total, return_total }`\n- `legs`: per-itinerary `provider_id` + `airline_code`\n- `itineraries[]`: chronological (no outbound/return labels)\n\nSaves the first offer JSON to `flight_rt_offer` for **5. Select Flight**.\n\n`410` — session expired.\n\nRequires `read` ability."
+          },
+          "response": [
+            {
+              "name": "200 — Complete",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"uuid\": \"550e8400-...\",\n    \"status\": \"complete\",\n    \"chunks_total\": 2,\n    \"chunks_done\": 2,\n    \"offers\": [\n      {\n        \"offer_id\": \"rt_abc123\",\n        \"pricing\": {\n          \"total\": 350,\n          \"currency\": \"LYD\",\n          \"method\": \"roundtrip\",\n          \"outbound_total\": 200,\n          \"return_total\": 150\n        },\n        \"legs\": [\n          { \"provider_id\": 1, \"airline_code\": \"YI\", \"itinerary_index\": 0 },\n          { \"provider_id\": 1, \"airline_code\": \"YI\", \"itinerary_index\": 1 }\n        ],\n        \"itineraries\": [\n          {\n            \"flight_number\": \"0500\",\n            \"departure_airport\": \"MJI\",\n            \"arrival_airport\": \"IST\",\n            \"departure_time\": \"2026-06-15 10:00:00\",\n            \"segments\": [{ \"flight_number\": \"0500\", \"class\": \"Y\" }]\n          },\n          {\n            \"flight_number\": \"0501\",\n            \"departure_airport\": \"IST\",\n            \"arrival_airport\": \"MJI\",\n            \"departure_time\": \"2026-06-20 18:00:00\",\n            \"segments\": [{ \"flight_number\": \"0501\", \"class\": \"Y\" }]\n          }\n        ]\n      }\n    ],\n    \"errors\": [],\n    \"search_params\": { \"origin\": \"MJI\", \"destination\": \"IST\", \"return_date\": \"2026-06-20\" }\n  }\n}"
+            },
+            {
+              "name": "410 — Expired",
+              "status": "Gone",
+              "code": 410,
+              "body": "{\n  \"success\": false,\n  \"message\": \"Round-trip search session expired. Please search again.\"\n}"
             }
           ]
         },
@@ -789,7 +909,7 @@
                 "select"
               ]
             },
-            "description": "Select a flight offer for booking. Caches the selection server-side."
+            "description": "Select a flight offer for booking. Caches the selection server-side.\n\n**Classic one-way / return-options flow**: pass `provider_id` + `flight`.\n\n**Matrix round-trip flow** (after **4c**): pass `uuid` + `offer` (paste from `flight_rt_offer` or results):\n```json\n{\n  \"uuid\": \"{{flight_uuid}}\",\n  \"offer\": {{flight_rt_offer}}\n}\n```\n\nOptional `reservation_type`: `NN` (default) or `QQ` when open reservation is allowed."
           },
           "response": [
             {
@@ -797,6 +917,51 @@
               "status": "OK",
               "code": 200,
               "body": "{\n  \"success\": true,\n  \"message\": \"Flight selected. Proceed to book with passengers.\",\n  \"data\": {\n    \"provider_id\": 1,\n    \"provider_name\": \"Yemenia Airways\",\n    \"provider_code\": \"YI\",\n    \"flight\": { ... },\n    \"selected_at\": \"2026-05-13T10:00:00.000Z\"\n  }\n}"
+            },
+            {
+              "name": "200 — Matrix Offer",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"success\": true,\n  \"message\": \"Flight selected. Proceed to book with passengers.\",\n  \"data\": {\n    \"provider_id\": 1,\n    \"is_round_trip\": true,\n    \"outbound_provider_id\": 1,\n    \"return_provider_id\": 2,\n    \"flight\": {\n      \"round_trip\": {\n        \"outbound_flight\": { ... },\n        \"return_flight\": { ... }\n      },\n      \"pricing\": { \"total\": 350, \"currency\": \"LYD\", \"method\": \"roundtrip\" }\n    },\n    \"offer\": { \"offer_id\": \"rt_...\", \"itineraries\": [ ... ] }\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "5a. Select Flight (matrix offer)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"uuid\": \"{{flight_uuid}}\",\n  \"offer\": {{flight_rt_offer}}\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/agency/{{tenant}}/api/v1/flights/select",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "agency",
+                "{{tenant}}",
+                "api",
+                "v1",
+                "flights",
+                "select"
+              ]
+            },
+            "description": "Select a matrix round-trip offer from **4c**. Uses `flight_uuid` + `flight_rt_offer` (auto-set by the poll request).\n\nRequires `write` ability. Then continue with Seat Map → Price → Book."
+          },
+          "response": [
+            {
+              "name": "200",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"success\": true,\n  \"message\": \"Flight selected. Proceed to book with passengers.\",\n  \"data\": {\n    \"provider_id\": 1,\n    \"is_round_trip\": true,\n    \"offer\": { \"offer_id\": \"rt_...\" }\n  }\n}"
             }
           ]
         },

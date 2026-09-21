@@ -16,10 +16,10 @@ use App\Models\TenantProvider;
 use App\Models\User;
 use App\Services\AgencyNetwork\ProviderSourceResolver;
 use App\Services\Airline\AgencyProviderResolver;
-use App\Services\Airline\CabinClassFilter;
 use App\Services\Airline\FlightBookingPricing;
 use App\Services\Airline\FlightOfferPresenter;
 use App\Services\Airline\ProviderFactory;
+use App\Services\Airline\RoundTripOfferSearchService;
 use App\Services\GlobalCache\GlobalFlightCacheSettingsService;
 use App\Services\GlobalCache\RouteAvailabilityService;
 use App\Services\Orders\OrderNumberGenerator;
@@ -46,6 +46,7 @@ class FlightController extends Controller
         protected OrderNumberGenerator $orderNumberGenerator,
         protected FlightOfferPresenter $flightOfferPresenter,
         protected FlightBookingPricing $flightBookingPricing,
+        protected RoundTripOfferSearchService $roundTripOfferSearchService,
     ) {}
 
     /**
@@ -96,6 +97,47 @@ class FlightController extends Controller
             'providers' => $providerList,
             'search_params' => $validated,
         ], 'Search created. Fetch results with /flights/results/{uuid}?provider_id=X');
+    }
+
+    /**
+     * Start an async round-trip offer search across all allowed airline tokens.
+     *
+     * Builds the outbound×return matrix in background chunks. Poll
+     * GET /flights/roundtrip-results/{uuid} until status is complete.
+     */
+    public function roundTripSearch(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'origin' => ['required', 'string', 'size:3'],
+            'destination' => ['required', 'string', 'size:3'],
+            'date' => ['required', 'date_format:Y-m-d'],
+            'return_date' => ['required', 'date_format:Y-m-d', 'after_or_equal:date'],
+            'adults' => ['required', 'integer', 'min:1', 'max:9'],
+            'children' => ['nullable', 'integer', 'min:0', 'max:9'],
+            'infants' => ['nullable', 'integer', 'min:0', 'max:9'],
+            'cabin_class' => ['nullable', 'string', 'in:all,Y,C,F,W,economy,premium_economy,business,first'],
+            'cheap_only' => ['nullable', 'boolean'],
+            'provider_ids' => ['nullable', 'array'],
+            'provider_ids.*' => ['integer'],
+        ]);
+
+        $result = $this->roundTripOfferSearchService->start($validated);
+
+        return $this->success($result, 'Round-trip search started. Poll /flights/roundtrip-results/{uuid}.');
+    }
+
+    /**
+     * Poll progressive round-trip offers for a search session.
+     */
+    public function roundTripResults(string $uuid): JsonResponse
+    {
+        $result = $this->roundTripOfferSearchService->results($uuid);
+
+        if ($result === null) {
+            return $this->error('Round-trip search session expired. Please search again.', 410);
+        }
+
+        return $this->success($result);
     }
 
     /**
@@ -185,54 +227,127 @@ class FlightController extends Controller
     /**
      * Select a flight offer for booking.
      *
-     * Caches the selected offer in the search session so the mobile client
-     * can proceed to enter passenger details and book.
+     * Accepts either a classic one-way/round-trip `flight` payload, or a
+     * round-trip matrix `offer` with chronological itineraries[].
      */
     public function select(Request $request): JsonResponse
     {
         $validated = $request->validate([
             'uuid' => ['required', 'string'],
-            'provider_id' => ['required', 'integer'],
+            'provider_id' => ['nullable', 'integer', 'required_without:offer'],
             'provider_selector' => ['nullable', 'string'],
-            'flight' => ['required', 'array'],
+            'flight' => ['nullable', 'array', 'required_without:offer'],
+            'offer' => ['nullable', 'array', 'required_without:flight'],
+            'offer.offer_id' => ['required_with:offer', 'string'],
+            'offer.pricing' => ['required_with:offer', 'array'],
+            'offer.legs' => ['required_with:offer', 'array', 'min:2'],
+            'offer.itineraries' => ['required_with:offer', 'array', 'min:2'],
             'reservation_type' => ['nullable', 'string', 'in:QQ,NN'],
             'is_round_trip' => ['nullable', 'boolean'],
             'outbound_provider_id' => ['nullable', 'integer'],
             'return_provider_id' => ['nullable', 'integer'],
         ]);
 
-        $searchParams = Cache::get("flight_search_{$validated['uuid']}");
+        // Prefer the round-trip matrix session, fall back to classic one-way search session.
+        $searchParams = Cache::get("flight_rt_search_{$validated['uuid']}")
+            ?? Cache::get("flight_search_{$validated['uuid']}");
 
         if (! $searchParams) {
             return $this->error('Search session expired. Please search again.', 410);
         }
 
-        $providerConfig = $this->resolveProvider((int) $validated['provider_id']);
+        if (isset($validated['offer']) && is_array($validated['offer'])) {
+            $selectedOffer = $this->selectedOfferFromRoundTripMatrix($validated['offer'], $validated);
+        } else {
+            $providerConfig = $this->resolveProvider((int) $validated['provider_id']);
 
-        if (! $providerConfig) {
-            return $this->error('Provider not found.', 404);
+            if (! $providerConfig) {
+                return $this->error('Provider not found.', 404);
+            }
+
+            $selectedOffer = [
+                'provider_id' => (int) $validated['provider_id'],
+                'provider_selector' => $validated['provider_selector'] ?? null,
+                'provider_name' => $providerConfig->airline_name,
+                'provider_code' => $providerConfig->airline_code,
+                'flight' => $validated['flight'],
+                'reservation_type' => $validated['reservation_type'] ?? 'NN',
+                'is_round_trip' => (bool) ($validated['is_round_trip'] ?? false),
+                'outbound_provider_id' => $validated['outbound_provider_id'] ?? null,
+                'return_provider_id' => $validated['return_provider_id'] ?? null,
+                'selected_at' => now()->toDateTimeString(),
+            ];
         }
 
-        $selectedOffer = [
-            'provider_id' => (int) $validated['provider_id'],
-            'provider_selector' => $validated['provider_selector'] ?? null,
-            'provider_name' => $providerConfig->airline_name,
-            'provider_code' => $providerConfig->airline_code,
-            'flight' => $validated['flight'],
-            'reservation_type' => $validated['reservation_type'] ?? 'NN',
-            'is_round_trip' => (bool) ($validated['is_round_trip'] ?? false),
-            'outbound_provider_id' => $validated['outbound_provider_id'] ?? null,
-            'return_provider_id' => $validated['return_provider_id'] ?? null,
-            'selected_at' => now()->toDateTimeString(),
-        ];
+        $cacheKey = Cache::has("flight_rt_search_{$validated['uuid']}")
+            ? "flight_rt_search_{$validated['uuid']}"
+            : "flight_search_{$validated['uuid']}";
 
         Cache::put(
-            "flight_search_{$validated['uuid']}",
+            $cacheKey,
             array_merge(is_array($searchParams) ? $searchParams : [], ['selected_offer' => $selectedOffer]),
             now()->addMinutes(60)
         );
 
+        // Also mirror onto the classic key so price/book keep working unchanged.
+        if ($cacheKey !== "flight_search_{$validated['uuid']}") {
+            Cache::put(
+                "flight_search_{$validated['uuid']}",
+                array_merge(
+                    is_array($searchParams['params'] ?? null) ? $searchParams['params'] : [],
+                    ['selected_offer' => $selectedOffer, 'is_return' => true],
+                ),
+                now()->addMinutes(60),
+            );
+        }
+
         return $this->success($selectedOffer, 'Flight selected. Proceed to book with passengers.');
+    }
+
+    /**
+     * @param  array<string, mixed>  $offer
+     * @param  array<string, mixed>  $validated
+     * @return array<string, mixed>
+     */
+    protected function selectedOfferFromRoundTripMatrix(array $offer, array $validated): array
+    {
+        $itineraries = array_values($offer['itineraries'] ?? []);
+        $legs = array_values($offer['legs'] ?? []);
+
+        $outbound = $itineraries[0] ?? [];
+        $return = $itineraries[1] ?? [];
+
+        $outboundProviderId = (int) ($legs[0]['provider_id'] ?? $validated['outbound_provider_id'] ?? 0);
+        $returnProviderId = (int) ($legs[1]['provider_id'] ?? $validated['return_provider_id'] ?? $outboundProviderId);
+        $primaryProviderId = $outboundProviderId > 0 ? $outboundProviderId : (int) ($validated['provider_id'] ?? 0);
+
+        $providerConfig = $this->resolveProvider($primaryProviderId);
+
+        $flight = array_merge($outbound, [
+            'round_trip' => [
+                'outbound_flight' => $outbound,
+                'return_flight' => $return,
+            ],
+            'pricing' => [
+                'total' => data_get($offer, 'pricing.total'),
+                'currency' => data_get($offer, 'pricing.currency'),
+                'method' => data_get($offer, 'pricing.method'),
+            ],
+        ]);
+
+        return [
+            'provider_id' => $primaryProviderId,
+            'provider_selector' => $validated['provider_selector'] ?? null,
+            'provider_name' => $providerConfig->airline_name ?? data_get($outbound, 'airline_name'),
+            'provider_code' => $providerConfig->airline_code ?? data_get($outbound, 'airline_code'),
+            'flight' => $flight,
+            'offer' => $offer,
+            'reservation_type' => $validated['reservation_type'] ?? 'NN',
+            'is_round_trip' => true,
+            'outbound_provider_id' => $outboundProviderId,
+            'return_provider_id' => $returnProviderId,
+            'selected_at' => now()->toDateTimeString(),
+        ];
     }
 
     /**
@@ -708,32 +823,17 @@ class FlightController extends Controller
 
     protected function fetchProviderFlights($providerConfig, array $searchParams): array
     {
-        $provider = ProviderFactory::make($providerConfig);
+        if (! $providerConfig instanceof TenantProvider) {
+            return [];
+        }
 
-        $params = [
-            'origin' => strtoupper((string) $searchParams['origin']),
-            'destination' => strtoupper((string) $searchParams['destination']),
-            'date' => (string) $searchParams['date'],
-            'adults' => (int) ($searchParams['adults'] ?? 1),
-            'children' => (int) ($searchParams['children'] ?? 0),
-            'infants' => (int) ($searchParams['infants'] ?? 0),
-        ];
-
-        $providerFlights = collect($provider->searchAvailability($params));
-        $providerConfig->update(['last_used_at' => now()]);
-
-        $cabinClass = $searchParams['cabin_class'] ?? 'all';
-        $filtered = CabinClassFilter::filter($providerFlights->all(), $cabinClass);
-
-        $sorted = collect($filtered)->sortBy(function (mixed $offer): float {
-            if ($offer instanceof \App\DTOs\Airline\FlightOption) {
-                return (float) ($offer->pricing['total'] ?? 0);
-            }
-
-            return (float) data_get($offer, 'pricing.total', 0);
-        })->values()->all();
-
-        return $sorted;
+        return $this->roundTripOfferSearchService->searchLegCached(
+            $providerConfig,
+            strtoupper((string) $searchParams['origin']),
+            strtoupper((string) $searchParams['destination']),
+            (string) $searchParams['date'],
+            $searchParams,
+        );
     }
 
     /**

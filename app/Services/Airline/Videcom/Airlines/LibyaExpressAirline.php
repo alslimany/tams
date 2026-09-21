@@ -20,4 +20,9 @@ class LibyaExpressAirline extends BaseVidecomAirline
     {
         return 'LibyanExpress';
     }
+
+    /**
+     * Libyan Express supports separate LYD and EUR Videcom accounts scoped by airport.
+     * The base class isRouteAllowed and BookingController airport filtering handle restrictions.
+     */
 }

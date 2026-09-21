@@ -65,6 +65,7 @@ Route::middleware(['auth:sanctum', 'throttle:api', 'audit.api', 'idempotency'])-
 
         // Flight results
         Route::get('flights/results/{uuid}', [FlightController::class, 'results']);
+        Route::get('flights/roundtrip-results/{uuid}', [FlightController::class, 'roundTripResults']);
         Route::get('flights/calendar-hints', [BookingController::class, 'calendarHints']);
         Route::post('flights/fare-rules', [FlightController::class, 'fareRules']);
         Route::post('flights/seatmap', [FlightController::class, 'seatmap']);
@@ -105,6 +106,7 @@ Route::middleware(['auth:sanctum', 'throttle:api', 'audit.api', 'idempotency'])-
     // ── Write-gated routes (ability: write OR *) ────────────────
     Route::middleware('ability:write')->group(function (): void {
         Route::post('flights/search', [FlightController::class, 'search']);
+        Route::post('flights/roundtrip-search', [FlightController::class, 'roundTripSearch']);
         Route::post('flights/return-options', [BookingController::class, 'getReturnOptions']);
         Route::post('flights/select', [FlightController::class, 'select']);
         Route::post('flights/price', [FlightController::class, 'price']);

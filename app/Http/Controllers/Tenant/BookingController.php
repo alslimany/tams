@@ -1826,7 +1826,8 @@ class BookingController extends Controller
      * When a provider's credentials define an `airports` list, the origin takes
      * priority: only providers whose airport list contains the origin are kept.
      * If no provider covers the origin, fall back to providers that cover the
-     * destination. Providers with no `airports` restriction are always included.
+     * destination. Providers with no `airports` restriction are always included,
+     * except when a restricted account for the same airline already matched the route.
      */
     protected function filterProvidersByAccountAirports(Collection $providers, string $origin, string $destination): Collection
     {
@@ -1847,6 +1848,14 @@ class BookingController extends Controller
         $matched = $byOrigin->isNotEmpty()
             ? $byOrigin
             : $restricted->filter(fn (TenantProvider $p): bool => in_array($destination, $normalize($p->credentials['airports']), true));
+
+        if ($matched->isNotEmpty()) {
+            $matchedAirlineCodes = $matched->pluck('airline_code')->unique();
+
+            $unrestricted = $unrestricted->reject(
+                fn (TenantProvider $provider): bool => $matchedAirlineCodes->contains($provider->airline_code)
+            );
+        }
 
         return $unrestricted->concat($matched)->values();
     }

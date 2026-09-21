@@ -123,6 +123,7 @@ class AirlineConfigController extends Controller
                 'base_url' => 'https://customer2.videcom.com/LibyanExpress',
                 'accounts' => [
                     ['name' => 'Default Account', 'currency' => 'LYD'],
+                    ['name' => 'EUR Account', 'currency' => 'EUR', 'airports' => ['MLA', 'FCO']],
                 ],
             ],
         ];
