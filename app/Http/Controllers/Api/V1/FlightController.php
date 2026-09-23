@@ -127,14 +127,27 @@ class FlightController extends Controller
     }
 
     /**
-     * Poll progressive round-trip offers for a search session.
+     * Poll progressive round-trip offers, or load one outbound airline immediately.
+     *
+     * Without provider_id this returns the session so far. With provider_id it builds
+     * that token's outbound flights against every return token that has availability,
+     * unless the queue job already stored them.
      */
-    public function roundTripResults(string $uuid): JsonResponse
+    public function roundTripResults(string $uuid, Request $request): JsonResponse
     {
-        $result = $this->roundTripOfferSearchService->results($uuid);
+        $validated = $request->validate([
+            'provider_id' => ['nullable', 'integer'],
+        ]);
+
+        $providerId = isset($validated['provider_id']) ? (int) $validated['provider_id'] : null;
+        $result = $this->roundTripOfferSearchService->results($uuid, $providerId);
 
         if ($result === null) {
             return $this->error('Round-trip search session expired. Please search again.', 410);
+        }
+
+        if (($result['provider_missing'] ?? false) === true) {
+            return $this->error('Provider not found.', 404);
         }
 
         return $this->success($result);

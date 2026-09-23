@@ -4,11 +4,13 @@ namespace App\Services\Airline;
 
 use App\DTOs\Airline\FlightOption;
 use App\DTOs\Airline\RoundTripPriceRequest;
-use App\Jobs\ProcessRoundTripSearchChunkJob;
+use App\Jobs\ProcessRoundTripSearchJob;
 use App\Models\TenantProvider;
 use App\Services\Airline\Videcom\BaseVidecomAirline;
+use Illuminate\Contracts\Cache\LockTimeoutException;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Throwable;
 
@@ -17,6 +19,12 @@ class RoundTripOfferSearchService
     public const SESSION_TTL_MINUTES = 30;
 
     public const AVAILABILITY_CACHE_MINUTES = 15;
+
+    /**
+     * Same-token Videcom round-trip repricing is limited to the cheapest
+     * one-way combinations. The rest stay priced as the sum of the legs.
+     */
+    public const SAME_TOKEN_REPRICE_LIMIT = 3;
 
     public function __construct(
         protected AgencyProviderResolver $providerResolver,
@@ -80,13 +88,10 @@ class RoundTripOfferSearchService
 
         $this->putSession($uuid, $session);
 
-        $tenantId = (string) (tenant('id') ?? '');
-
-        foreach ($outboundProviders as $outboundProvider) {
-            ProcessRoundTripSearchChunkJob::dispatch(
-                $tenantId,
+        if ($outboundProviders->isNotEmpty()) {
+            ProcessRoundTripSearchJob::dispatch(
+                (string) (tenant('id') ?? ''),
                 $uuid,
-                (int) $outboundProvider->id,
             );
         }
 
@@ -109,7 +114,7 @@ class RoundTripOfferSearchService
      *     search_params: array<string, mixed>|null,
      * }
      */
-    public function results(string $uuid): ?array
+    public function results(string $uuid, ?int $outboundProviderId = null): ?array
     {
         $session = $this->getSession($uuid);
 
@@ -117,7 +122,35 @@ class RoundTripOfferSearchService
             return null;
         }
 
+        if ($outboundProviderId !== null) {
+            $knownProvider = collect($session['providers'] ?? [])->contains(
+                fn (array $provider): bool => (int) ($provider['id'] ?? 0) === $outboundProviderId,
+            );
+
+            if (! $knownProvider) {
+                return ['provider_missing' => true];
+            }
+
+            if (! $this->isProviderComplete($uuid, $outboundProviderId)) {
+                $this->processOutboundChunk($uuid, $outboundProviderId);
+            }
+
+            $session = $this->getSession($uuid) ?? $session;
+        }
+
         $offers = $session['offers'] ?? [];
+        $errors = $session['errors'] ?? [];
+
+        if ($outboundProviderId !== null) {
+            $offers = array_values(array_filter(
+                $offers,
+                fn (array $offer): bool => (int) data_get($offer, 'legs.0.provider_id') === $outboundProviderId,
+            ));
+            $errors = array_values(array_filter(
+                $errors,
+                fn (array $error): bool => (int) ($error['outbound_provider_id'] ?? 0) === $outboundProviderId,
+            ));
+        }
 
         if ((bool) data_get($session, 'params.cheap_only', false)) {
             $offers = $this->cheapestOffersOnly($offers);
@@ -127,19 +160,83 @@ class RoundTripOfferSearchService
             return ((float) data_get($left, 'pricing.total', 0)) <=> ((float) data_get($right, 'pricing.total', 0));
         });
 
-        return [
+        $payload = [
             'uuid' => $uuid,
             'status' => (string) ($session['status'] ?? 'pending'),
             'chunks_total' => (int) ($session['chunks_total'] ?? 0),
             'chunks_done' => (int) ($session['chunks_done'] ?? 0),
             'offers' => array_values($offers),
-            'errors' => array_values($session['errors'] ?? []),
+            'errors' => array_values($errors),
             'search_params' => $session['params'] ?? null,
         ];
+
+        if ($outboundProviderId !== null) {
+            $payload['provider_id'] = $outboundProviderId;
+            $payload['provider_status'] = 'complete';
+        }
+
+        return $payload;
+    }
+
+    /**
+     * Warm every leg once, in parallel, then build each outbound chunk from that cache.
+     */
+    public function processSession(string $uuid): void
+    {
+        $this->useCentralCache();
+
+        $session = $this->getSession($uuid);
+
+        if ($session === null) {
+            return;
+        }
+
+        $this->warmLegs($uuid);
+
+        /** @var list<int> $providerIds */
+        $providerIds = array_map(
+            static fn (array $provider): int => (int) ($provider['id'] ?? 0),
+            $session['providers'] ?? [],
+        );
+
+        $tasks = [];
+
+        foreach ($providerIds as $providerId) {
+            if ($providerId <= 0) {
+                continue;
+            }
+
+            $tasks[] = function () use ($uuid, $providerId): void {
+                $this->processOutboundChunk($uuid, $providerId);
+            };
+        }
+
+        $this->runInParallel($tasks);
     }
 
     public function processOutboundChunk(string $uuid, int $outboundProviderId): void
     {
+        $this->useCentralCache();
+
+        $lock = Cache::lock($this->providerLockKey($uuid, $outboundProviderId), 180);
+
+        try {
+            $lock->block(170, function () use ($uuid, $outboundProviderId): void {
+                if ($this->isProviderComplete($uuid, $outboundProviderId)) {
+                    return;
+                }
+
+                $this->buildOutboundChunk($uuid, $outboundProviderId);
+            });
+        } catch (LockTimeoutException) {
+            // Another request or the queue job is still building this airline.
+        }
+    }
+
+    protected function buildOutboundChunk(string $uuid, int $outboundProviderId): void
+    {
+        $this->useCentralCache();
+
         $session = $this->getSession($uuid);
 
         if ($session === null) {
@@ -156,7 +253,7 @@ class RoundTripOfferSearchService
         $outboundProvider = $allProviders->firstWhere('id', $outboundProviderId);
 
         if (! $outboundProvider instanceof TenantProvider) {
-            $this->markChunkDone($uuid, [], [[
+            $this->markChunkDone($uuid, $outboundProviderId, [], [[
                 'outbound_provider_id' => $outboundProviderId,
                 'message' => 'Outbound provider not found.',
             ]]);
@@ -171,7 +268,7 @@ class RoundTripOfferSearchService
         );
 
         if ($outboundAllowed->isEmpty()) {
-            $this->markChunkDone($uuid, [], []);
+            $this->markChunkDone($uuid, $outboundProviderId, [], []);
 
             return;
         }
@@ -186,7 +283,7 @@ class RoundTripOfferSearchService
             );
         } catch (Throwable $exception) {
             report($exception);
-            $this->markChunkDone($uuid, [], [[
+            $this->markChunkDone($uuid, $outboundProviderId, [], [[
                 'outbound_provider_id' => $outboundProviderId,
                 'message' => $exception->getMessage(),
             ]]);
@@ -200,8 +297,8 @@ class RoundTripOfferSearchService
             $origin,
         );
 
-        $offers = [];
         $errors = [];
+        $sameTokenPairs = [];
 
         foreach ($returnProviders as $returnProvider) {
             try {
@@ -214,6 +311,8 @@ class RoundTripOfferSearchService
                     isReturnLeg: true,
                 );
 
+                $returnOffers = [];
+
                 foreach ($outboundFlights as $outboundFlight) {
                     foreach ($returnFlights as $returnFlight) {
                         $offer = $this->buildOffer(
@@ -222,12 +321,28 @@ class RoundTripOfferSearchService
                             $outboundFlight,
                             $returnFlight,
                             $params,
+                            priceRoundTrip: false,
                         );
 
-                        if ($offer !== null) {
-                            $offers[] = $offer;
+                        if ($offer === null) {
+                            continue;
+                        }
+
+                        $returnOffers[] = $offer;
+
+                        if ((int) $outboundProvider->id === (int) $returnProvider->id) {
+                            $sameTokenPairs[] = [
+                                'return_provider' => $returnProvider,
+                                'outbound_flight' => $outboundFlight,
+                                'return_flight' => $returnFlight,
+                                'total' => (float) data_get($offer, 'pricing.total', 0),
+                            ];
                         }
                     }
+                }
+
+                if ($returnOffers !== []) {
+                    $this->mergeOffers($uuid, $returnOffers, []);
                 }
             } catch (Throwable $exception) {
                 report($exception);
@@ -239,7 +354,81 @@ class RoundTripOfferSearchService
             }
         }
 
-        $this->markChunkDone($uuid, $offers, $errors);
+        $repriced = $this->repriceCheapestSameTokenPairs($outboundProvider, $sameTokenPairs, $params);
+
+        if ($repriced !== []) {
+            $this->mergeOffers($uuid, $repriced, []);
+        }
+
+        $this->markChunkDone($uuid, $outboundProviderId, [], $errors);
+    }
+
+    /**
+     * Fetch each airline's outbound and return availability once.
+     *
+     * Later chunks read this cache instead of calling Videcom again per combination.
+     */
+    public function warmLegs(string $uuid): void
+    {
+        $session = $this->getSession($uuid);
+
+        if ($session === null) {
+            return;
+        }
+
+        /** @var array<string, mixed> $params */
+        $params = $session['params'] ?? [];
+        $origin = strtoupper((string) ($params['origin'] ?? ''));
+        $destination = strtoupper((string) ($params['destination'] ?? ''));
+        $date = (string) ($params['date'] ?? '');
+        $returnDate = (string) ($params['return_date'] ?? '');
+
+        $allProviders = $this->resolveProviders($params['provider_ids'] ?? null);
+        $outboundProviders = $this->filterProvidersByAccountAirports($allProviders, $origin, $destination);
+        $returnProviders = $this->filterProvidersByAccountAirports($allProviders, $destination, $origin);
+
+        /** @var array<int, array{provider: TenantProvider, outbound: bool, return: bool}> $legs */
+        $legs = [];
+
+        foreach ($outboundProviders as $provider) {
+            $legs[(int) $provider->id] = [
+                'provider' => $provider,
+                'outbound' => true,
+                'return' => false,
+            ];
+        }
+
+        foreach ($returnProviders as $provider) {
+            $existing = $legs[(int) $provider->id] ?? null;
+            $legs[(int) $provider->id] = [
+                'provider' => $provider,
+                'outbound' => (bool) ($existing['outbound'] ?? false),
+                'return' => true,
+            ];
+        }
+
+        $tasks = [];
+
+        foreach ($legs as $leg) {
+            $tasks[] = function () use ($leg, $origin, $destination, $date, $returnDate, $params): void {
+                if ($leg['outbound']) {
+                    $this->searchLegCached($leg['provider'], $origin, $destination, $date, $params);
+                }
+
+                if ($leg['return']) {
+                    $this->searchLegCached(
+                        $leg['provider'],
+                        $destination,
+                        $origin,
+                        $returnDate,
+                        $params,
+                        isReturnLeg: true,
+                    );
+                }
+            };
+        }
+
+        $this->runInParallel($tasks);
     }
 
     /**
@@ -271,14 +460,19 @@ class RoundTripOfferSearchService
             $children,
             $infants,
             $cabinClass,
-            $isReturnLeg ? 'return' : 'outbound',
         ]);
 
-        /** @var list<array<string, mixed>> $flights */
-        $flights = Cache::remember(
-            $cacheKey,
-            now()->addMinutes(self::AVAILABILITY_CACHE_MINUTES),
-            function () use ($provider, $origin, $destination, $date, $adults, $children, $infants, $cabinClass, $isReturnLeg): array {
+        $lock = Cache::lock($cacheKey.':lock', 120);
+
+        try {
+            /** @var list<array<string, mixed>> $flights */
+            $flights = $lock->block(110, function () use ($cacheKey, $provider, $origin, $destination, $date, $adults, $children, $infants, $cabinClass, $isReturnLeg): array {
+                $cached = Cache::get($cacheKey);
+
+                if (is_array($cached)) {
+                    return $cached;
+                }
+
                 $airline = ProviderFactory::make($provider);
 
                 $searchParams = [
@@ -300,12 +494,20 @@ class RoundTripOfferSearchService
 
                 $filtered = CabinClassFilter::filter($raw->all(), $cabinClass);
 
-                return array_values(array_map(
+                $flights = array_values(array_map(
                     fn (mixed $flight): array => $this->normalizeFlight($flight, $provider),
                     $filtered,
                 ));
-            },
-        );
+
+                Cache::put($cacheKey, $flights, now()->addMinutes(self::AVAILABILITY_CACHE_MINUTES));
+
+                return $flights;
+            });
+        } catch (LockTimeoutException) {
+            $cached = Cache::get($cacheKey);
+
+            return is_array($cached) ? $cached : [];
+        }
 
         return $flights;
     }
@@ -322,6 +524,7 @@ class RoundTripOfferSearchService
         array $outboundFlight,
         array $returnFlight,
         array $params,
+        bool $priceRoundTrip = true,
     ): ?array {
         $sameToken = (int) $outboundProvider->id === (int) $returnProvider->id;
         $outboundTotal = (float) data_get($outboundFlight, 'pricing.total', 0);
@@ -330,7 +533,7 @@ class RoundTripOfferSearchService
         $pricingMethod = 'oneway';
         $total = round($outboundTotal + $returnTotal, 2);
 
-        if ($sameToken) {
+        if ($sameToken && $priceRoundTrip) {
             try {
                 $airline = ProviderFactory::make($outboundProvider);
 
@@ -385,8 +588,6 @@ class RoundTripOfferSearchService
             data_get($outboundFlight, 'departure_time'),
             data_get($returnFlight, 'id', data_get($returnFlight, 'flight_number')),
             data_get($returnFlight, 'departure_time'),
-            $pricingMethod,
-            $total,
         ]));
 
         return [
@@ -518,36 +719,240 @@ class RoundTripOfferSearchService
     }
 
     /**
+     * @param  list<array{return_provider: TenantProvider, outbound_flight: array<string, mixed>, return_flight: array<string, mixed>, total: float}>  $pairs
+     * @param  array<string, mixed>  $params
+     * @return list<array<string, mixed>>
+     */
+    protected function repriceCheapestSameTokenPairs(TenantProvider $outboundProvider, array $pairs, array $params): array
+    {
+        if ($pairs === []) {
+            return [];
+        }
+
+        usort($pairs, static fn (array $left, array $right): int => $left['total'] <=> $right['total']);
+
+        $repriced = [];
+
+        foreach (array_slice($pairs, 0, self::SAME_TOKEN_REPRICE_LIMIT) as $pair) {
+            $offer = $this->buildOffer(
+                $outboundProvider,
+                $pair['return_provider'],
+                $pair['outbound_flight'],
+                $pair['return_flight'],
+                $params,
+            );
+
+            if ($offer !== null) {
+                $repriced[] = $offer;
+            }
+        }
+
+        return $repriced;
+    }
+
+    /**
      * @param  list<array<string, mixed>>  $offers
      * @param  list<array<string, mixed>>  $errors
      */
-    protected function markChunkDone(string $uuid, array $offers, array $errors): void
+    protected function mergeOffers(string $uuid, array $offers, array $errors): void
+    {
+        $this->updateSession($uuid, function (array &$session) use ($offers, $errors): void {
+            $session['offers'] = $this->replaceOffers($session['offers'] ?? [], $offers);
+            $session['errors'] = array_values(array_merge($session['errors'] ?? [], $errors));
+            $session['status'] = $this->sessionStatus($session);
+        });
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $offers
+     * @param  list<array<string, mixed>>  $errors
+     */
+    protected function markChunkDone(string $uuid, int $outboundProviderId, array $offers, array $errors): void
+    {
+        $this->updateSession($uuid, function (array &$session) use ($outboundProviderId, $offers, $errors): void {
+            $session['offers'] = $this->replaceOffers($session['offers'] ?? [], $offers);
+            $session['errors'] = array_values(array_merge($session['errors'] ?? [], $errors));
+
+            $completed = array_map('intval', $session['completed_provider_ids'] ?? []);
+
+            if (! in_array($outboundProviderId, $completed, true)) {
+                $completed[] = $outboundProviderId;
+            }
+
+            $session['completed_provider_ids'] = array_values($completed);
+            $session['chunks_done'] = count($completed);
+            $session['status'] = $this->sessionStatus($session);
+        });
+    }
+
+    protected function isProviderComplete(string $uuid, int $providerId): bool
+    {
+        $session = $this->getSession($uuid);
+        $completed = array_map('intval', $session['completed_provider_ids'] ?? []);
+
+        return in_array($providerId, $completed, true);
+    }
+
+    protected function providerLockKey(string $uuid, int $providerId): string
+    {
+        return "flight_rt_provider_{$uuid}_{$providerId}";
+    }
+
+    /**
+     * @param  callable(array<string, mixed>&): void  $mutator
+     */
+    protected function updateSession(string $uuid, callable $mutator): void
     {
         $lock = Cache::lock($this->sessionLockKey($uuid), 30);
 
-        $lock->block(20, function () use ($uuid, $offers, $errors): void {
+        $lock->block(20, function () use ($uuid, $mutator): void {
             $session = $this->getSession($uuid);
 
             if ($session === null) {
                 return;
             }
 
-            $existingOffers = $session['offers'] ?? [];
-            $existingErrors = $session['errors'] ?? [];
-
-            $session['offers'] = array_values(array_merge($existingOffers, $offers));
-            $session['errors'] = array_values(array_merge($existingErrors, $errors));
-            $session['chunks_done'] = (int) ($session['chunks_done'] ?? 0) + 1;
-
-            $total = (int) ($session['chunks_total'] ?? 0);
-            $done = (int) $session['chunks_done'];
-
-            $session['status'] = $done >= $total && $total > 0
-                ? 'complete'
-                : ($done > 0 ? 'partial' : 'pending');
-
+            $mutator($session);
             $this->putSession($uuid, $session);
         });
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $existing
+     * @param  list<array<string, mixed>>  $incoming
+     * @return list<array<string, mixed>>
+     */
+    protected function replaceOffers(array $existing, array $incoming): array
+    {
+        $indexed = [];
+
+        foreach ($existing as $offer) {
+            $indexed[(string) ($offer['offer_id'] ?? count($indexed))] = $offer;
+        }
+
+        foreach ($incoming as $offer) {
+            $indexed[(string) ($offer['offer_id'] ?? count($indexed))] = $offer;
+        }
+
+        return array_values($indexed);
+    }
+
+    /**
+     * @param  array<string, mixed>  $session
+     */
+    protected function sessionStatus(array $session): string
+    {
+        $total = (int) ($session['chunks_total'] ?? 0);
+        $done = (int) ($session['chunks_done'] ?? 0);
+
+        if ($total > 0 && $done >= $total) {
+            return 'complete';
+        }
+
+        if ($done > 0 || ($session['offers'] ?? []) !== []) {
+            return 'partial';
+        }
+
+        return 'pending';
+    }
+
+    /**
+     * @param  list<callable(): void>  $tasks
+     */
+    protected function runInParallel(array $tasks): void
+    {
+        if ($tasks === []) {
+            return;
+        }
+
+        if (count($tasks) === 1 || app()->runningUnitTests() || ! function_exists('pcntl_fork')) {
+            foreach ($tasks as $task) {
+                $task();
+            }
+
+            return;
+        }
+
+        $this->disconnectDatabases();
+
+        $pids = [];
+
+        foreach ($tasks as $task) {
+            $pid = pcntl_fork();
+
+            if ($pid === -1) {
+                $this->reconnectDatabases();
+                $task();
+
+                continue;
+            }
+
+            if ($pid === 0) {
+                pcntl_alarm(0);
+
+                try {
+                    $this->reconnectDatabases();
+                    $task();
+                    exit(0);
+                } catch (Throwable $exception) {
+                    report($exception);
+                    exit(1);
+                }
+            }
+
+            $pids[] = $pid;
+        }
+
+        $this->reconnectDatabases();
+
+        foreach ($pids as $pid) {
+            pcntl_waitpid($pid, $status);
+        }
+    }
+
+    protected function disconnectDatabases(): void
+    {
+        foreach (array_keys(config('database.connections', [])) as $name) {
+            DB::disconnect($name);
+        }
+    }
+
+    protected function reconnectDatabases(): void
+    {
+        foreach (array_keys(config('database.connections', [])) as $name) {
+            try {
+                DB::reconnect($name);
+            } catch (Throwable) {
+                // Some connections exist only after tenancy is initialized.
+            }
+        }
+
+        $this->useCentralCache();
+    }
+
+    /**
+     * Keep availability and the search session on the central cache connection.
+     *
+     * Tenancy switches the default database connection, and a forked worker must
+     * not reopen the cache store against the tenant database.
+     */
+    protected function useCentralCache(): void
+    {
+        if (config('cache.default') !== 'database') {
+            return;
+        }
+
+        $central = config('tenancy.database.central_connection');
+
+        if (is_string($central) && $central !== '') {
+            config(['cache.stores.database.connection' => $central]);
+        }
+
+        $manager = app('cache');
+
+        if (method_exists($manager, 'forgetDriver')) {
+            $manager->forgetDriver('database');
+        }
     }
 
     /**

@@ -1,11 +1,12 @@
 <?php
 
 use App\DTOs\Airline\RoundTripPriceResult;
-use App\Jobs\ProcessRoundTripSearchChunkJob;
+use App\Jobs\ProcessRoundTripSearchJob;
 use App\Models\Tenant;
 use App\Models\TenantProvider;
 use App\Models\User;
 use App\Services\Airline\AirlineProviderInterface;
+use App\Services\Airline\RoundTripOfferSearchService;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
 
@@ -66,6 +67,33 @@ afterEach(function (): void {
     \Mockery::close();
 });
 
+/**
+ * @return array<string, mixed>
+ */
+function roundTripReturnFlight(string $flightNumber, string $departureTime, int $total): array
+{
+    return [
+        'id' => 'yi-ret-'.$flightNumber,
+        'airline_code' => 'YI',
+        'airline_name' => 'Oya',
+        'flight_number' => $flightNumber,
+        'departure_airport' => 'IST',
+        'arrival_airport' => 'MJI',
+        'departure_time' => $departureTime,
+        'arrival_time' => '2026-06-20 23:00:00',
+        'available_seats' => 9,
+        'segments' => [[
+            'flight_number' => $flightNumber,
+            'class' => 'Y',
+            'departure_airport' => 'IST',
+            'arrival_airport' => 'MJI',
+            'departure_time' => $departureTime,
+            'arrival_time' => '2026-06-20 23:00:00',
+        ]],
+        'pricing' => ['total' => $total, 'currency' => 'LYD', 'class_code' => 'Y'],
+    ];
+}
+
 function fakeRoundTripProviders(): void
 {
     global $state;
@@ -94,26 +122,10 @@ function fakeRoundTripProviders(): void
     ];
 
     $returnYi = [
-        [
-            'id' => 'yi-ret-1',
-            'airline_code' => 'YI',
-            'airline_name' => 'Oya',
-            'flight_number' => '0501',
-            'departure_airport' => 'IST',
-            'arrival_airport' => 'MJI',
-            'departure_time' => '2026-06-20 18:00:00',
-            'arrival_time' => '2026-06-20 22:00:00',
-            'available_seats' => 9,
-            'segments' => [[
-                'flight_number' => '0501',
-                'class' => 'Y',
-                'departure_airport' => 'IST',
-                'arrival_airport' => 'MJI',
-                'departure_time' => '2026-06-20 18:00:00',
-                'arrival_time' => '2026-06-20 22:00:00',
-            ]],
-            'pricing' => ['total' => 999, 'currency' => 'LYD', 'class_code' => 'Y'],
-        ],
+        roundTripReturnFlight('0501', '2026-06-20 18:00:00', 400),
+        roundTripReturnFlight('0502', '2026-06-20 19:00:00', 500),
+        roundTripReturnFlight('0503', '2026-06-20 20:00:00', 600),
+        roundTripReturnFlight('0504', '2026-06-20 21:00:00', 999),
     ];
 
     $outbound5s = [
@@ -174,6 +186,8 @@ function fakeRoundTripProviders(): void
     \Mockery::mock('alias:App\\Services\\Airline\\ProviderFactory')
         ->shouldReceive('make')
         ->andReturnUsing(function ($provider) use ($providerYI, $provider5S) {
+            $GLOBALS['rt_factory_calls'] = ($GLOBALS['rt_factory_calls'] ?? 0) + 1;
+
             return $provider->airline_code === 'YI' ? $providerYI : $provider5S;
         });
 }
@@ -199,7 +213,7 @@ test('roundtrip search starts async session and dispatches one chunk job per out
         ->assertJsonPath('data.status', 'pending')
         ->assertJsonStructure(['data' => ['uuid', 'providers', 'status', 'search_params']]);
 
-    Queue::assertPushed(ProcessRoundTripSearchChunkJob::class, 2);
+    Queue::assertPushed(ProcessRoundTripSearchJob::class, 1);
 });
 
 test('roundtrip search validates return date', function () {
@@ -214,6 +228,83 @@ test('roundtrip search validates return date', function () {
         ])
         ->assertStatus(422)
         ->assertJsonValidationErrors(['return_date']);
+});
+
+test('roundtrip chunk publishes offers before the rest of the matrix finishes', function () {
+    global $state;
+
+    Queue::fake();
+    fakeRoundTripProviders();
+
+    $uuid = $this->withToken($state['token'])
+        ->postJson($state['apiUrl'].'/flights/roundtrip-search', [
+            'origin' => 'MJI',
+            'destination' => 'IST',
+            'date' => '2026-06-15',
+            'return_date' => '2026-06-20',
+            'adults' => 1,
+        ])
+        ->assertOk()
+        ->json('data.uuid');
+
+    app(RoundTripOfferSearchService::class)->processOutboundChunk($uuid, (int) $state['providerA']->id);
+
+    $results = $this->withToken($state['token'])
+        ->getJson($state['apiUrl'].'/flights/roundtrip-results/'.$uuid)
+        ->assertOk()
+        ->assertJsonPath('data.status', 'partial')
+        ->assertJsonPath('data.chunks_done', 1)
+        ->assertJsonPath('data.chunks_total', 2);
+
+    expect($results->json('data.offers'))->not->toBeEmpty();
+});
+
+test('roundtrip provider results load that token immediately against every available return', function () {
+    global $state;
+
+    Queue::fake();
+    $GLOBALS['rt_factory_calls'] = 0;
+    fakeRoundTripProviders();
+
+    $uuid = $this->withToken($state['token'])
+        ->postJson($state['apiUrl'].'/flights/roundtrip-search', [
+            'origin' => 'MJI',
+            'destination' => 'IST',
+            'date' => '2026-06-15',
+            'return_date' => '2026-06-20',
+            'adults' => 1,
+        ])
+        ->assertOk()
+        ->json('data.uuid');
+
+    $providerId = (int) $state['providerA']->id;
+
+    $response = $this->withToken($state['token'])
+        ->getJson($state['apiUrl'].'/flights/roundtrip-results/'.$uuid.'?provider_id='.$providerId)
+        ->assertOk()
+        ->assertJsonPath('data.provider_id', $providerId)
+        ->assertJsonPath('data.provider_status', 'complete')
+        ->assertJsonPath('data.chunks_done', 1);
+
+    $offers = collect($response->json('data.offers'));
+
+    expect($offers)->not->toBeEmpty()
+        ->and($offers->every(fn (array $offer): bool => (int) data_get($offer, 'legs.0.provider_id') === $providerId))->toBeTrue()
+        ->and($offers->contains(fn (array $offer): bool => data_get($offer, 'legs.1.airline_code') === 'YI'))->toBeTrue()
+        ->and($offers->contains(fn (array $offer): bool => data_get($offer, 'legs.1.airline_code') === '5S'))->toBeTrue();
+
+    $factoryCalls = $GLOBALS['rt_factory_calls'];
+
+    $this->withToken($state['token'])
+        ->getJson($state['apiUrl'].'/flights/roundtrip-results/'.$uuid.'?provider_id='.$providerId)
+        ->assertOk()
+        ->assertJsonPath('data.chunks_done', 1);
+
+    expect($GLOBALS['rt_factory_calls'])->toBe($factoryCalls);
+
+    $this->withToken($state['token'])
+        ->getJson($state['apiUrl'].'/flights/roundtrip-results/'.$uuid.'?provider_id=999')
+        ->assertNotFound();
 });
 
 test('roundtrip results return 410 for unknown uuid', function () {
@@ -248,9 +339,18 @@ test('roundtrip matrix prices same token as roundtrip and mixed tokens as oneway
 
     $offers = collect($results->json('data.offers'));
 
-    expect($offers->count())->toBe(4);
+    expect($offers->count())->toBe(10);
 
-    $sameYi = $offers->first(function (array $offer): bool {
+    $sameYi = $offers->filter(function (array $offer): bool {
+        return data_get($offer, 'legs.0.airline_code') === 'YI'
+            && data_get($offer, 'legs.1.airline_code') === 'YI';
+    });
+
+    expect($sameYi->where('pricing.method', 'roundtrip'))->toHaveCount(3)
+        ->and($sameYi->where('pricing.method', 'oneway'))->toHaveCount(1)
+        ->and((float) $sameYi->firstWhere('pricing.method', 'oneway')['pricing']['total'])->toBe(1199.0);
+
+    $sameYi = $sameYi->first(function (array $offer): bool {
         return data_get($offer, 'legs.0.airline_code') === 'YI'
             && data_get($offer, 'legs.1.airline_code') === 'YI';
     });

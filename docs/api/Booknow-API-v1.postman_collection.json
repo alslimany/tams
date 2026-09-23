@@ -810,7 +810,7 @@
                 "roundtrip-search"
               ]
             },
-            "description": "Start an **async** round-trip matrix search across all allowed airline tokens.\n\nBuilds every outbound×return combination in background chunks (one job per outbound token).\n\n- Same token both legs → Videcom **round-trip** pricing\n- Mixed tokens → **one-way** price per leg (no RT discount bleed)\n- Respects airport-scoped accounts (e.g. LB EUR MLA/FCO)\n- Availability is cached and shared with one-way `GET /flights/results`\n\n**Optional fields**:\n- `cheap_only: true` — poll results return only the cheapest offer\n- `provider_ids: [1, 2]` — limit to specific tokens\n\nSaves `flight_uuid` automatically. Poll **4c** until `status` is `complete`.\n\nRequires `write` ability."
+            "description": "Start an **async** round-trip matrix search across all allowed airline tokens.\n\nBuilds every outbound×return combination in the background. Each airline leg is fetched once, in parallel.\n\n- Same token both legs → Videcom **round-trip** pricing for the cheapest pairs; other same-token pairs stay one-way sums\n- Mixed tokens → **one-way** price per leg (no RT discount bleed)\n- Offers appear while `status` is `partial`\n- Respects airport-scoped accounts (e.g. LB EUR MLA/FCO)\n- Availability is cached and shared with one-way `GET /flights/results`\n\n**Optional fields**:\n- `cheap_only: true` — poll results return only the cheapest offer\n- `provider_ids: [1, 2]` — limit to specific tokens\n\nSaves `flight_uuid` automatically. Poll **4c** until `status` is `complete`.\n\nRequires `write` ability."
           },
           "response": [
             {
@@ -880,6 +880,49 @@
               "body": "{\n  \"success\": false,\n  \"message\": \"Round-trip search session expired. Please search again.\"\n}"
             }
           ]
+        },
+        {
+          "name": "4d. Round-Trip Results for Airline",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var json = pm.response.json();",
+                  "if (json.success && json.data && json.data.offers && json.data.offers[0]) {",
+                  "    pm.collectionVariables.set('flight_rt_offer', JSON.stringify(json.data.offers[0]));",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/agency/{{tenant}}/api/v1/flights/roundtrip-results/{{flight_uuid}}?provider_id={{flight_provider_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "agency",
+                "{{tenant}}",
+                "api",
+                "v1",
+                "flights",
+                "roundtrip-results",
+                "{{flight_uuid}}"
+              ],
+              "query": [
+                {
+                  "key": "provider_id",
+                  "value": "{{flight_provider_id}}"
+                }
+              ]
+            },
+            "description": "Load one outbound airline immediately. Returns that token combined with the same token and every other token that has return availability.\n\nIf the background job already finished this airline, the offers are read from the session.\n\nRun once per provider id from **4b**. `404` when the id is not part of the search. `410` when the session expired.\n\nRequires `read` ability."
+          },
+          "response": []
         },
         {
           "name": "5. Select Flight",
