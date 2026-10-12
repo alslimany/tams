@@ -155,10 +155,10 @@ class AgentMigrationPipeline
         $unmatched = 0;
 
         // Index existing tenant users by email for fast lookup (tenant DB, not central)
-        $existingByEmail = collect(DB::table('users')->get(['id', 'email']))
+        $existingByEmail = collect(\DB::table('users')->get(['id', 'email']))
             ->keyBy(fn ($u) => strtolower($u->email));
 
-        $fallbackUserId = DB::table('users')->orderBy('id')->value('id');
+        $fallbackUserId = \DB::table('users')->orderBy('id')->value('id');
 
         foreach ($legacyUsers as $lu) {
             $email = strtolower((string) ($lu->email ?? ''));

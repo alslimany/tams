@@ -40,7 +40,7 @@ test('agency registration creates frozen tenant with documents and sends review 
     config()->set('app.url', 'https://atom.ly');
 
     Notification::fake();
-    Storage::fake('public');
+    fakePublicDisk();
 
     seedMjiAirport();
 
@@ -125,7 +125,7 @@ test('agency registration validates required documents', function () {
 });
 
 test('agency registration requires a valid city_iata from airports table', function () {
-    Storage::fake('public');
+    fakePublicDisk();
     $pdf = UploadedFile::fake()->create('doc.pdf', 100, 'application/pdf');
 
     // Missing city_iata
@@ -189,7 +189,7 @@ test('agency registration success page redirects without session details', funct
 });
 
 test('two registrations from same city get unique sequential office ids', function () {
-    Storage::fake('public');
+    fakePublicDisk();
     seedMjiAirport();
     $pdf = UploadedFile::fake()->create('doc.pdf', 100, 'application/pdf');
 

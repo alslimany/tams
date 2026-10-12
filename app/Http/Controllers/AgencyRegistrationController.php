@@ -11,10 +11,12 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Notification;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules;
 use Inertia\Inertia;
 use Inertia\Response;
+use Throwable;
 
 class AgencyRegistrationController extends Controller
 {
@@ -79,34 +81,42 @@ class AgencyRegistrationController extends Controller
             ],
         ]);
 
-        // Store uploaded documents
-        $commercialRegisterPath = $request->file('commercial_register')
-            ->store("registrations/{$officeId}", 'public');
+        $documentsDirectory = "registrations/{$officeId}";
 
-        $passportPath = $request->file('passport')
-            ->store("registrations/{$officeId}", 'public');
+        try {
+            // Store uploaded documents
+            $commercialRegisterPath = $request->file('commercial_register')
+                ->store($documentsDirectory, 'public');
 
-        $tenant->update([
-            'commercial_register_path' => $commercialRegisterPath,
-            'passport_path' => $passportPath,
-        ]);
+            $passportPath = $request->file('passport')
+                ->store($documentsDirectory, 'public');
 
-        // Create a domain record
-        $tenantBaseDomain = (string) config('tenancy.tenant_base_domain');
-        $tenant->domains()->create([
-            'domain' => strtolower($officeId).'.'.$tenantBaseDomain,
-        ]);
-
-        // Create admin user in tenant database
-        $tenant->run(function () use ($request): void {
-            User::create([
-                'name' => $request->owner_name ?: $request->company_name,
-                'email' => $request->email,
-                'password' => Hash::make($request->password),
-                'role' => 'admin',
-                'is_active' => true,
+            $tenant->update([
+                'commercial_register_path' => $commercialRegisterPath,
+                'passport_path' => $passportPath,
             ]);
-        });
+
+            // Create a domain record
+            $tenantBaseDomain = (string) config('tenancy.tenant_base_domain');
+            $tenant->domains()->create([
+                'domain' => strtolower($officeId).'.'.$tenantBaseDomain,
+            ]);
+
+            // Create admin user in tenant database
+            $tenant->run(function () use ($request): void {
+                User::create([
+                    'name' => $request->owner_name ?: $request->company_name,
+                    'email' => $request->email,
+                    'password' => Hash::make($request->password),
+                    'role' => 'admin',
+                    'is_active' => true,
+                ]);
+            });
+        } catch (Throwable $exception) {
+            $this->discardPartialRegistration($officeId, $tenant);
+
+            throw $exception;
+        }
 
         $workspaceUrl = config('app.url').'/agency/'.strtolower($officeId).'/login';
         $ownerName = $request->owner_name ?: $request->company_name;
@@ -121,16 +131,23 @@ class AgencyRegistrationController extends Controller
             'status' => 'frozen',
         ];
 
-        Notification::route('mail', [$request->email => $ownerName])
-            ->notify(new AgencyCreatedConfirmation(
-                agencyName: $tenant->company_name,
-                agencyNumber: $tenant->agency_number,
-                agencyPath: strtolower($officeId),
-                ownerName: $ownerName,
-                ownerEmail: $request->email,
-                workspaceUrl: $workspaceUrl,
-                status: 'frozen',
-            ));
+        try {
+            Notification::route('mail', [$request->email => $ownerName])
+                ->notify(new AgencyCreatedConfirmation(
+                    agencyName: $tenant->company_name,
+                    agencyNumber: $tenant->agency_number,
+                    agencyPath: strtolower($officeId),
+                    ownerName: $ownerName,
+                    ownerEmail: $request->email,
+                    workspaceUrl: $workspaceUrl,
+                    status: 'frozen',
+                ));
+        } catch (Throwable $exception) {
+            // The registration itself succeeded; a notification delivery
+            // failure must not fail the request (a retry would create a
+            // second tenant for the same agency).
+            report($exception);
+        }
 
         return redirect()
             ->route('agency.registration.success')
@@ -148,6 +165,28 @@ class AgencyRegistrationController extends Controller
         return Inertia::render('Agency/Success', [
             'registration' => $registration,
         ]);
+    }
+
+    /**
+     * Best-effort cleanup after a registration failure that occurred once the
+     * tenant row and database already existed, so a failed attempt does not
+     * leave an orphan tenant, domain or uploaded documents behind.
+     *
+     * Fires the TenantDeleted pipeline, which also deletes the tenant database.
+     */
+    private function discardPartialRegistration(string $officeId, Tenant $tenant): void
+    {
+        try {
+            Storage::disk('public')->deleteDirectory("registrations/{$officeId}");
+        } catch (Throwable $exception) {
+            report($exception);
+        }
+
+        try {
+            $tenant->delete();
+        } catch (Throwable $exception) {
+            report($exception);
+        }
     }
 
     private function centralDomain(): string

@@ -51,3 +51,19 @@ function something()
 {
     // ..
 }
+
+/**
+ * Fake the public disk so it survives stancl/tenancy's FilesystemTenancyBootstrapper.
+ *
+ * The bootstrapper runs during the tenant creation pipeline (BootstrapTenantLedgerJob
+ * calls $tenant->run()) and calls Storage::forgetDisk(['local', 'public']), which drops
+ * the fake instance. The next Storage::disk('public') / UploadedFile::store(..., 'public')
+ * then re-resolves from config, so uploads land in the real storage/app/public.
+ * Pinning the config root keeps them inside storage/framework/testing/disks/public.
+ */
+function fakePublicDisk(): void
+{
+    config()->set('filesystems.disks.public.root', storage_path('framework/testing/disks/public'));
+
+    Storage::fake('public');
+}
