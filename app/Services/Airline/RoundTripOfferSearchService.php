@@ -4,6 +4,7 @@ namespace App\Services\Airline;
 
 use App\DTOs\Airline\FlightOption;
 use App\DTOs\Airline\RoundTripPriceRequest;
+use App\Exceptions\NoFareAvailableException;
 use App\Jobs\ProcessRoundTripSearchJob;
 use App\Models\TenantProvider;
 use App\Services\Airline\Videcom\BaseVidecomAirline;
@@ -11,6 +12,7 @@ use Illuminate\Contracts\Cache\LockTimeoutException;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Throwable;
 
@@ -560,6 +562,14 @@ class RoundTripOfferSearchService
                     $pricingMethod = 'roundtrip';
                     $returnTotal = round((float) $pricing->returnLegPrice, 2);
                 }
+            } catch (NoFareAvailableException $exception) {
+                Log::info('Round-trip repricing unavailable; falling back to one-way pricing.', [
+                    'airline' => (string) $outboundProvider->airline_code,
+                    'outbound_flight' => (string) data_get($outboundFlight, 'flight_number', ''),
+                    'return_flight' => (string) data_get($returnFlight, 'flight_number', ''),
+                    'reason' => $exception->getMessage(),
+                ]);
+                $pricingMethod = 'oneway';
             } catch (Throwable $exception) {
                 report($exception);
                 $pricingMethod = 'oneway';

@@ -9,10 +9,14 @@ use Illuminate\Support\Facades\Log;
 
 class AdvLyClient
 {
+    private readonly string $token;
+
     public function __construct(
-        private readonly string $token,
+        ?string $token,
         private readonly string $baseUrl = 'https://adv.ly/api/v1',
-    ) {}
+    ) {
+        $this->token = trim($token ?? '');
+    }
 
     /**
      * Send a WhatsApp message via the AdvLy API.
@@ -21,6 +25,14 @@ class AdvLyClient
      */
     public function sendMessage(string $recipient, string $message): bool
     {
+        if (! $this->isConfigured()) {
+            Log::warning('AdvLy: API token is not configured; skipping WhatsApp message', [
+                'recipient' => $recipient,
+            ]);
+
+            return false;
+        }
+
         try {
             $response = Http::withToken($this->token)
                 ->timeout(10)
@@ -62,6 +74,15 @@ class AdvLyClient
      */
     public function sendMedia(string $recipient, string $message, string $fileUrl, string $fileMime = 'application/pdf'): bool
     {
+        if (! $this->isConfigured()) {
+            Log::warning('AdvLy: API token is not configured; skipping WhatsApp media message', [
+                'recipient' => $recipient,
+                'file_url' => $fileUrl,
+            ]);
+
+            return false;
+        }
+
         try {
             $response = Http::withToken($this->token)
                 ->timeout(15)
@@ -97,5 +118,13 @@ class AdvLyClient
 
             throw new AdvLyException('UNKNOWN_EXCEPTION', 0, $e);
         }
+    }
+
+    /**
+     * Whether a usable AdvLy API token is available.
+     */
+    private function isConfigured(): bool
+    {
+        return $this->token !== '';
     }
 }

@@ -30,10 +30,16 @@ class AppServiceProvider extends ServiceProvider
     {
         $this->app->bind(LedgerDriver::class, AbiviaLedgerDriver::class);
 
-        $this->app->singleton(AdvLyClient::class, fn () => new AdvLyClient(
-            token: config('services.advly.token', ''),
-            baseUrl: config('services.advly.base_url', 'https://adv.ly/api/v1'),
-        ));
+        $this->app->singleton(AdvLyClient::class, function (): AdvLyClient {
+            $token = config('services.advly.token');
+            $baseUrl = config('services.advly.base_url');
+
+            return new AdvLyClient(
+                // A missing ADVLY_TOKEN resolves to null, not ''; never pass null to a string parameter.
+                token: is_scalar($token) ? trim((string) $token) : '',
+                baseUrl: is_scalar($baseUrl) && $baseUrl !== '' ? (string) $baseUrl : 'https://adv.ly/api/v1',
+            );
+        });
     }
 
     /**

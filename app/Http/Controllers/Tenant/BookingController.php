@@ -10,6 +10,7 @@ use App\Actions\Finance\ProcessProviderWalletTransactions;
 use App\Actions\Finance\ProcessWalletTransactions;
 use App\DTOs\Airline\RoundTripPriceRequest;
 use App\Exceptions\InsufficientWalletBalanceException;
+use App\Exceptions\NoFareAvailableException;
 use App\Http\Controllers\Concerns\ExtractsPnrLocator;
 use App\Http\Controllers\Controller;
 use App\Models\Airport;
@@ -583,6 +584,13 @@ class BookingController extends Controller
                             data_set($returnFlightData, 'pricing.currency', $pricing->currency);
                             data_set($returnFlightData, 'pricing_method', 'roundtrip');
                             data_set($returnFlightData, 'pricing_total_roundtrip', $pricing->totalPrice);
+                        } catch (NoFareAvailableException $pricingException) {
+                            Log::info('Round-trip repricing unavailable; falling back to one-way pricing.', [
+                                'airline' => (string) $providerConfig->airline_code,
+                                'reason' => $pricingException->getMessage(),
+                            ]);
+
+                            data_set($returnFlightData, 'pricing_method', 'oneway');
                         } catch (\Throwable $pricingException) {
                             report($pricingException);
                             data_set($returnFlightData, 'pricing_method', 'oneway');

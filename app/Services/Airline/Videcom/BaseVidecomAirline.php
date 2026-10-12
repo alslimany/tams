@@ -4,6 +4,7 @@ namespace App\Services\Airline\Videcom;
 
 use App\DTOs\Airline\RoundTripPriceRequest;
 use App\DTOs\Airline\RoundTripPriceResult;
+use App\Exceptions\NoFareAvailableException;
 use App\Jobs\UpdateAirlineBalanceJob;
 use App\Models\User;
 use App\Services\Airline\AirlineProviderInterface;
@@ -513,7 +514,9 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
         $xml = $this->parseXml($response);
 
         if (! $xml instanceof SimpleXMLElement || ! isset($xml->FareQuote)) {
-            throw new Exception('Invalid round-trip pricing response from provider.');
+            throw new NoFareAvailableException(
+                'Provider returned no round-trip fare quote: '.$this->summarizePricingResponse($response),
+            );
         }
 
         $currency = strtoupper($this->getCurrency());
@@ -1176,7 +1179,11 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
             return true;
         }
 
-        return in_array($origin, $allowed) || in_array($destination, $allowed);
+        $origin = strtoupper($origin);
+        $destination = strtoupper($destination);
+        $allowed = array_map('strtoupper', $allowed);
+
+        return in_array($origin, $allowed, true) || in_array($destination, $allowed, true);
     }
 
     /**
@@ -1449,6 +1456,20 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
         }
 
         return $xmlContent;
+    }
+
+    /**
+     * Bounded single-line summary of a pricing response, for log context.
+     */
+    protected function summarizePricingResponse(string $response): string
+    {
+        $summary = preg_replace('/\s+/', ' ', trim($response));
+
+        if ($summary === null || $summary === '') {
+            return 'empty response';
+        }
+
+        return mb_substr($summary, 0, 200);
     }
 
     protected function normalizeNameToken(string $value, string $fallback = 'PAX'): string
