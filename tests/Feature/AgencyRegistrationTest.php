@@ -220,3 +220,66 @@ test('two registrations from same city get unique sequential office ids', functi
     expect($tenants)->toHaveCount(2);
     expect($tenants->pluck('office_id')->unique())->toHaveCount(2);
 });
+
+test('an inertia registration post returns to the wizard with the finish details', function () {
+    config()->set('app.url', 'https://atom.ly');
+
+    Notification::fake();
+    fakePublicDisk();
+    seedMjiAirport();
+
+    $response = $this->withHeaders(['X-Inertia' => 'true'])->post('/register-agency', [
+        'company_name' => 'Atlas Travel',
+        'owner_name' => 'Amina Saleh',
+        'phone' => '+218900000000',
+        'email' => 'owner@atlas.test',
+        'city_iata' => 'MJI',
+        'password' => 'password',
+        'password_confirmation' => 'password',
+        'commercial_register' => UploadedFile::fake()->create('commercial-register.pdf', 512, 'application/pdf'),
+        'passport' => UploadedFile::fake()->create('passport.pdf', 256, 'application/pdf'),
+    ]);
+
+    $response->assertRedirectToRoute('agency.register');
+
+    $registration = $response->assertSessionHas('agency_registration')->getSession()->get('agency_registration');
+
+    expect($registration)->toBeArray()
+        ->and($registration['agencyName'])->toBe('Atlas Travel')
+        ->and($registration['ownerEmail'])->toBe('owner@atlas.test')
+        ->and($registration['workspaceUrl'])->toContain('/agency/')
+        ->and($registration['status'])->toBe('frozen');
+});
+
+test('register page exposes the stored registration so the wizard can render its finish step', function () {
+    $this->withSession([
+        'agency_registration' => [
+            'agencyName' => 'Atlas Travel',
+            'agencyNumber' => 'AG-100001',
+            'officeId' => 'MJIAT01AA',
+            'ownerName' => 'Amina Saleh',
+            'ownerEmail' => 'owner@atlas.test',
+            'workspaceUrl' => 'https://atom.ly/agency/mjiat01aa/login',
+            'status' => 'frozen',
+        ],
+    ]);
+
+    $this->get(route('agency.register'))
+        ->assertSuccessful()
+        ->assertInertia(fn ($page) => $page
+            ->component('Agency/Register')
+            ->where('registration.agencyName', 'Atlas Travel')
+            ->where('registration.ownerEmail', 'owner@atlas.test')
+            ->where('registration.workspaceUrl', 'https://atom.ly/agency/mjiat01aa/login')
+            ->where('registration.status', 'frozen')
+        );
+});
+
+test('register page has no registration payload before a tenant is created', function () {
+    $this->get(route('agency.register'))
+        ->assertSuccessful()
+        ->assertInertia(fn ($page) => $page
+            ->component('Agency/Register')
+            ->where('registration', null)
+        );
+});

@@ -37,6 +37,7 @@ class AgencyRegistrationController extends Controller
         return Inertia::render('Agency/Register', [
             'centralDomain' => $this->centralDomain(),
             'airports' => $airports,
+            'registration' => session('agency_registration'),
         ]);
     }
 
@@ -149,8 +150,15 @@ class AgencyRegistrationController extends Controller
             report($exception);
         }
 
+        // Inertia clients stay inside the registration wizard and render the
+        // finish step in place; a plain non-JS POST keeps falling back to the
+        // standalone success page.
+        $target = $request->header('X-Inertia')
+            ? route('agency.register')
+            : route('agency.registration.success');
+
         return redirect()
-            ->route('agency.registration.success')
+            ->to($target)
             ->with('agency_registration', $registration);
     }
 
