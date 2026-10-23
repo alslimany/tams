@@ -25,6 +25,15 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
      *
      * @param  array  $config  Airline credentials and configuration
      */
+    /**
+     * Pricing probes already tried in this process, keyed by airline/route/class/date/flight.
+     *
+     * Values are unix timestamps; an attempt older than 15 minutes may be retried.
+     *
+     * @var array<string, int>
+     */
+    protected static array $pricingAttempts = [];
+
     public function __construct(array $config)
     {
         $this->config = $config;
@@ -288,9 +297,21 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
         $dest = $option->arrival_airport;
         $airline = $this->getIataCode();
 
+        $hasSeats = ((int) ($option->available_seats ?? 0)) > 0;
+        $attemptKey = implode(':', [$airline, $origin, $dest, $class, $this->normalizeDateToken($option->departure_time ?? now()), (string) ($option->flight_number ?? '')]);
+
+        $recentlyTried = (self::$pricingAttempts[$attemptKey] ?? 0) > time() - 900;
+
+        if ($recentlyTried) {
+            return;
+        }
+
         $missing = false;
         foreach (['AD', 'CH', 'IN'] as $type) {
-            if (PricingCacheService::get($airline, $origin, $dest, $class, $type) === null) {
+            $cached = PricingCacheService::get($airline, $origin, $dest, $class, $type);
+            // The cache is date-agnostic: a failure sentinel left by a sold-out date
+            // must not hide a flight that has seats and NN-prices on this date.
+            if ($cached === null || ($cached === false && $hasSeats)) {
                 $missing = true;
                 break;
             }
@@ -299,6 +320,8 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
         if (! $missing) {
             return;
         }
+
+        self::$pricingAttempts[$attemptKey] = time();
 
         try {
             $prices = $this->fetchAllPaxPricesFromVrs($option, $class);
@@ -320,6 +343,11 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
             ]);
 
             // Cache a sentinel so subsequent calls within this request don't retry the same failing probe.
+            // A sold-out option only proves this date is unpriceable, so it leaves no shared sentinel.
+            if (! $hasSeats) {
+                return;
+            }
+
             foreach (['AD', 'CH', 'IN'] as $type) {
                 if (PricingCacheService::get($airline, $origin, $dest, $class, $type) === null) {
                     PricingCacheService::put($airline, $origin, $dest, $class, $type, false);
@@ -362,12 +390,23 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
         $destination = $this->normalizeAirportCode((string) ($option->arrival_airport ?? ''), 'BEN');
 
         // NN (confirmed) count is 2 (AD + CH) - infants are Lap children and don't take a seat.
-        // A sold-out class rejects NN ("NO AV ... SOLD OUT") while Videcom still prices it
-        // with QQ, so QQ is the read-only fallback and the class stays visible.
+        // NN always wins when it prices. A class with a single seat rejects NN2, so NN1
+        // with the adult (and lap infant) is tried next. QQ is only the read-only
+        // fallback for a sold-out class; a QQ "CANNOT BE BOOKED AS OPEN" refusal only
+        // matters for the open-reservation option, never for normal NN sale.
+        $fullPaxMap = [1 => 'AD', 2 => 'CH', 3 => 'IN'];
+        $attempts = [
+            [$paxEntry, 'NN2', $fullPaxMap],
+            // Adult + lap infant: one seat, so NN1 is valid; no child fare is quoted.
+            ['-2PAX/A#/C#.IN06', 'NN1', [1 => 'AD', 2 => 'IN']],
+            [$paxEntry, 'QQ2', $fullPaxMap],
+        ];
+
         $xml = null;
-        foreach (['NN', 'QQ'] as $status) {
-            $flightEntry = "0{$this->getIataCode()}{$flightNumber}{$classCode}{$date}{$origin}{$destination}{$status}2";
-            $response = $this->client->runCommand("i^{$paxEntry}^{$flightEntry}^FG^FS1^*r~x");
+        $paxMap = $fullPaxMap;
+        foreach ($attempts as [$attemptPax, $statusQty, $paxMap]) {
+            $flightEntry = "0{$this->getIataCode()}{$flightNumber}{$classCode}{$date}{$origin}{$destination}{$statusQty}";
+            $response = $this->client->runCommand("i^{$attemptPax}^{$flightEntry}^FG^FS1^*r~x");
             $xml = $this->parseXml($response);
 
             if ($xml instanceof SimpleXMLElement && isset($xml->FareQuote->FareStore)) {
@@ -386,12 +425,7 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
         // Pax 1 = AD, Pax 2 = CH, Pax 3 = IN
         foreach ($fsArray as $fs) {
             $paxIndex = (int) ($fs['Pax'] ?? 0);
-            $type = match ($paxIndex) {
-                1 => 'AD',
-                2 => 'CH',
-                3 => 'IN',
-                default => null,
-            };
+            $type = $paxMap[$paxIndex] ?? null;
 
             if ($type && isset($fs->SegmentFS)) {
                 $results[$type] = [

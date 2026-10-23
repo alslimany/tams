@@ -78,9 +78,11 @@ XML);
     $method = new ReflectionMethod(BaseVidecomAirline::class, 'fetchAllPaxPricesFromVrs');
     $prices = $method->invoke($airline, $option, 'Y');
 
-    expect($client->commands)->toHaveCount(2)
+    // NN2, then NN1 (single seat), and only then the QQ fallback.
+    expect($client->commands)->toHaveCount(3)
         ->and($client->commands[0])->toContain('NN2')
-        ->and($client->commands[1])->toContain('QQ2')
+        ->and($client->commands[1])->toContain('NN1')
+        ->and($client->commands[2])->toContain('QQ2')
         ->and((float) $prices['AD']['fare'] + (float) $prices['AD']['tax'])->toBe(530.0)
         ->and($prices['_baggage']['hold_weight'])->toBe('23K');
 });
