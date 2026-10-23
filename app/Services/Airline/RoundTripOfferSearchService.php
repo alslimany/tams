@@ -28,6 +28,13 @@ class RoundTripOfferSearchService
      */
     public const SAME_TOKEN_REPRICE_LIMIT = 3;
 
+    /**
+     * Upper bound on round-trip quote attempts per outbound provider. A pair the
+     * airline refuses (sold-out class, restricted flight) does not use up one of
+     * the SAME_TOKEN_REPRICE_LIMIT slots, so the next cheapest pair is tried.
+     */
+    public const SAME_TOKEN_REPRICE_ATTEMPTS = 12;
+
     public function __construct(
         protected AgencyProviderResolver $providerResolver,
         protected RoundTripPriceManager $roundTripPriceManager,
@@ -532,7 +539,9 @@ class RoundTripOfferSearchService
         array $returnFlight,
         array $params,
         bool $priceRoundTrip = true,
+        ?bool &$quoted = null,
     ): ?array {
+        $quoted = false;
         $sameToken = (int) $outboundProvider->id === (int) $returnProvider->id;
         $outboundTotal = round((float) data_get($outboundFlight, 'pricing.total', 0), 2);
         $returnTotal = round((float) data_get($returnFlight, 'pricing.total', 0), 2);
@@ -572,6 +581,7 @@ class RoundTripOfferSearchService
                     // The quote is also the only source that carries the return leg's
                     // baggage allowance when standalone return pricing was rejected.
                     $quoteBaggage = $pricing->segmentBaggage;
+                    $quoted = $total > 0;
                 }
             } catch (NoFareAvailableException $exception) {
                 Log::info('Round-trip repricing unavailable; falling back to one-way pricing.', [
@@ -853,18 +863,33 @@ class RoundTripOfferSearchService
         usort($pairs, static fn (array $left, array $right): int => $left['total'] <=> $right['total']);
 
         $repriced = [];
+        $quotedCount = 0;
 
-        foreach (array_slice($pairs, 0, self::SAME_TOKEN_REPRICE_LIMIT) as $pair) {
+        // Walk the cheapest pairs until LIMIT of them carry a real round-trip
+        // quote. Pairs the airline refuses to quote (e.g. a sold-out return class)
+        // must not crowd out pairs it would quote, otherwise those keep the summed
+        // one-way price instead of Videcom's cheaper round-trip fare.
+        foreach (array_slice($pairs, 0, self::SAME_TOKEN_REPRICE_ATTEMPTS) as $pair) {
+            if ($quotedCount >= self::SAME_TOKEN_REPRICE_LIMIT) {
+                break;
+            }
+
+            $quoted = false;
             $offer = $this->buildOffer(
                 $outboundProvider,
                 $pair['return_provider'],
                 $pair['outbound_flight'],
                 $pair['return_flight'],
                 $params,
+                quoted: $quoted,
             );
 
             if ($offer !== null) {
                 $repriced[] = $offer;
+            }
+
+            if ($quoted) {
+                $quotedCount++;
             }
         }
 
