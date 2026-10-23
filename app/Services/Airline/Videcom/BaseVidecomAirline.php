@@ -162,6 +162,15 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
             }));
         }
 
+        // Sold-out classes are hidden: with 0 seats Videcom will not sell the class
+        // with NN, and the date-agnostic price cache would otherwise show a price
+        // fetched for another date. (QQ open refusals do not matter here; they only
+        // block the open-reservation option for seated classes.)
+        $options = array_values(array_filter(
+            $options,
+            fn ($option): bool => (int) ($option->available_seats ?? 0) > 0,
+        ));
+
         // Update pricing based on passenger types and cache
         foreach ($options as $option) {
             $this->applyAccuratePricing($option, $adults, $children, $infants);

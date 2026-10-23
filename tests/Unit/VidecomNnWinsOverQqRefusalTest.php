@@ -160,3 +160,112 @@ test('round trip: YL 0841 S return with 1 seat is priced and quoted with NN, not
         ->and($client->commands[0])->toContain('NN1')
         ->and($client->commands[0])->not->toContain('QQ');
 });
+
+/**
+ * Availability XML (X format) with one class per flight.
+ *
+ * @param  list<array{0: string, 1: string, 2: string, 3: int}>  $flights  [flight, date, class, av]
+ */
+function nnWinsAvailabilityXml(string $airline, string $origin, string $dest, array $flights): string
+{
+    $journeys = '';
+    foreach ($flights as [$flight, $date, $class, $av]) {
+        $journeys .= <<<XML
+<Journey><Legs><BookFlightSegmentType DepartureDateTime="{$date} 08:40" FlightNumber="{$airline}{$flight}">
+<FlightNumber>{$airline}{$flight}</FlightNumber><XSDDepartureDateTime>{$date}T08:40:00</XSDDepartureDateTime>
+<DepartureAirport LocationCode="{$origin}" /><ArrivalAirport LocationCode="{$dest}" />
+<ArrivalDateTime>{$date} 10:00</ArrivalDateTime><XSDArrivalDateTime>{$date}T10:00:00</XSDArrivalDateTime>
+<Availability><Class id="{$class}" av="{$av}" cab="Y" /></Availability>
+</BookFlightSegmentType></Legs></Journey>
+XML;
+    }
+
+    return "<AvailabilityResponse><Journeys>{$journeys}</Journeys></AvailabilityResponse>";
+}
+
+/**
+ * Client returning availability for A commands and an NN price (seat-limited) otherwise.
+ *
+ * @param  array<string, int>  $seatsByFlight
+ */
+function nnWinsSearchClient(string $availability, array $seatsByFlight, float $price): VidecomClient
+{
+    return new class($availability, $seatsByFlight, $price) extends VidecomClient
+    {
+        public function __construct(public string $availability, public array $seats, public float $price) {}
+
+        public function runCommand(string $command): string
+        {
+            (new ReadOnlyCommandGuard)->check($command);
+
+            if (str_starts_with($command, 'A')) {
+                return $this->availability;
+            }
+
+            if (preg_match('/QQ\d/', $command)) {
+                return 'ERROR: CLASS CANNOT BE BOOKED AS OPEN ON THIS ROUTE';
+            }
+
+            preg_match('/0[A-Z0-9]{2}(\d{4})[A-Z]\d{2}[A-Z]{3}[A-Z]{6}NN(\d)/', $command, $m);
+            if (($m[2] ?? 9) > ($this->seats[$m[1] ?? ''] ?? 0)) {
+                return 'ERROR: NO AV, CLASS SOLD OUT ON THIS SERVICE';
+            }
+
+            return '<PNR><FareQuote><FareStore Pax="1" Cur="LYD" Total="'.$this->price.'"><SegmentFS Seg="1" Fare="'.($this->price - 40).'" Tax1="40" /></FareStore></FareQuote></PNR>';
+        }
+    };
+}
+
+function nnWinsSearch(BaseVidecomAirline $airline, string $origin, string $dest, string $date, bool $return = false): array
+{
+    $params = ['date' => $date, 'origin' => $origin, 'destination' => $dest, 'adults' => 1, 'children' => 0, 'infants' => 0, 'qty' => 1];
+    $results = $return ? $airline->searchReturnLeg($params) : $airline->searchAvailability($params);
+
+    return array_map(fn ($o) => [
+        'flight' => $o->flight_number,
+        'class' => $o->segments[0]['class'],
+        'seats' => $o->available_seats,
+        'total' => (float) ($o->pricing['total'] ?? 0),
+    ], $results);
+}
+
+test('sold out BM 0400 R and 0402 R on 26 Oct are hidden even with a cached route price', function () {
+    // 490 cached for BM MJI-TUN R from the seated 30 Oct flight.
+    foreach (['AD' => ['fare' => 450, 'tax' => 40], 'CH' => ['fare' => 450, 'tax' => 40], 'IN' => ['fare' => 50, 'tax' => 0]] as $type => $data) {
+        PricingCacheService::put('BM', 'MJI', 'TUN', 'R', $type, $data);
+    }
+
+    $xml = nnWinsAvailabilityXml('BM', 'MJI', 'TUN', [['0400', '2026-10-26', 'R', 0], ['0402', '2026-10-26', 'R', 0]]);
+    $airline = nnWinsBind(new MedskyAirline(['base_url' => 'https://customer3.videcom.test']), nnWinsSearchClient($xml, [], 490));
+
+    expect(nnWinsSearch($airline, 'MJI', 'TUN', '2026-10-26'))->toBeEmpty()
+        ->and(nnWinsSearch($airline, 'MJI', 'TUN', '2026-10-26', return: true))->toBeEmpty();
+});
+
+test('sold out YL 0810 S and 0820 S on 30 Oct are hidden while seated YL 0830 S shows with 5 seats', function () {
+    $xml = nnWinsAvailabilityXml('YL', 'MJI', 'TUN', [
+        ['0810', '2026-10-30', 'S', 0],
+        ['0820', '2026-10-30', 'S', 0],
+        ['0830', '2026-10-30', 'S', 5],
+    ]);
+    $airline = nnWinsBind(new LibyanWingsAirline(['base_url' => 'https://booking.libyanwings.test']), nnWinsSearchClient($xml, ['0830' => 5], 445));
+
+    expect(nnWinsSearch($airline, 'MJI', 'TUN', '2026-10-30'))
+        ->toBe([['flight' => '0830', 'class' => 'S', 'seats' => 5, 'total' => 445.0]]);
+});
+
+test('BM 0400 R on 30 Oct shows with its real 1 seat one-way', function () {
+    $xml = nnWinsAvailabilityXml('BM', 'MJI', 'TUN', [['0400', '2026-10-30', 'R', 1]]);
+    $airline = nnWinsBind(new MedskyAirline(['base_url' => 'https://customer3.videcom.test']), nnWinsSearchClient($xml, ['0400' => 1], 490));
+
+    expect(nnWinsSearch($airline, 'MJI', 'TUN', '2026-10-30'))
+        ->toBe([['flight' => '0400', 'class' => 'R', 'seats' => 1, 'total' => 490.0]]);
+});
+
+test('YL 0841 S return on 29 Oct shows with its real 1 seat', function () {
+    $xml = nnWinsAvailabilityXml('YL', 'TUN', 'MJI', [['0841', '2026-10-29', 'S', 1]]);
+    $airline = nnWinsBind(new LibyanWingsAirline(['base_url' => 'https://booking.libyanwings.test']), nnWinsSearchClient($xml, ['0841' => 1], 415));
+
+    expect(nnWinsSearch($airline, 'TUN', 'MJI', '2026-10-29', return: true))
+        ->toBe([['flight' => '0841', 'class' => 'S', 'seats' => 1, 'total' => 415.0]]);
+});
