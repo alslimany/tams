@@ -56,7 +56,7 @@ afterEach(function () {
     \Mockery::close();
 });
 
-test('round-trip offer building falls back to one-way pricing when no fare is available', function () {
+test('round-trip offer building publishes summed one-way fares as a roundtrip package when no fare is available', function () {
     \Mockery::mock('alias:App\\Services\\Airline\\ProviderFactory')
         ->shouldReceive('make')
         ->andReturn(\Mockery::mock(AirlineProviderInterface::class));
@@ -77,6 +77,10 @@ test('round-trip offer building falls back to one-way pricing when no fare is av
     $offer = $method->invoke(roundTripNoFareOfferService(), $provider, $provider, $outbound, $return, []);
 
     expect($offer)->not->toBeNull()
-        ->and($offer['pricing']['method'])->toBe('oneway')
-        ->and((float) $offer['pricing']['total'])->toBe(1199.0);
+        ->and($offer['pricing']['method'])->toBe('roundtrip')
+        ->and((float) $offer['pricing']['total'])->toBe(1199.0)
+        ->and((float) $offer['pricing']['outbound_total'])->toBe(200.0)
+        ->and((float) $offer['pricing']['return_total'])->toBe(999.0)
+        ->and((float) $offer['itineraries'][0]['pricing']['total'])->toBe(200.0)
+        ->and((float) $offer['itineraries'][1]['pricing']['total'])->toBe(999.0);
 });

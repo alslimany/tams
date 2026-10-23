@@ -326,18 +326,23 @@ class RoundTripOfferSearchService
                             priceRoundTrip: false,
                         );
 
-                        if ($offer === null) {
-                            continue;
+                        if ($offer !== null) {
+                            $returnOffers[] = $offer;
                         }
 
-                        $returnOffers[] = $offer;
-
+                        // Same-token pairs are collected even when the summed offer was
+                        // rejected: an unpriced return leg is exactly what the round-trip
+                        // quote below has to rescue before the pair can be published.
                         if ((int) $outboundProvider->id === (int) $returnProvider->id) {
                             $sameTokenPairs[] = [
                                 'return_provider' => $returnProvider,
                                 'outbound_flight' => $outboundFlight,
                                 'return_flight' => $returnFlight,
-                                'total' => (float) data_get($offer, 'pricing.total', 0),
+                                'total' => round(
+                                    (float) data_get($outboundFlight, 'pricing.total', 0)
+                                    + (float) data_get($returnFlight, 'pricing.total', 0),
+                                    2,
+                                ),
                             ];
                         }
                     }
@@ -529,11 +534,12 @@ class RoundTripOfferSearchService
         bool $priceRoundTrip = true,
     ): ?array {
         $sameToken = (int) $outboundProvider->id === (int) $returnProvider->id;
-        $outboundTotal = (float) data_get($outboundFlight, 'pricing.total', 0);
-        $returnTotal = (float) data_get($returnFlight, 'pricing.total', 0);
+        $outboundTotal = round((float) data_get($outboundFlight, 'pricing.total', 0), 2);
+        $returnTotal = round((float) data_get($returnFlight, 'pricing.total', 0), 2);
         $currency = (string) data_get($outboundFlight, 'pricing.currency', data_get($returnFlight, 'pricing.currency', 'LYD'));
-        $pricingMethod = 'oneway';
         $total = round($outboundTotal + $returnTotal, 2);
+        /** @var array{hold_weight?: string, hand_weight?: string, hold_pieces?: string}[] $quoteBaggage */
+        $quoteBaggage = [];
 
         if ($sameToken && $priceRoundTrip) {
             try {
@@ -559,8 +565,13 @@ class RoundTripOfferSearchService
 
                     $total = round((float) $pricing->totalPrice, 2);
                     $currency = $pricing->currency !== '' ? $pricing->currency : $currency;
-                    $pricingMethod = 'roundtrip';
                     $returnTotal = round((float) $pricing->returnLegPrice, 2);
+                    // priceRoundTrip only derives the return half from the quote, so the
+                    // outbound half must come from the same quote or the legs stop summing.
+                    $outboundTotal = round($total - $returnTotal, 2);
+                    // The quote is also the only source that carries the return leg's
+                    // baggage allowance when standalone return pricing was rejected.
+                    $quoteBaggage = $pricing->segmentBaggage;
                 }
             } catch (NoFareAvailableException $exception) {
                 Log::info('Round-trip repricing unavailable; falling back to one-way pricing.', [
@@ -569,19 +580,35 @@ class RoundTripOfferSearchService
                     'return_flight' => (string) data_get($returnFlight, 'flight_number', ''),
                     'reason' => $exception->getMessage(),
                 ]);
-                $pricingMethod = 'oneway';
             } catch (Throwable $exception) {
                 report($exception);
-                $pricingMethod = 'oneway';
             }
         }
 
-        if ($total <= 0) {
+        // Never publish a package whose legs do not both carry a real price:
+        // an unpriced leg would be sold for free, and a package whose total does
+        // not equal its legs charges one price while ticketing another.
+        if ($outboundTotal <= 0 || $returnTotal <= 0 || $total <= 0) {
             return null;
         }
 
-        $outboundPresented = $this->flightOfferPresenter->present($outboundFlight, forApi: true);
-        $returnPresented = $this->flightOfferPresenter->present($returnFlight, forApi: true);
+        if (abs($total - ($outboundTotal + $returnTotal)) > 0.01) {
+            return null;
+        }
+
+        // Every published package is a round trip: two priced legs that sum to the
+        // package total, whether that total came from a round-trip quote or from
+        // adding two one-way fares.
+        $currency = strtoupper($currency);
+
+        $outboundPresented = $this->flightOfferPresenter->present(
+            $this->alignLegPricing($outboundFlight, $outboundTotal, $currency, $quoteBaggage[1] ?? null),
+            forApi: true,
+        );
+        $returnPresented = $this->flightOfferPresenter->present(
+            $this->alignLegPricing($returnFlight, $returnTotal, $currency, $quoteBaggage[2] ?? null),
+            forApi: true,
+        );
 
         $itineraries = [$outboundPresented, $returnPresented];
         usort($itineraries, static function (array $left, array $right): int {
@@ -604,8 +631,8 @@ class RoundTripOfferSearchService
             'offer_id' => $offerId,
             'pricing' => [
                 'total' => $total,
-                'currency' => strtoupper($currency),
-                'method' => $pricingMethod,
+                'currency' => $currency,
+                'method' => 'roundtrip',
                 'outbound_total' => $outboundTotal,
                 'return_total' => $returnTotal,
             ],
@@ -623,6 +650,90 @@ class RoundTripOfferSearchService
             ],
             'itineraries' => $itineraries,
         ];
+    }
+
+    /**
+     * Rebase one leg's raw pricing onto the price the package allocated to it.
+     *
+     * Availability and the round-trip quote can disagree (an airline may refuse
+     * standalone return pricing, or quote a cheaper return inside the package),
+     * so the itinerary a client sees must carry the allocated price — otherwise
+     * itineraries[] sums to a different number than pricing.total.
+     *
+     * @param  array<string, mixed>  $flight
+     * @param  array{hold_weight?: string, hand_weight?: string, hold_pieces?: string}|null  $quoteBaggage
+     * @return array<string, mixed>
+     */
+    protected function alignLegPricing(array $flight, float $legTotal, string $currency, ?array $quoteBaggage): array
+    {
+        $pricing = is_array($flight['pricing'] ?? null) ? $flight['pricing'] : [];
+
+        $pricing['currency'] = $currency;
+        $pricing['total'] = round($legTotal, 2);
+
+        if (is_array($pricing['breakdown'] ?? null)) {
+            $pricing['breakdown'] = $this->alignBreakdownToTotal($pricing['breakdown'], $legTotal);
+        }
+
+        if ($quoteBaggage !== null) {
+            foreach (['hold_weight', 'hand_weight', 'hold_pieces'] as $field) {
+                $missing = ($pricing[$field] ?? null) === null || $pricing[$field] === '';
+
+                if ($missing && ($quoteBaggage[$field] ?? '') !== '') {
+                    $pricing[$field] = $quoteBaggage[$field];
+                }
+            }
+        }
+
+        $flight['pricing'] = $pricing;
+
+        return $flight;
+    }
+
+    /**
+     * Scale a passenger breakdown so its lines add up to the allocated leg total.
+     *
+     * @param  array<int, array<string, mixed>>  $breakdown
+     * @return list<array<string, mixed>>
+     */
+    protected function alignBreakdownToTotal(array $breakdown, float $legTotal): array
+    {
+        $lines = array_values(array_filter($breakdown, 'is_array'));
+        $sum = (float) array_sum(array_column($lines, 'amount'));
+
+        if ($lines === [] || abs($sum - $legTotal) <= 0.01) {
+            return $lines;
+        }
+
+        $ratio = $sum > 0 ? $legTotal / $sum : 1.0;
+
+        foreach ($lines as $index => $line) {
+            $amount = round((float) ($line['amount'] ?? 0) * $ratio, 2);
+
+            if (isset($line['fare'], $line['tax'])) {
+                $fare = round((float) $line['fare'] * $ratio, 2);
+                $tax = round($amount - $fare, 2);
+
+                $lines[$index]['fare'] = $fare;
+                $lines[$index]['tax'] = $tax;
+            }
+
+            $lines[$index]['amount'] = $amount;
+        }
+
+        // Absorb rounding drift into the last line so the breakdown sums exactly.
+        $drift = round($legTotal - (float) array_sum(array_column($lines, 'amount')), 2);
+
+        if ($drift != 0.0) {
+            $last = count($lines) - 1;
+            $lines[$last]['amount'] = round((float) $lines[$last]['amount'] + $drift, 2);
+
+            if (isset($lines[$last]['fare'])) {
+                $lines[$last]['fare'] = round((float) $lines[$last]['fare'] + $drift, 2);
+            }
+        }
+
+        return $lines;
     }
 
     /**

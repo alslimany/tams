@@ -525,6 +525,7 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
         $taxes = [];
 
         $segmentTotals = [];
+        $segmentBaggage = [];
         $fareStores = $xml->xpath('//FareQuote/FareStore') ?: [];
 
         foreach ($fareStores as $fareStore) {
@@ -543,6 +544,21 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
                 $segmentNumber = (int) ($segmentNode['Seg'] ?? 0);
                 if ($segmentNumber <= 0) {
                     continue;
+                }
+
+                // Baggage is identical for every passenger, so the first store wins.
+                if (! isset($segmentBaggage[$segmentNumber])) {
+                    $holdWeight = trim((string) ($segmentNode['HoldWt'] ?? ''));
+                    $handWeight = trim((string) ($segmentNode['HandWt'] ?? ''));
+                    $holdPieces = trim((string) ($segmentNode['HoldPcs'] ?? ''));
+
+                    if ($holdWeight !== '' || $handWeight !== '' || $holdPieces !== '') {
+                        $segmentBaggage[$segmentNumber] = [
+                            'hold_weight' => $holdWeight,
+                            'hand_weight' => $handWeight,
+                            'hold_pieces' => $holdPieces,
+                        ];
+                    }
                 }
 
                 $fare = (float) ($segmentNode['Fare'] ?? 0);
@@ -597,6 +613,7 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
             currency: $currency,
             totalPrice: $totalPrice,
             taxes: $taxes,
+            segmentBaggage: $segmentBaggage,
         );
     }
 

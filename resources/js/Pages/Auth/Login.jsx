@@ -3,48 +3,65 @@ import { Button } from "@/Components/ui/Button";
 import { Input } from "@/Components/ui/Input";
 import { Label } from "@/Components/ui/Label";
 import { Head, Link, useForm, usePage } from '@inertiajs/react';
+import { useState } from 'react';
+import { Alert, AlertDescription } from '@/Components/ui/alert';
 import { useTranslation } from "@/hooks/useTranslation";
-import { Plane, Hotel, Shield } from 'lucide-react';
+import { Plane, Hotel, Shield, AlertTriangle } from 'lucide-react';
 import axios from 'axios';
 
 export default function Login({ status, canResetPassword }) {
     const { tenant } = usePage().props;
     const { t } = useTranslation();
 
-    const { data, setData, post, processing, errors, reset } = useForm({
+    // Message rendered in the destructive alert above the form.
+    const [loginError, setLoginError] = useState(null);
+
+    const { data, setData, processing, errors, setError, clearErrors } = useForm({
         email: '',
         password: '',
         remember: false,
     });
 
     const submit = async (e) => {
-    e.preventDefault();
-    
-    try {
-        // Submit using vanilla axios to bypass Inertia headers entirely
-        await axios.post(route('login'), {
-            email: data.email,
-            password: data.password,
-            remember: data.remember,
-        });
-
-        // Navigate directly to flights after successful login
-        window.location.href = route('flights.index')
-    } catch (error) {
-        // If the backend returns validation errors, apply them to your form state
-        if (error.response && error.response.data.errors) {
-            // Map validation errors manually back to the Inertia useForm error bag
-            Object.keys(error.response.data.errors).forEach((key) => {
-                setError(key, error.response.data.errors[key][0]);
-            });
-        }
-    }
-};
-    const submit_ = (e) => {
         e.preventDefault();
-        post(route('login'), {
-            onFinish: () => reset('password'),
-        });
+
+        clearErrors();
+        setLoginError(null);
+
+        try {
+            // Submit using vanilla axios to bypass Inertia headers entirely
+            await axios.post(route('login'), {
+                email: data.email,
+                password: data.password,
+                remember: data.remember,
+            });
+
+            // Navigate directly to flights after successful login
+            window.location.href = route('flights.index')
+        } catch (error) {
+            // The backend answers 422 JSON for bad credentials (and 419/5xx for
+            // session or server problems), so surface whatever it tells us.
+            const payload = error.response?.data;
+            const validationErrors =
+                payload && typeof payload === 'object' ? payload.errors : undefined;
+
+            if (validationErrors) {
+                // Map validation errors back onto the Inertia useForm error bag
+                Object.entries(validationErrors).forEach(([key, messages]) => {
+                    setError(key, Array.isArray(messages) ? messages[0] : String(messages));
+                });
+            }
+
+            const fieldMessages = validationErrors
+                ? Object.values(validationErrors).flat().filter(Boolean)
+                : [];
+
+            setLoginError(
+                fieldMessages[0] ||
+                    (typeof payload?.message === 'string' && payload.message) ||
+                    t("We couldn't sign you in. Please check your details and try again.")
+            );
+        }
     };
 
     return (
@@ -138,6 +155,14 @@ export default function Login({ status, canResetPassword }) {
                         <div className="text-sm font-medium text-green-600">
                             {status}
                         </div>
+                    )}
+
+                    {/* Credential / session error */}
+                    {loginError && (
+                        <Alert variant="destructive">
+                            <AlertTriangle className="size-4" />
+                            <AlertDescription>{loginError}</AlertDescription>
+                        </Alert>
                     )}
 
                     {/* Form */}
