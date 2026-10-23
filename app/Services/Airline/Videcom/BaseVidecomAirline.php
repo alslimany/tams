@@ -142,6 +142,17 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
 
         \Illuminate\Support\Facades\Log::debug("[{$this->getIataCode()}] searchAvailability {$origin}→{$destination}: ".count($options)." options after date filter (requested={$requestedDate})");
 
+        // Classes the business keeps off sale for this airline (e.g. UZ L), even
+        // when Videcom would still quote them.
+        $hiddenClasses = $this->hiddenClasses();
+        if ($hiddenClasses !== []) {
+            $options = array_values(array_filter($options, function ($option) use ($hiddenClasses) {
+                $class = strtoupper((string) ($option->segments[0]['class'] ?? ''));
+
+                return ! in_array($class, $hiddenClasses, true);
+            }));
+        }
+
         // Update pricing based on passenger types and cache
         foreach ($options as $option) {
             $this->applyAccuratePricing($option, $adults, $children, $infants);
@@ -350,12 +361,19 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
         $origin = $this->normalizeAirportCode((string) ($option->departure_airport ?? ''), 'TIP');
         $destination = $this->normalizeAirportCode((string) ($option->arrival_airport ?? ''), 'BEN');
 
-        // NN (confirmed) count is 2 (AD + CH) - infants are Lap children and don't take a seat
-        $flightEntry = "0{$this->getIataCode()}{$flightNumber}{$classCode}{$date}{$origin}{$destination}NN2";
+        // NN (confirmed) count is 2 (AD + CH) - infants are Lap children and don't take a seat.
+        // A sold-out class rejects NN ("NO AV ... SOLD OUT") while Videcom still prices it
+        // with QQ, so QQ is the read-only fallback and the class stays visible.
+        $xml = null;
+        foreach (['NN', 'QQ'] as $status) {
+            $flightEntry = "0{$this->getIataCode()}{$flightNumber}{$classCode}{$date}{$origin}{$destination}{$status}2";
+            $response = $this->client->runCommand("i^{$paxEntry}^{$flightEntry}^FG^FS1^*r~x");
+            $xml = $this->parseXml($response);
 
-        $command = "i^{$paxEntry}^{$flightEntry}^FG^FS1^*r~x";
-        $response = $this->client->runCommand($command);
-        $xml = $this->parseXml($response);
+            if ($xml instanceof SimpleXMLElement && isset($xml->FareQuote->FareStore)) {
+                break;
+            }
+        }
 
         if (! ($xml instanceof SimpleXMLElement) || ! isset($xml->FareQuote->FareStore)) {
             throw new Exception('Invalid consolidated pricing response');
@@ -505,13 +523,20 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
 
         $paxInfo = $this->buildPricingPaxEntry($adults, $children, $infants);
 
-        // NN (confirmed) avoids open-route rejection on restricted classes.
-        $outboundEntry = "0{$this->getIataCode()}{$outboundFlightNo}{$outboundClass}{$outboundDate}{$origin}{$destination}NN{$seatQty}";
-        $returnEntry = "0{$this->getIataCode()}{$returnFlightNo}{$returnClass}{$returnDate}{$destination}{$origin}NN{$seatQty}";
-        $command = "i^{$paxInfo}^{$outboundEntry}^{$returnEntry}^FG^FS1^*r~x";
+        // NN (confirmed) avoids open-route rejection on restricted classes; QQ is the
+        // read-only fallback for a sold-out class that Videcom still prices.
+        $response = '';
+        $xml = null;
+        foreach (['NN', 'QQ'] as $status) {
+            $outboundEntry = "0{$this->getIataCode()}{$outboundFlightNo}{$outboundClass}{$outboundDate}{$origin}{$destination}{$status}{$seatQty}";
+            $returnEntry = "0{$this->getIataCode()}{$returnFlightNo}{$returnClass}{$returnDate}{$destination}{$origin}{$status}{$seatQty}";
+            $response = $this->client->runCommand("i^{$paxInfo}^{$outboundEntry}^{$returnEntry}^FG^FS1^*r~x");
+            $xml = $this->parseXml($response);
 
-        $response = $this->client->runCommand($command);
-        $xml = $this->parseXml($response);
+            if ($xml instanceof SimpleXMLElement && isset($xml->FareQuote)) {
+                break;
+            }
+        }
 
         if (! $xml instanceof SimpleXMLElement || ! isset($xml->FareQuote)) {
             throw new NoFareAvailableException(
@@ -1421,6 +1446,26 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
         $days = (int) ($this->config['manual_time_limit_days'] ?? 2);
 
         return '8/'.str_pad((string) $hours, 2, '0', STR_PAD_LEFT).'00/'.now()->addDays($days)->format('dM');
+    }
+
+    /**
+     * @return list<string>
+     */
+    protected function hiddenClasses(): array
+    {
+        $configured = data_get($this->config, 'hidden_classes');
+
+        if (! is_array($configured)) {
+            $container = Container::getInstance();
+            $configured = $container && $container->bound('config')
+                ? config('videcom_airlines.'.strtoupper($this->getIataCode()).'.hidden_classes', [])
+                : [];
+        }
+
+        return array_values(array_map(
+            fn (mixed $class): string => strtoupper(substr((string) $class, 0, 1)),
+            is_array($configured) ? $configured : [],
+        ));
     }
 
     protected function shouldUseClassBandsInAvailability(): bool
