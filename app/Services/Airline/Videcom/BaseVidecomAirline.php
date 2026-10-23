@@ -25,6 +25,15 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
      *
      * @param  array  $config  Airline credentials and configuration
      */
+    /**
+     * Pricing probes already tried in this process, keyed by airline/route/class/date/flight.
+     *
+     * Values are unix timestamps; an attempt older than 15 minutes may be retried.
+     *
+     * @var array<string, int>
+     */
+    protected static array $pricingAttempts = [];
+
     public function __construct(array $config)
     {
         $this->config = $config;
@@ -142,10 +151,29 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
 
         \Illuminate\Support\Facades\Log::debug("[{$this->getIataCode()}] searchAvailability {$origin}→{$destination}: ".count($options)." options after date filter (requested={$requestedDate})");
 
-        // Update pricing based on passenger types and cache
-        foreach ($options as $option) {
-            $this->applyAccuratePricing($option, $adults, $children, $infants);
+        // Classes the business keeps off sale for this airline (e.g. UZ L), even
+        // when Videcom would still quote them.
+        $hiddenClasses = $this->hiddenClasses();
+        if ($hiddenClasses !== []) {
+            $options = array_values(array_filter($options, function ($option) use ($hiddenClasses) {
+                $class = strtoupper((string) ($option->segments[0]['class'] ?? ''));
+
+                return ! in_array($class, $hiddenClasses, true);
+            }));
         }
+
+        // Seated classes price as before (route/class cache allowed). A 0-seat class
+        // never uses the cache: it needs a fresh live quote this search (NN, then QQ)
+        // and is hidden when every quote fails. UZ L is already removed via config.
+        $options = array_values(array_filter($options, function ($option) use ($adults, $children, $infants): bool {
+            if ((int) ($option->available_seats ?? 0) > 0) {
+                $this->applyAccuratePricing($option, $adults, $children, $infants);
+
+                return true;
+            }
+
+            return $this->applyFreshSoldOutQuote($option, $adults, $children, $infants);
+        }));
 
         $beforePriceFilter = count($options);
         $options = array_values(array_filter($options, function ($option) use ($filterByPrice) {
@@ -269,6 +297,73 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
     }
 
     /**
+     * Price a 0-seat class from a live quote only. Nothing is read from or written
+     * to the shared route/class price cache, so a failure is never cached as
+     * success and another date's price is never shown.
+     */
+    protected function applyFreshSoldOutQuote($option, int $adults, int $children, int $infants): bool
+    {
+        $class = $option->segments[0]['class'] ?? null;
+        if (! $class) {
+            return false;
+        }
+
+        try {
+            // NN2 then QQ2 only: at most two live quote commands per 0-seat class.
+            $prices = $this->fetchAllPaxPricesFromVrs($option, $class, trySingleSeat: false);
+        } catch (\Throwable $e) {
+            return false;
+        }
+
+        $total = 0.0;
+        $breakdown = [];
+
+        foreach (['AD' => $adults, 'CH' => $children, 'IN' => $infants] as $type => $qty) {
+            if ($qty <= 0) {
+                continue;
+            }
+
+            $quote = $prices[$type] ?? null;
+            if (! is_array($quote)) {
+                // A requested passenger type the quote did not price: not sellable.
+                return false;
+            }
+
+            $base = (float) ($quote['fare'] ?? 0);
+            $tax = (float) ($quote['tax'] ?? 0);
+            $paxTotal = ($base + $tax) * $qty;
+            $total += $paxTotal;
+
+            $label = match ($type) {
+                'AD' => 'Adult',
+                'CH' => 'Child',
+                'IN' => 'Infant',
+            };
+
+            $breakdown[] = ['label' => "{$label} (x{$qty})", 'qty' => $qty, 'fare' => $base, 'tax' => $tax, 'amount' => $paxTotal];
+        }
+
+        if ($total <= 0) {
+            return false;
+        }
+
+        $option->pricing['total'] = $total;
+        $option->pricing['breakdown'] = $breakdown;
+
+        $baggage = $prices['_baggage'] ?? null;
+        if (is_array($baggage)) {
+            $option->pricing['hold_weight'] = $baggage['hold_weight'] ?? '';
+            $option->pricing['hand_weight'] = $baggage['hand_weight'] ?? '';
+            $option->pricing['hold_pieces'] = $baggage['hold_pieces'] ?? '';
+            if (! empty($baggage['fare_id'])) {
+                $option->pricing['fare_id'] = $baggage['fare_id'];
+            }
+        }
+
+        return true;
+    }
+
+    /**
      * Ensure we have all pax prices (AD, CH, IN) in cache for this route/class.
      */
     protected function prefetchPrices($option, string $class): void
@@ -277,9 +372,21 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
         $dest = $option->arrival_airport;
         $airline = $this->getIataCode();
 
+        $hasSeats = ((int) ($option->available_seats ?? 0)) > 0;
+        $attemptKey = implode(':', [$airline, $origin, $dest, $class, $this->normalizeDateToken($option->departure_time ?? now()), (string) ($option->flight_number ?? '')]);
+
+        $recentlyTried = (self::$pricingAttempts[$attemptKey] ?? 0) > time() - 900;
+
+        if ($recentlyTried) {
+            return;
+        }
+
         $missing = false;
         foreach (['AD', 'CH', 'IN'] as $type) {
-            if (PricingCacheService::get($airline, $origin, $dest, $class, $type) === null) {
+            $cached = PricingCacheService::get($airline, $origin, $dest, $class, $type);
+            // The cache is date-agnostic: a failure sentinel left by a sold-out date
+            // must not hide a flight that has seats and NN-prices on this date.
+            if ($cached === null || ($cached === false && $hasSeats)) {
                 $missing = true;
                 break;
             }
@@ -288,6 +395,8 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
         if (! $missing) {
             return;
         }
+
+        self::$pricingAttempts[$attemptKey] = time();
 
         try {
             $prices = $this->fetchAllPaxPricesFromVrs($option, $class);
@@ -309,6 +418,11 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
             ]);
 
             // Cache a sentinel so subsequent calls within this request don't retry the same failing probe.
+            // A sold-out option only proves this date is unpriceable, so it leaves no shared sentinel.
+            if (! $hasSeats) {
+                return;
+            }
+
             foreach (['AD', 'CH', 'IN'] as $type) {
                 if (PricingCacheService::get($airline, $origin, $dest, $class, $type) === null) {
                     PricingCacheService::put($airline, $origin, $dest, $class, $type, false);
@@ -338,7 +452,7 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
     /**
      * Run a pricing command to get prices for all types (AD, CH, IN) in ONE session.
      */
-    protected function fetchAllPaxPricesFromVrs($option, string $class): array
+    protected function fetchAllPaxPricesFromVrs($option, string $class, bool $trySingleSeat = true): array
     {
         // Consolidated Name Entry syntax: -[Qty][Surname]/[First1][Type]/[First2][Type]...
         // AD = Index 1, CH = Index 2, IN = Index 3
@@ -350,12 +464,35 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
         $origin = $this->normalizeAirportCode((string) ($option->departure_airport ?? ''), 'TIP');
         $destination = $this->normalizeAirportCode((string) ($option->arrival_airport ?? ''), 'BEN');
 
-        // NN (confirmed) count is 2 (AD + CH) - infants are Lap children and don't take a seat
-        $flightEntry = "0{$this->getIataCode()}{$flightNumber}{$classCode}{$date}{$origin}{$destination}NN2";
+        // NN (confirmed) count is 2 (AD + CH) - infants are Lap children and don't take a seat.
+        // NN always wins when it prices. A class with a single seat rejects NN2, so NN1
+        // with the adult (and lap infant) is tried next. QQ is only the read-only
+        // fallback for a sold-out class; a QQ "CANNOT BE BOOKED AS OPEN" refusal only
+        // matters for the open-reservation option, never for normal NN sale.
+        $fullPaxMap = [1 => 'AD', 2 => 'CH', 3 => 'IN'];
+        $attempts = [
+            [$paxEntry, 'NN2', $fullPaxMap],
+            // Adult + lap infant: one seat, so NN1 is valid; no child fare is quoted.
+            ['-2PAX/A#/C#.IN06', 'NN1', [1 => 'AD', 2 => 'IN']],
+            [$paxEntry, 'QQ2', $fullPaxMap],
+        ];
 
-        $command = "i^{$paxEntry}^{$flightEntry}^FG^FS1^*r~x";
-        $response = $this->client->runCommand($command);
-        $xml = $this->parseXml($response);
+        // 0-seat classes skip the 1-seat NN try: it cannot succeed with no seats.
+        if (! $trySingleSeat) {
+            $attempts = array_values(array_filter($attempts, fn (array $attempt): bool => $attempt[1] !== 'NN1'));
+        }
+
+        $xml = null;
+        $paxMap = $fullPaxMap;
+        foreach ($attempts as [$attemptPax, $statusQty, $paxMap]) {
+            $flightEntry = "0{$this->getIataCode()}{$flightNumber}{$classCode}{$date}{$origin}{$destination}{$statusQty}";
+            $response = $this->client->runCommand("i^{$attemptPax}^{$flightEntry}^FG^FS1^*r~x");
+            $xml = $this->parseXml($response);
+
+            if ($xml instanceof SimpleXMLElement && isset($xml->FareQuote->FareStore)) {
+                break;
+            }
+        }
 
         if (! ($xml instanceof SimpleXMLElement) || ! isset($xml->FareQuote->FareStore)) {
             throw new Exception('Invalid consolidated pricing response');
@@ -368,12 +505,7 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
         // Pax 1 = AD, Pax 2 = CH, Pax 3 = IN
         foreach ($fsArray as $fs) {
             $paxIndex = (int) ($fs['Pax'] ?? 0);
-            $type = match ($paxIndex) {
-                1 => 'AD',
-                2 => 'CH',
-                3 => 'IN',
-                default => null,
-            };
+            $type = $paxMap[$paxIndex] ?? null;
 
             if ($type && isset($fs->SegmentFS)) {
                 $results[$type] = [
@@ -505,13 +637,20 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
 
         $paxInfo = $this->buildPricingPaxEntry($adults, $children, $infants);
 
-        // NN (confirmed) avoids open-route rejection on restricted classes.
-        $outboundEntry = "0{$this->getIataCode()}{$outboundFlightNo}{$outboundClass}{$outboundDate}{$origin}{$destination}NN{$seatQty}";
-        $returnEntry = "0{$this->getIataCode()}{$returnFlightNo}{$returnClass}{$returnDate}{$destination}{$origin}NN{$seatQty}";
-        $command = "i^{$paxInfo}^{$outboundEntry}^{$returnEntry}^FG^FS1^*r~x";
+        // NN (confirmed) avoids open-route rejection on restricted classes; QQ is the
+        // read-only fallback for a sold-out class that Videcom still prices.
+        $response = '';
+        $xml = null;
+        foreach (['NN', 'QQ'] as $status) {
+            $outboundEntry = "0{$this->getIataCode()}{$outboundFlightNo}{$outboundClass}{$outboundDate}{$origin}{$destination}{$status}{$seatQty}";
+            $returnEntry = "0{$this->getIataCode()}{$returnFlightNo}{$returnClass}{$returnDate}{$destination}{$origin}{$status}{$seatQty}";
+            $response = $this->client->runCommand("i^{$paxInfo}^{$outboundEntry}^{$returnEntry}^FG^FS1^*r~x");
+            $xml = $this->parseXml($response);
 
-        $response = $this->client->runCommand($command);
-        $xml = $this->parseXml($response);
+            if ($xml instanceof SimpleXMLElement && isset($xml->FareQuote)) {
+                break;
+            }
+        }
 
         if (! $xml instanceof SimpleXMLElement || ! isset($xml->FareQuote)) {
             throw new NoFareAvailableException(
@@ -525,6 +664,7 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
         $taxes = [];
 
         $segmentTotals = [];
+        $segmentBaggage = [];
         $fareStores = $xml->xpath('//FareQuote/FareStore') ?: [];
 
         foreach ($fareStores as $fareStore) {
@@ -543,6 +683,21 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
                 $segmentNumber = (int) ($segmentNode['Seg'] ?? 0);
                 if ($segmentNumber <= 0) {
                     continue;
+                }
+
+                // Baggage is identical for every passenger, so the first store wins.
+                if (! isset($segmentBaggage[$segmentNumber])) {
+                    $holdWeight = trim((string) ($segmentNode['HoldWt'] ?? ''));
+                    $handWeight = trim((string) ($segmentNode['HandWt'] ?? ''));
+                    $holdPieces = trim((string) ($segmentNode['HoldPcs'] ?? ''));
+
+                    if ($holdWeight !== '' || $handWeight !== '' || $holdPieces !== '') {
+                        $segmentBaggage[$segmentNumber] = [
+                            'hold_weight' => $holdWeight,
+                            'hand_weight' => $handWeight,
+                            'hold_pieces' => $holdPieces,
+                        ];
+                    }
                 }
 
                 $fare = (float) ($segmentNode['Fare'] ?? 0);
@@ -597,6 +752,7 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
             currency: $currency,
             totalPrice: $totalPrice,
             taxes: $taxes,
+            segmentBaggage: $segmentBaggage,
         );
     }
 
@@ -615,12 +771,14 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
             $origin,
             $destination,
             $class,
-            function () use ($segment, $origin, $destination, $class): bool {
+            function () use ($segment, $origin, $destination, $class): ?bool {
                 try {
                     $date = $this->normalizeDateToken($segment['date'] ?? $segment['departure_time'] ?? now());
                     $fltNo = $this->normalizeFlightNumber((string) ($segment['flt_no'] ?? $segment['flight_number'] ?? ''));
                     $paxEntry = '-1TEST/PAXMR';
-                    $flightEntry = "0{$this->getIataCode()}{$fltNo}{$class}{$date}{$origin}{$destination}NN1";
+                    // QQ is the open-segment status: NN quotes classes that Videcom then
+                    // refuses as open ("CLASS Y CANNOT BE BOOKED AS OPEN ON THIS ROUTE").
+                    $flightEntry = "0{$this->getIataCode()}{$fltNo}{$class}{$date}{$origin}{$destination}QQ1";
                     $command = "i^{$paxEntry}^{$flightEntry}^FG^*r~x";
                     $response = $this->client->runCommand($command);
                     $xml = $this->parseXml($response);
@@ -653,7 +811,8 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
                 } catch (\Throwable $exception) {
                     report($exception);
 
-                    return false;
+                    // Unknown (timeout, transport error): deny now, but do not cache.
+                    return null;
                 }
             }
         );
@@ -1404,6 +1563,26 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
         $days = (int) ($this->config['manual_time_limit_days'] ?? 2);
 
         return '8/'.str_pad((string) $hours, 2, '0', STR_PAD_LEFT).'00/'.now()->addDays($days)->format('dM');
+    }
+
+    /**
+     * @return list<string>
+     */
+    protected function hiddenClasses(): array
+    {
+        $configured = data_get($this->config, 'hidden_classes');
+
+        if (! is_array($configured)) {
+            $container = Container::getInstance();
+            $configured = $container && $container->bound('config')
+                ? config('videcom_airlines.'.strtoupper($this->getIataCode()).'.hidden_classes', [])
+                : [];
+        }
+
+        return array_values(array_map(
+            fn (mixed $class): string => strtoupper(substr((string) $class, 0, 1)),
+            is_array($configured) ? $configured : [],
+        ));
     }
 
     protected function shouldUseClassBandsInAvailability(): bool

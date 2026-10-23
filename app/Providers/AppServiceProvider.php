@@ -78,6 +78,17 @@ class AppServiceProvider extends ServiceProvider
                 ? Limit::perMinute(60)->by($user->id)
                 : Limit::perMinute(10)->by($request->ip());
         });
+
+        // Results polling and open-reservation probes are fanned out by the client
+        // across every visible offer, so they get their own budget instead of
+        // consuming the general API allowance.
+        RateLimiter::for('api-polling', function (Request $request) {
+            $user = $request->user();
+
+            return $user
+                ? Limit::perMinute(240)->by('polling:'.$user->id)
+                : Limit::perMinute(60)->by('polling:'.$request->ip());
+        });
     }
 
     /**

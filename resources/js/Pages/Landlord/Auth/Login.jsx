@@ -1,4 +1,5 @@
 import { Head, Link, useForm } from '@inertiajs/react';
+import { Alert, AlertDescription } from '@/Components/ui/alert';
 import { Input } from '@/Components/ui/Input';
 import { Label } from '@/Components/ui/Label';
 import { Button } from '@/Components/ui/Button';
@@ -38,6 +39,12 @@ export default function Login() {
             <Head title={t('landlord.auth.login_head_title')} />
 
             <form onSubmit={submit} className="space-y-5">
+                {(errors.email || errors.password) && (
+                    <Alert variant="destructive">
+                        <AlertDescription>{errors.email || errors.password}</AlertDescription>
+                    </Alert>
+                )}
+
                 <div className="space-y-2">
                     <Label htmlFor="email">{t('common.email')}</Label>
                     <Input

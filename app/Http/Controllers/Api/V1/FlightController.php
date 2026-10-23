@@ -365,6 +365,10 @@ class FlightController extends Controller
 
     /**
      * Check whether open reservation (QQ) is available for a flight offer.
+     *
+     * Round-trip matrix offers post the whole package as `flight`, so every
+     * `itineraries[i]` is mapped to a real segment and probed against its own
+     * `legs[i].provider_id` instead of the outbound token alone.
      */
     public function openReservationAvailability(Request $request): JsonResponse
     {
@@ -384,15 +388,11 @@ class FlightController extends Controller
         }
 
         try {
-            $provider = ProviderFactory::make($providerConfig);
-            $segment = $this->flightBookingPricing->mapItinerary($validated['flight'], 'QQ')[0] ?? [];
-
-            $allowed = is_object($provider) && is_callable([$provider, 'canBookOpenReservation'])
-                ? (bool) call_user_func([$provider, 'canBookOpenReservation'], $segment)
-                : false;
+            $legs = $this->evaluateOpenReservationLegs($validated['flight'], $providerConfig);
 
             return $this->success([
-                'allowed' => $allowed,
+                'allowed' => $legs !== [] && ! in_array(false, array_column($legs, 'allowed'), true),
+                'legs' => $legs,
             ]);
         } catch (Exception $e) {
             Log::error('API open reservation availability check failed: '.$e->getMessage(), [
@@ -401,6 +401,79 @@ class FlightController extends Controller
 
             return $this->error('Failed to check open reservation availability: '.$e->getMessage(), 422);
         }
+    }
+
+    /**
+     * Probe every leg of a flight payload.
+     *
+     * @param  array<string, mixed>  $flight
+     * @return list<array{itinerary_index: int, provider_id: int, allowed: bool}>
+     */
+    protected function evaluateOpenReservationLegs(array $flight, TenantProvider $fallbackProvider): array
+    {
+        $itineraries = array_values(array_filter((array) ($flight['itineraries'] ?? []), 'is_array'));
+
+        if ($itineraries === []) {
+            $targets = [[
+                'index' => 0,
+                'provider' => $fallbackProvider,
+                'payload' => $flight,
+            ]];
+        } else {
+            $legsByIndex = [];
+
+            foreach ((array) ($flight['legs'] ?? []) as $position => $leg) {
+                if (is_array($leg)) {
+                    $legsByIndex[(int) ($leg['itinerary_index'] ?? $position)] = $leg;
+                }
+            }
+
+            $targets = [];
+
+            foreach ($itineraries as $index => $itinerary) {
+                $leg = $legsByIndex[$index] ?? null;
+                $legProviderId = (int) ($leg['provider_id'] ?? $itinerary['provider_id'] ?? 0);
+                $legProvider = $legProviderId > 0 ? $this->resolveSelectedProvider($legProviderId) : null;
+
+                $targets[] = [
+                    'index' => $index,
+                    'provider' => $legProvider ?? $fallbackProvider,
+                    'payload' => $itinerary,
+                ];
+            }
+        }
+
+        return array_map(fn (array $target): array => [
+            'itinerary_index' => $target['index'],
+            'provider_id' => (int) $target['provider']->id,
+            'allowed' => $this->canBookOpenReservationForFlight($target['provider'], $target['payload']),
+        ], $targets);
+    }
+
+    /**
+     * @param  array<string, mixed>  $flight
+     */
+    protected function canBookOpenReservationForFlight(TenantProvider $providerConfig, array $flight): bool
+    {
+        $provider = ProviderFactory::make($providerConfig);
+
+        if (! is_object($provider) || ! is_callable([$provider, 'canBookOpenReservation'])) {
+            return false;
+        }
+
+        $segments = $this->flightBookingPricing->mapItinerary($flight, 'QQ');
+
+        if ($segments === []) {
+            return false;
+        }
+
+        foreach ($segments as $segment) {
+            if (! (bool) call_user_func([$provider, 'canBookOpenReservation'], $segment)) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /**
@@ -564,6 +637,16 @@ class FlightController extends Controller
         $customer = $validated['customer'];
         $extras = $validated['extras'] ?? $searchParams['extras'] ?? [];
 
+        // A matrix round trip is one token only when both legs share a provider.
+        $returnLegs = array_values((array) data_get($cachedOffer, 'offer.legs', []));
+        $outboundProviderId = (int) ($cachedOffer['outbound_provider_id'] ?? data_get($returnLegs, '0.provider_id', 0));
+        $returnProviderId = (int) ($cachedOffer['return_provider_id'] ?? data_get($returnLegs, '1.provider_id', 0));
+        $isRoundTripOffer = (bool) ($cachedOffer['is_round_trip'] ?? false) && is_array($flight['round_trip'] ?? null);
+
+        if ($isRoundTripOffer && $outboundProviderId > 0 && $returnProviderId > 0 && $outboundProviderId !== $returnProviderId) {
+            return $this->error('This round trip mixes two airline tokens and cannot be issued as one booking. Select a round trip on a single airline.', 422);
+        }
+
         $providerConfig = $this->resolveProvider($providerId);
 
         if (! $providerConfig) {
@@ -582,6 +665,22 @@ class FlightController extends Controller
         );
 
         $mappedItinerary = $this->flightBookingPricing->mapItinerary($flight, $reservationType);
+        $bookedSegments = is_array($flight['segments'] ?? null) ? $flight['segments'] : [$flight];
+
+        // Matrix offers carry only the outbound segments at the top level, so the
+        // return leg has to be read back out of round_trip before we price and issue.
+        if ($isRoundTripOffer) {
+            $outboundSegments = $flight['round_trip']['outbound_flight']['segments'] ?? [$flight['round_trip']['outbound_flight']];
+            $returnSegments = $flight['round_trip']['return_flight']['segments'] ?? [$flight['round_trip']['return_flight']];
+            $returnReservationType = (string) ($cachedOffer['return_reservation_type'] ?? $reservationType);
+
+            $mappedItinerary = array_merge(
+                $this->flightBookingPricing->mapItinerary(['segments' => $outboundSegments], $reservationType),
+                $this->flightBookingPricing->mapItinerary(['segments' => $returnSegments], $returnReservationType),
+            );
+            $bookedSegments = array_merge($outboundSegments, $returnSegments);
+        }
+
         $totalPrice = $pricingSummary['grand_total'];
         $currency = $pricingSummary['currency'];
         $extras = $pricingSummary['extras'];
@@ -646,7 +745,7 @@ class FlightController extends Controller
         }
 
         // Create order in database
-        $order = DB::transaction(function () use ($isDraft, $providerConfig, $totalPrice, $currency, $pnr, $flight, $passengers, $customer, $issuer, $cachedOffer, $pricingSummary, $extras): Order {
+        $order = DB::transaction(function () use ($isDraft, $providerConfig, $totalPrice, $currency, $pnr, $bookedSegments, $passengers, $customer, $issuer, $cachedOffer, $pricingSummary, $extras): Order {
             $order = Order::query()->create([
                 'owner_type' => get_class($issuer),
                 'owner_id' => $issuer->id,
@@ -674,7 +773,7 @@ class FlightController extends Controller
                     'airline_code' => $providerConfig->airline_code,
                     'outbound_provider_id' => $cachedOffer['outbound_provider_id'] ?? null,
                     'return_provider_id' => $cachedOffer['return_provider_id'] ?? null,
-                    'segments' => $flight['segments'] ?? [$flight],
+                    'segments' => $bookedSegments,
                     'passengers' => $passengers,
                     'customer' => $customer,
                     'seats' => $extras['seats'] ?? [],
@@ -688,7 +787,7 @@ class FlightController extends Controller
                     'ticketing_mode' => $isDraft ? 'draft' : 'final',
                 ],
                 'product_details' => [
-                    'segments' => $flight['segments'] ?? [$flight],
+                    'segments' => $bookedSegments,
                     'currency' => strtoupper($currency),
                 ],
                 'net_fare' => $totalPrice,

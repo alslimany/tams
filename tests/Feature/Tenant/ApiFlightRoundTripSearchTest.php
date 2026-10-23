@@ -315,7 +315,7 @@ test('roundtrip results return 410 for unknown uuid', function () {
         ->assertStatus(410);
 });
 
-test('roundtrip matrix prices same token as roundtrip and mixed tokens as oneway', function () {
+test('roundtrip matrix publishes every priced pair as a roundtrip package', function () {
     global $state;
 
     fakeRoundTripProviders();
@@ -339,16 +339,20 @@ test('roundtrip matrix prices same token as roundtrip and mixed tokens as oneway
 
     $offers = collect($results->json('data.offers'));
 
-    expect($offers->count())->toBe(10);
+    // 5Sx5S is dropped: its provider cannot quote the round trip, and a same-PNR
+    // pair Videcom did not quote is never sold at the one-way sum.
+    expect($offers->count())->toBe(9);
 
     $sameYi = $offers->filter(function (array $offer): bool {
         return data_get($offer, 'legs.0.airline_code') === 'YI'
             && data_get($offer, 'legs.1.airline_code') === 'YI';
     });
 
-    expect($sameYi->where('pricing.method', 'roundtrip'))->toHaveCount(3)
-        ->and($sameYi->where('pricing.method', 'oneway'))->toHaveCount(1)
-        ->and((float) $sameYi->firstWhere('pricing.method', 'oneway')['pricing']['total'])->toBe(1199.0);
+    // Every same-token package carries the round-trip quote, never a one-way sum.
+    expect($sameYi)->toHaveCount(4)
+        ->and($sameYi->where('pricing.method', 'roundtrip'))->toHaveCount(4)
+        ->and($sameYi->where('pricing.method', 'oneway'))->toBeEmpty()
+        ->and($sameYi->every(fn (array $offer): bool => (float) data_get($offer, 'pricing.total') === 350.0))->toBeTrue();
 
     $sameYi = $sameYi->first(function (array $offer): bool {
         return data_get($offer, 'legs.0.airline_code') === 'YI'
@@ -364,7 +368,7 @@ test('roundtrip matrix prices same token as roundtrip and mixed tokens as oneway
         ->and(data_get($sameYi, 'pricing.method'))->toBe('roundtrip')
         ->and((float) data_get($sameYi, 'pricing.total'))->toBe(350.0)
         ->and($mixed)->not->toBeNull()
-        ->and(data_get($mixed, 'pricing.method'))->toBe('oneway')
+        ->and(data_get($mixed, 'pricing.method'))->toBe('roundtrip')
         ->and((float) data_get($mixed, 'pricing.total'))->toBe(410.0)
         ->and(data_get($sameYi, 'itineraries.0.departure_time') <= data_get($sameYi, 'itineraries.1.departure_time'))->toBeTrue();
 });

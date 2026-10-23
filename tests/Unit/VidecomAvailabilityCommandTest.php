@@ -407,7 +407,7 @@ XML;
         ->and($pricingCommand)->not->toContain('0754 30APR');
 });
 
-test('search availability keeps sold out requested date when route class price can be warmed from other dates', function () {
+test('search availability hides a sold out class whose live quote fails even when another date warmed the route class price', function () {
     config()->set('videcom_airlines.5S.availability.classbands', false);
 
     $client = new class extends VidecomClient
@@ -476,7 +476,7 @@ XML;
 
     $provider = new class(['base_url' => 'https://booking.gair.test']) extends GlobalAirline
     {
-        protected function fetchAllPaxPricesFromVrs($option, string $class): array
+        protected function fetchAllPaxPricesFromVrs($option, string $class, bool $trySingleSeat = true): array
         {
             if (($option->available_seats ?? 0) <= 0) {
                 throw new Exception('Cannot price sold-out flight date');
@@ -504,10 +504,8 @@ XML;
         'qty' => 1,
     ]);
 
-    expect($results)
-        ->toHaveCount(1)
-        ->and($results[0]->available_seats)->toBe(0)
-        ->and((float) $results[0]->pricing['total'])->toBe(120.0);
+    // A 0-seat class whose live quote fails is hidden; a price cached from another date is never used.
+    expect($results)->toBeEmpty();
 });
 
 test('open reservation availability is cached by airline route and class', function () {

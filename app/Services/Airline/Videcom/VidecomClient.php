@@ -22,6 +22,22 @@ class VidecomClient
     protected string $mode;
 
     /**
+     * Optional process-wide hook invoked with every outgoing VRS command before it
+     * is sent. Used by the read-only videcom:monitor command to enforce its
+     * allow-list; it throws to abort the call. Null in normal operation.
+     *
+     * @var (\Closure(string, array<string, mixed>): void)|null
+     */
+    public static ?\Closure $commandGuard = null;
+
+    /**
+     * Optional process-wide observer invoked with every command and raw response.
+     *
+     * @var (\Closure(string, string, array<string, mixed>): void)|null
+     */
+    public static ?\Closure $responseObserver = null;
+
+    /**
      * VidecomClient constructor.
      *
      * @param  array  $config  Configuration containing credentials, base_url, and mode
@@ -44,11 +60,21 @@ class VidecomClient
      */
     public function runCommand(string $command): string
     {
-        return match ($this->mode) {
+        if (self::$commandGuard !== null) {
+            (self::$commandGuard)($command, $this->config);
+        }
+
+        $response = match ($this->mode) {
             self::MODE_SOAP => $this->runSoapCommand($command),
             self::MODE_SESSION => $this->runSessionCommand($command),
             default => throw new Exception("Unsupported Videcom client mode: {$this->mode}"),
         };
+
+        if (self::$responseObserver !== null) {
+            (self::$responseObserver)($command, $response, $this->config);
+        }
+
+        return $response;
     }
 
     /**
@@ -65,6 +91,10 @@ class VidecomClient
      */
     public function runTransactionalCommand(string $command): string
     {
+        if (self::$commandGuard !== null) {
+            (self::$commandGuard)($command, $this->config);
+        }
+
         if (! isset($this->mode) || $this->mode !== self::MODE_SESSION) {
             return $this->runCommand($command);
         }
@@ -149,6 +179,14 @@ class VidecomClient
     protected function forgetCachedSession(): void
     {
         Cache::forget($this->sessionCacheKey());
+    }
+
+    /**
+     * Drop the cached Expert Logon session so the next command logs in fresh.
+     */
+    public function resetSession(): void
+    {
+        $this->forgetCachedSession();
     }
 
     protected function sessionCacheKey(): string

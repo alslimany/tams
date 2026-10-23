@@ -56,7 +56,7 @@ afterEach(function () {
     \Mockery::close();
 });
 
-test('round-trip offer building falls back to one-way pricing when no fare is available', function () {
+test('round-trip offer building drops a same-token pair the provider refuses to quote', function () {
     \Mockery::mock('alias:App\\Services\\Airline\\ProviderFactory')
         ->shouldReceive('make')
         ->andReturn(\Mockery::mock(AirlineProviderInterface::class));
@@ -76,7 +76,6 @@ test('round-trip offer building falls back to one-way pricing when no fare is av
 
     $offer = $method->invoke(roundTripNoFareOfferService(), $provider, $provider, $outbound, $return, []);
 
-    expect($offer)->not->toBeNull()
-        ->and($offer['pricing']['method'])->toBe('oneway')
-        ->and((float) $offer['pricing']['total'])->toBe(1199.0);
+    // Selling 200 + 999 as one PNR would ticket a round trip Videcom refused.
+    expect($offer)->toBeNull();
 });

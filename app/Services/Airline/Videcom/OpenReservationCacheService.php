@@ -11,13 +11,31 @@ class OpenReservationCacheService
     {
         $key = self::buildKey($airline, $origin, $destination, $class);
 
-        return (bool) Cache::remember($key, now()->addWeek(), $resolver);
+        $cached = Cache::get($key);
+
+        if (is_bool($cached)) {
+            return $cached;
+        }
+
+        $result = $resolver();
+
+        // A null result means the probe could not reach a verdict (timeout,
+        // transport error); fail closed without pinning that for a week.
+        if (! is_bool($result)) {
+            return false;
+        }
+
+        Cache::put($key, $result, now()->addWeek());
+
+        return $result;
     }
 
     protected static function buildKey(string $airline, string $origin, string $destination, string $class): string
     {
         return sprintf(
-            'videcom_open_reservation:%s:%s:%s:%s',
+            // v2: the probe switched from NN to QQ, so verdicts cached by the
+            // old probe (which allowed BM Y/S) must not be reused.
+            'videcom_open_reservation:v2:%s:%s:%s:%s',
             strtoupper($airline),
             strtoupper($origin),
             strtoupper($destination),

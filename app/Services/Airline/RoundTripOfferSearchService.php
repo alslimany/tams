@@ -23,10 +23,18 @@ class RoundTripOfferSearchService
     public const AVAILABILITY_CACHE_MINUTES = 15;
 
     /**
-     * Same-token Videcom round-trip repricing is limited to the cheapest
-     * one-way combinations. The rest stay priced as the sum of the legs.
+     * Same-token Videcom round trips are only published with a real round-trip
+     * quote, so this caps how many of the cheapest pairs per provider are shown.
+     * Unquoted same-token pairs are never sold at the sum of their one-way legs.
      */
-    public const SAME_TOKEN_REPRICE_LIMIT = 3;
+    public const SAME_TOKEN_REPRICE_LIMIT = 6;
+
+    /**
+     * Upper bound on round-trip quote attempts per outbound provider. A pair the
+     * airline refuses (sold-out class, restricted flight) does not use up one of
+     * the SAME_TOKEN_REPRICE_LIMIT slots, so the next cheapest pair is tried.
+     */
+    public const SAME_TOKEN_REPRICE_ATTEMPTS = 12;
 
     public function __construct(
         protected AgencyProviderResolver $providerResolver,
@@ -326,18 +334,26 @@ class RoundTripOfferSearchService
                             priceRoundTrip: false,
                         );
 
-                        if ($offer === null) {
-                            continue;
+                        // A same-token pair is one PNR on one airline: it is only sold at
+                        // the price Videcom quotes for the round trip (see below), never
+                        // at the sum of two one-way fares the airline may refuse together.
+                        if ($offer !== null && ! $this->supportsRoundTripQuote($outboundProvider, $returnProvider)) {
+                            $returnOffers[] = $offer;
                         }
 
-                        $returnOffers[] = $offer;
-
+                        // Same-token pairs are collected even when the summed offer was
+                        // rejected: an unpriced return leg is exactly what the round-trip
+                        // quote below has to rescue before the pair can be published.
                         if ((int) $outboundProvider->id === (int) $returnProvider->id) {
                             $sameTokenPairs[] = [
                                 'return_provider' => $returnProvider,
                                 'outbound_flight' => $outboundFlight,
                                 'return_flight' => $returnFlight,
-                                'total' => (float) data_get($offer, 'pricing.total', 0),
+                                'total' => round(
+                                    (float) data_get($outboundFlight, 'pricing.total', 0)
+                                    + (float) data_get($returnFlight, 'pricing.total', 0),
+                                    2,
+                                ),
                             ];
                         }
                     }
@@ -527,13 +543,16 @@ class RoundTripOfferSearchService
         array $returnFlight,
         array $params,
         bool $priceRoundTrip = true,
+        ?bool &$quoted = null,
     ): ?array {
+        $quoted = false;
         $sameToken = (int) $outboundProvider->id === (int) $returnProvider->id;
-        $outboundTotal = (float) data_get($outboundFlight, 'pricing.total', 0);
-        $returnTotal = (float) data_get($returnFlight, 'pricing.total', 0);
+        $outboundTotal = round((float) data_get($outboundFlight, 'pricing.total', 0), 2);
+        $returnTotal = round((float) data_get($returnFlight, 'pricing.total', 0), 2);
         $currency = (string) data_get($outboundFlight, 'pricing.currency', data_get($returnFlight, 'pricing.currency', 'LYD'));
-        $pricingMethod = 'oneway';
         $total = round($outboundTotal + $returnTotal, 2);
+        /** @var array{hold_weight?: string, hand_weight?: string, hold_pieces?: string}[] $quoteBaggage */
+        $quoteBaggage = [];
 
         if ($sameToken && $priceRoundTrip) {
             try {
@@ -559,29 +578,57 @@ class RoundTripOfferSearchService
 
                     $total = round((float) $pricing->totalPrice, 2);
                     $currency = $pricing->currency !== '' ? $pricing->currency : $currency;
-                    $pricingMethod = 'roundtrip';
                     $returnTotal = round((float) $pricing->returnLegPrice, 2);
+                    // priceRoundTrip only derives the return half from the quote, so the
+                    // outbound half must come from the same quote or the legs stop summing.
+                    $outboundTotal = round($total - $returnTotal, 2);
+                    // The quote is also the only source that carries the return leg's
+                    // baggage allowance when standalone return pricing was rejected.
+                    $quoteBaggage = $pricing->segmentBaggage;
+                    $quoted = $total > 0;
                 }
             } catch (NoFareAvailableException $exception) {
-                Log::info('Round-trip repricing unavailable; falling back to one-way pricing.', [
+                Log::info('Round-trip quote refused by provider; pair not offered.', [
                     'airline' => (string) $outboundProvider->airline_code,
                     'outbound_flight' => (string) data_get($outboundFlight, 'flight_number', ''),
                     'return_flight' => (string) data_get($returnFlight, 'flight_number', ''),
                     'reason' => $exception->getMessage(),
                 ]);
-                $pricingMethod = 'oneway';
             } catch (Throwable $exception) {
                 report($exception);
-                $pricingMethod = 'oneway';
             }
         }
 
-        if ($total <= 0) {
+        // Videcom refused (or could not confirm) this same-PNR round trip: selling
+        // it at the one-way sum would ticket something the airline will reject.
+        if ($sameToken && $priceRoundTrip && ! $quoted && $this->supportsRoundTripQuote($outboundProvider, $returnProvider)) {
             return null;
         }
 
-        $outboundPresented = $this->flightOfferPresenter->present($outboundFlight, forApi: true);
-        $returnPresented = $this->flightOfferPresenter->present($returnFlight, forApi: true);
+        // Never publish a package whose legs do not both carry a real price:
+        // an unpriced leg would be sold for free, and a package whose total does
+        // not equal its legs charges one price while ticketing another.
+        if ($outboundTotal <= 0 || $returnTotal <= 0 || $total <= 0) {
+            return null;
+        }
+
+        if (abs($total - ($outboundTotal + $returnTotal)) > 0.01) {
+            return null;
+        }
+
+        // Every published package is a round trip: two priced legs that sum to the
+        // package total, whether that total came from a round-trip quote or from
+        // adding two one-way fares.
+        $currency = strtoupper($currency);
+
+        $outboundPresented = $this->flightOfferPresenter->present(
+            $this->alignLegPricing($outboundFlight, $outboundTotal, $currency, $quoteBaggage[1] ?? null),
+            forApi: true,
+        );
+        $returnPresented = $this->flightOfferPresenter->present(
+            $this->alignLegPricing($returnFlight, $returnTotal, $currency, $quoteBaggage[2] ?? null),
+            forApi: true,
+        );
 
         $itineraries = [$outboundPresented, $returnPresented];
         usort($itineraries, static function (array $left, array $right): int {
@@ -604,8 +651,8 @@ class RoundTripOfferSearchService
             'offer_id' => $offerId,
             'pricing' => [
                 'total' => $total,
-                'currency' => strtoupper($currency),
-                'method' => $pricingMethod,
+                'currency' => $currency,
+                'method' => 'roundtrip',
                 'outbound_total' => $outboundTotal,
                 'return_total' => $returnTotal,
             ],
@@ -623,6 +670,105 @@ class RoundTripOfferSearchService
             ],
             'itineraries' => $itineraries,
         ];
+    }
+
+    protected function supportsRoundTripQuote(TenantProvider $outboundProvider, TenantProvider $returnProvider): bool
+    {
+        if ((int) $outboundProvider->id !== (int) $returnProvider->id) {
+            return false;
+        }
+
+        try {
+            $airline = ProviderFactory::make($outboundProvider);
+        } catch (Throwable) {
+            return false;
+        }
+
+        return $airline instanceof BaseVidecomAirline || method_exists($airline, 'priceRoundTrip');
+    }
+
+    /**
+     * Rebase one leg's raw pricing onto the price the package allocated to it.
+     *
+     * Availability and the round-trip quote can disagree (an airline may refuse
+     * standalone return pricing, or quote a cheaper return inside the package),
+     * so the itinerary a client sees must carry the allocated price — otherwise
+     * itineraries[] sums to a different number than pricing.total.
+     *
+     * @param  array<string, mixed>  $flight
+     * @param  array{hold_weight?: string, hand_weight?: string, hold_pieces?: string}|null  $quoteBaggage
+     * @return array<string, mixed>
+     */
+    protected function alignLegPricing(array $flight, float $legTotal, string $currency, ?array $quoteBaggage): array
+    {
+        $pricing = is_array($flight['pricing'] ?? null) ? $flight['pricing'] : [];
+
+        $pricing['currency'] = $currency;
+        $pricing['total'] = round($legTotal, 2);
+
+        if (is_array($pricing['breakdown'] ?? null)) {
+            $pricing['breakdown'] = $this->alignBreakdownToTotal($pricing['breakdown'], $legTotal);
+        }
+
+        if ($quoteBaggage !== null) {
+            foreach (['hold_weight', 'hand_weight', 'hold_pieces'] as $field) {
+                $missing = ($pricing[$field] ?? null) === null || $pricing[$field] === '';
+
+                if ($missing && ($quoteBaggage[$field] ?? '') !== '') {
+                    $pricing[$field] = $quoteBaggage[$field];
+                }
+            }
+        }
+
+        $flight['pricing'] = $pricing;
+
+        return $flight;
+    }
+
+    /**
+     * Scale a passenger breakdown so its lines add up to the allocated leg total.
+     *
+     * @param  array<int, array<string, mixed>>  $breakdown
+     * @return list<array<string, mixed>>
+     */
+    protected function alignBreakdownToTotal(array $breakdown, float $legTotal): array
+    {
+        $lines = array_values(array_filter($breakdown, 'is_array'));
+        $sum = (float) array_sum(array_column($lines, 'amount'));
+
+        if ($lines === [] || abs($sum - $legTotal) <= 0.01) {
+            return $lines;
+        }
+
+        $ratio = $sum > 0 ? $legTotal / $sum : 1.0;
+
+        foreach ($lines as $index => $line) {
+            $amount = round((float) ($line['amount'] ?? 0) * $ratio, 2);
+
+            if (isset($line['fare'], $line['tax'])) {
+                $fare = round((float) $line['fare'] * $ratio, 2);
+                $tax = round($amount - $fare, 2);
+
+                $lines[$index]['fare'] = $fare;
+                $lines[$index]['tax'] = $tax;
+            }
+
+            $lines[$index]['amount'] = $amount;
+        }
+
+        // Absorb rounding drift into the last line so the breakdown sums exactly.
+        $drift = round($legTotal - (float) array_sum(array_column($lines, 'amount')), 2);
+
+        if ($drift != 0.0) {
+            $last = count($lines) - 1;
+            $lines[$last]['amount'] = round((float) $lines[$last]['amount'] + $drift, 2);
+
+            if (isset($lines[$last]['fare'])) {
+                $lines[$last]['fare'] = round((float) $lines[$last]['fare'] + $drift, 2);
+            }
+        }
+
+        return $lines;
     }
 
     /**
@@ -742,18 +888,33 @@ class RoundTripOfferSearchService
         usort($pairs, static fn (array $left, array $right): int => $left['total'] <=> $right['total']);
 
         $repriced = [];
+        $quotedCount = 0;
 
-        foreach (array_slice($pairs, 0, self::SAME_TOKEN_REPRICE_LIMIT) as $pair) {
+        // Walk the cheapest pairs until LIMIT of them carry a real round-trip
+        // quote. Pairs the airline refuses to quote (e.g. a sold-out return class)
+        // must not crowd out pairs it would quote, otherwise those keep the summed
+        // one-way price instead of Videcom's cheaper round-trip fare.
+        foreach (array_slice($pairs, 0, self::SAME_TOKEN_REPRICE_ATTEMPTS) as $pair) {
+            if ($quotedCount >= self::SAME_TOKEN_REPRICE_LIMIT) {
+                break;
+            }
+
+            $quoted = false;
             $offer = $this->buildOffer(
                 $outboundProvider,
                 $pair['return_provider'],
                 $pair['outbound_flight'],
                 $pair['return_flight'],
                 $params,
+                quoted: $quoted,
             );
 
             if ($offer !== null) {
                 $repriced[] = $offer;
+            }
+
+            if ($quoted) {
+                $quotedCount++;
             }
         }
 

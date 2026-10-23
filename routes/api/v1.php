@@ -65,11 +65,9 @@ Route::middleware(['auth:sanctum', 'throttle:api', 'audit.api', 'idempotency'])-
 
         // Flight results
         Route::get('flights/results/{uuid}', [FlightController::class, 'results']);
-        Route::get('flights/roundtrip-results/{uuid}', [FlightController::class, 'roundTripResults']);
         Route::get('flights/calendar-hints', [BookingController::class, 'calendarHints']);
         Route::post('flights/fare-rules', [FlightController::class, 'fareRules']);
         Route::post('flights/seatmap', [FlightController::class, 'seatmap']);
-        Route::post('flights/open-reservation-availability', [FlightController::class, 'openReservationAvailability']);
 
         // Hotel reference
         Route::get('hotels/autocomplete', [HotelController::class, 'autocomplete']);
@@ -148,5 +146,16 @@ Route::middleware(['auth:sanctum', 'throttle:api', 'audit.api', 'idempotency'])-
         Route::get('dashboard', [DashboardController::class, 'index']);
         Route::get('reports/sales', [ReportController::class, 'sales']);
         Route::get('reports/commissions', [ReportController::class, 'commissions']);
+    });
+});
+
+// ── Client polling routes ──────────────────────────────────────
+// Sibling of the group above: identical middleware except the throttle, so a
+// client fanning out over every visible offer does not burn the 60/min API
+// budget and get 429'd mid-search. Nothing else moves into this group.
+Route::middleware(['auth:sanctum', 'throttle:api-polling', 'audit.api', 'idempotency'])->group(function (): void {
+    Route::middleware('ability:read')->group(function (): void {
+        Route::get('flights/roundtrip-results/{uuid}', [FlightController::class, 'roundTripResults']);
+        Route::post('flights/open-reservation-availability', [FlightController::class, 'openReservationAvailability']);
     });
 });
