@@ -162,19 +162,18 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
             }));
         }
 
-        // Sold-out classes are hidden: with 0 seats Videcom will not sell the class
-        // with NN, and the date-agnostic price cache would otherwise show a price
-        // fetched for another date. (QQ open refusals do not matter here; they only
-        // block the open-reservation option for seated classes.)
-        $options = array_values(array_filter(
-            $options,
-            fn ($option): bool => (int) ($option->available_seats ?? 0) > 0,
-        ));
+        // Seated classes price as before (route/class cache allowed). A 0-seat class
+        // never uses the cache: it needs a fresh live quote this search (NN, then QQ)
+        // and is hidden when every quote fails. UZ L is already removed via config.
+        $options = array_values(array_filter($options, function ($option) use ($adults, $children, $infants): bool {
+            if ((int) ($option->available_seats ?? 0) > 0) {
+                $this->applyAccuratePricing($option, $adults, $children, $infants);
 
-        // Update pricing based on passenger types and cache
-        foreach ($options as $option) {
-            $this->applyAccuratePricing($option, $adults, $children, $infants);
-        }
+                return true;
+            }
+
+            return $this->applyFreshSoldOutQuote($option, $adults, $children, $infants);
+        }));
 
         $beforePriceFilter = count($options);
         $options = array_values(array_filter($options, function ($option) use ($filterByPrice) {
@@ -295,6 +294,72 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
                 $option->pricing['fare_id'] = $baggage['fare_id'];
             }
         }
+    }
+
+    /**
+     * Price a 0-seat class from a live quote only. Nothing is read from or written
+     * to the shared route/class price cache, so a failure is never cached as
+     * success and another date's price is never shown.
+     */
+    protected function applyFreshSoldOutQuote($option, int $adults, int $children, int $infants): bool
+    {
+        $class = $option->segments[0]['class'] ?? null;
+        if (! $class) {
+            return false;
+        }
+
+        try {
+            $prices = $this->fetchAllPaxPricesFromVrs($option, $class);
+        } catch (\Throwable $e) {
+            return false;
+        }
+
+        $total = 0.0;
+        $breakdown = [];
+
+        foreach (['AD' => $adults, 'CH' => $children, 'IN' => $infants] as $type => $qty) {
+            if ($qty <= 0) {
+                continue;
+            }
+
+            $quote = $prices[$type] ?? null;
+            if (! is_array($quote)) {
+                // A requested passenger type the quote did not price: not sellable.
+                return false;
+            }
+
+            $base = (float) ($quote['fare'] ?? 0);
+            $tax = (float) ($quote['tax'] ?? 0);
+            $paxTotal = ($base + $tax) * $qty;
+            $total += $paxTotal;
+
+            $label = match ($type) {
+                'AD' => 'Adult',
+                'CH' => 'Child',
+                'IN' => 'Infant',
+            };
+
+            $breakdown[] = ['label' => "{$label} (x{$qty})", 'qty' => $qty, 'fare' => $base, 'tax' => $tax, 'amount' => $paxTotal];
+        }
+
+        if ($total <= 0) {
+            return false;
+        }
+
+        $option->pricing['total'] = $total;
+        $option->pricing['breakdown'] = $breakdown;
+
+        $baggage = $prices['_baggage'] ?? null;
+        if (is_array($baggage)) {
+            $option->pricing['hold_weight'] = $baggage['hold_weight'] ?? '';
+            $option->pricing['hand_weight'] = $baggage['hand_weight'] ?? '';
+            $option->pricing['hold_pieces'] = $baggage['hold_pieces'] ?? '';
+            if (! empty($baggage['fare_id'])) {
+                $option->pricing['fare_id'] = $baggage['fare_id'];
+            }
+        }
+
+        return true;
     }
 
     /**

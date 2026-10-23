@@ -407,7 +407,7 @@ XML;
         ->and($pricingCommand)->not->toContain('0754 30APR');
 });
 
-test('search availability hides a sold out requested date even when another date warmed the route class price', function () {
+test('search availability hides a sold out class whose live quote fails even when another date warmed the route class price', function () {
     config()->set('videcom_airlines.5S.availability.classbands', false);
 
     $client = new class extends VidecomClient
@@ -504,7 +504,7 @@ XML;
         'qty' => 1,
     ]);
 
-    // Sold-out classes are hidden; a price cached from another date is never shown.
+    // A 0-seat class whose live quote fails is hidden; a price cached from another date is never used.
     expect($results)->toBeEmpty();
 });
 
