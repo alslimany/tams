@@ -370,8 +370,9 @@ test('the matrix only publishes pairs where every leg is priced', function () {
 
     $offers = collect(guardRunMatrix());
 
-    // YIxYI (600) and 5SxYI (550) survive; YIx5S and 5Sx5S carry a free return leg.
-    expect($offers)->toHaveCount(2);
+    // Only 5SxYI (550) survives: YIx5S and 5Sx5S carry a free return leg, and
+    // YIxYI is a same-PNR round trip the airline refused to quote.
+    expect($offers)->toHaveCount(1);
 
     foreach ($offers as $offer) {
         $outboundTotal = (float) data_get($offer, 'pricing.outbound_total');

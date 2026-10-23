@@ -23,10 +23,11 @@ class RoundTripOfferSearchService
     public const AVAILABILITY_CACHE_MINUTES = 15;
 
     /**
-     * Same-token Videcom round-trip repricing is limited to the cheapest
-     * one-way combinations. The rest stay priced as the sum of the legs.
+     * Same-token Videcom round trips are only published with a real round-trip
+     * quote, so this caps how many of the cheapest pairs per provider are shown.
+     * Unquoted same-token pairs are never sold at the sum of their one-way legs.
      */
-    public const SAME_TOKEN_REPRICE_LIMIT = 3;
+    public const SAME_TOKEN_REPRICE_LIMIT = 6;
 
     /**
      * Upper bound on round-trip quote attempts per outbound provider. A pair the
@@ -333,7 +334,10 @@ class RoundTripOfferSearchService
                             priceRoundTrip: false,
                         );
 
-                        if ($offer !== null) {
+                        // A same-token pair is one PNR on one airline: it is only sold at
+                        // the price Videcom quotes for the round trip (see below), never
+                        // at the sum of two one-way fares the airline may refuse together.
+                        if ($offer !== null && ! $this->supportsRoundTripQuote($outboundProvider, $returnProvider)) {
                             $returnOffers[] = $offer;
                         }
 
@@ -584,7 +588,7 @@ class RoundTripOfferSearchService
                     $quoted = $total > 0;
                 }
             } catch (NoFareAvailableException $exception) {
-                Log::info('Round-trip repricing unavailable; falling back to one-way pricing.', [
+                Log::info('Round-trip quote refused by provider; pair not offered.', [
                     'airline' => (string) $outboundProvider->airline_code,
                     'outbound_flight' => (string) data_get($outboundFlight, 'flight_number', ''),
                     'return_flight' => (string) data_get($returnFlight, 'flight_number', ''),
@@ -593,6 +597,12 @@ class RoundTripOfferSearchService
             } catch (Throwable $exception) {
                 report($exception);
             }
+        }
+
+        // Videcom refused (or could not confirm) this same-PNR round trip: selling
+        // it at the one-way sum would ticket something the airline will reject.
+        if ($sameToken && $priceRoundTrip && ! $quoted && $this->supportsRoundTripQuote($outboundProvider, $returnProvider)) {
+            return null;
         }
 
         // Never publish a package whose legs do not both carry a real price:
@@ -660,6 +670,21 @@ class RoundTripOfferSearchService
             ],
             'itineraries' => $itineraries,
         ];
+    }
+
+    protected function supportsRoundTripQuote(TenantProvider $outboundProvider, TenantProvider $returnProvider): bool
+    {
+        if ((int) $outboundProvider->id !== (int) $returnProvider->id) {
+            return false;
+        }
+
+        try {
+            $airline = ProviderFactory::make($outboundProvider);
+        } catch (Throwable) {
+            return false;
+        }
+
+        return $airline instanceof BaseVidecomAirline || method_exists($airline, 'priceRoundTrip');
     }
 
     /**

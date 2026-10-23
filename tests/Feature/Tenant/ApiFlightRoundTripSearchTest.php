@@ -339,19 +339,20 @@ test('roundtrip matrix publishes every priced pair as a roundtrip package', func
 
     $offers = collect($results->json('data.offers'));
 
-    expect($offers->count())->toBe(10);
+    // 5Sx5S is dropped: its provider cannot quote the round trip, and a same-PNR
+    // pair Videcom did not quote is never sold at the one-way sum.
+    expect($offers->count())->toBe(9);
 
     $sameYi = $offers->filter(function (array $offer): bool {
         return data_get($offer, 'legs.0.airline_code') === 'YI'
             && data_get($offer, 'legs.1.airline_code') === 'YI';
     });
 
-    // Every published package is a combined round trip — including the pair that
-    // kept summed one-way fares because it sat outside the reprice window.
+    // Every same-token package carries the round-trip quote, never a one-way sum.
     expect($sameYi)->toHaveCount(4)
         ->and($sameYi->where('pricing.method', 'roundtrip'))->toHaveCount(4)
         ->and($sameYi->where('pricing.method', 'oneway'))->toBeEmpty()
-        ->and($sameYi->contains(fn (array $offer): bool => (float) data_get($offer, 'pricing.total') === 1199.0))->toBeTrue();
+        ->and($sameYi->every(fn (array $offer): bool => (float) data_get($offer, 'pricing.total') === 350.0))->toBeTrue();
 
     $sameYi = $sameYi->first(function (array $offer): bool {
         return data_get($offer, 'legs.0.airline_code') === 'YI'

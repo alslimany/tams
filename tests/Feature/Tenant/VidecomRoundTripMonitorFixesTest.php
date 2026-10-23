@@ -153,3 +153,16 @@ test('#4 a same-token pair is priced with the Videcom round-trip quote even when
         ->and((float) data_get($offer, 'pricing.outbound_total'))->toBe(740.0)
         ->and((float) data_get($offer, 'pricing.return_total'))->toBe(545.0);
 });
+
+test('#3 a same-token round trip Videcom refuses is never sold at the one-way sum', function () {
+    \Mockery::mock('alias:App\\Services\\Airline\\ProviderFactory')
+        ->shouldReceive('make')
+        ->andReturn(vrmUzProvider());
+
+    $offers = collect(vrmRunMatrix());
+
+    // The three Y returns were refused ("Y CLASS SOLD OUT"); only H/H is sellable.
+    expect($offers)->toHaveCount(1)
+        ->and($offers->contains(fn (array $o): bool => data_get($o, 'itineraries.1.segments.0.class') === 'Y'))->toBeFalse()
+        ->and((float) data_get($offers->first(), 'pricing.total'))->toBe(1285.0);
+});
