@@ -309,7 +309,8 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
         }
 
         try {
-            $prices = $this->fetchAllPaxPricesFromVrs($option, $class);
+            // NN2 then QQ2 only: at most two live quote commands per 0-seat class.
+            $prices = $this->fetchAllPaxPricesFromVrs($option, $class, trySingleSeat: false);
         } catch (\Throwable $e) {
             return false;
         }
@@ -451,7 +452,7 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
     /**
      * Run a pricing command to get prices for all types (AD, CH, IN) in ONE session.
      */
-    protected function fetchAllPaxPricesFromVrs($option, string $class): array
+    protected function fetchAllPaxPricesFromVrs($option, string $class, bool $trySingleSeat = true): array
     {
         // Consolidated Name Entry syntax: -[Qty][Surname]/[First1][Type]/[First2][Type]...
         // AD = Index 1, CH = Index 2, IN = Index 3
@@ -475,6 +476,11 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
             ['-2PAX/A#/C#.IN06', 'NN1', [1 => 'AD', 2 => 'IN']],
             [$paxEntry, 'QQ2', $fullPaxMap],
         ];
+
+        // 0-seat classes skip the 1-seat NN try: it cannot succeed with no seats.
+        if (! $trySingleSeat) {
+            $attempts = array_values(array_filter($attempts, fn (array $attempt): bool => $attempt[1] !== 'NN1'));
+        }
 
         $xml = null;
         $paxMap = $fullPaxMap;

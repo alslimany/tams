@@ -192,3 +192,35 @@ test('BM 0400/0402 R on 26 Oct and YL 0810/0820 S on 30 Oct stay hidden when eve
         ->and(collect($bmClient->quotes)->contains(fn ($c) => str_contains($c, 'QQ2')))->toBeTrue()
         ->and(PricingCacheService::get('BM', 'MJI', 'TUN', 'R', 'AD'))->toBe(['fare' => 450.0, 'tax' => 40]);
 });
+
+test('0-seat classes send at most 2 quote commands (NN2 then QQ2) and never NN1', function () {
+    $xml = soldOutXml('BM', 'MJI', 'TUN', [
+        ['0400', '2026-10-26', 'R', 0], // both quotes fail -> hidden
+        ['0402', '2026-10-26', 'R', 0],
+    ]);
+    $client = soldOutClient($xml, []);
+    $airline = soldOutBind(new MedskyAirline(['base_url' => 'https://customer3.videcom.test']), $client);
+
+    expect(soldOutSearch($airline, 'MJI', 'TUN', '2026-10-26'))->toBeEmpty();
+
+    foreach (['0400R', '0402R'] as $key) {
+        $sent = collect($client->quotes)->filter(fn ($c) => str_contains($c, '0BM'.substr($key, 0, 4).substr($key, 4)))->values();
+
+        expect($sent)->toHaveCount(2)
+            ->and($sent[0])->toContain('NN2')
+            ->and($sent[1])->toContain('QQ2');
+    }
+
+    expect(collect($client->quotes)->contains(fn ($c) => str_contains($c, 'NN1')))->toBeFalse();
+});
+
+test('a 0-seat class priced by QQ sends exactly NN2 then QQ2', function () {
+    $xml = soldOutXml('UZ', 'TUN', 'MJI', [['0214', '2026-10-29', 'Y', 0]]);
+    $client = soldOutClient($xml, ['0214Y' => 530]);
+    $airline = soldOutBind(new BuraqAirline(['base_url' => 'https://booking.buraq.test']), $client);
+
+    expect(array_column(soldOutSearch($airline, 'TUN', 'MJI', '2026-10-29', return: true), 'total'))->toBe([530.0])
+        ->and($client->quotes)->toHaveCount(2)
+        ->and($client->quotes[0])->toContain('NN2')
+        ->and($client->quotes[1])->toContain('QQ2');
+});

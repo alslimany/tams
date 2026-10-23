@@ -476,7 +476,7 @@ XML;
 
     $provider = new class(['base_url' => 'https://booking.gair.test']) extends GlobalAirline
     {
-        protected function fetchAllPaxPricesFromVrs($option, string $class): array
+        protected function fetchAllPaxPricesFromVrs($option, string $class, bool $trySingleSeat = true): array
         {
             if (($option->available_seats ?? 0) <= 0) {
                 throw new Exception('Cannot price sold-out flight date');

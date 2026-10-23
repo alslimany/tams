@@ -105,7 +105,10 @@ test('one-way: BM 0400 R with 1 seat is priced by NN1 despite QQ open refusal an
 
     $option = nnWinsPrice($airline, '0400', 'R', 'MJI', 'TUN', '2026-10-30', 1);
 
+    // Seated 1-seat class keeps the full order: NN2 fails, NN1 prices it.
     expect((float) $option->pricing['total'])->toBe(490.0)
+        ->and($client->commands[0])->toContain('NN2')
+        ->and($client->commands[1])->toContain('NN1')
         ->and(collect($client->commands)->contains(fn ($c) => str_contains($c, 'QQ')))->toBeFalse();
 
     // Open reservation stays blocked for the same class.
