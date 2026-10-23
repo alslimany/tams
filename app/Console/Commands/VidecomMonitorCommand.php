@@ -37,7 +37,7 @@ class VidecomMonitorCommand extends Command
         {--stay=3 : Return date offset from the outbound date}
         {--tenant= : Only this tenant id}
         {--providers= : Only these tenant_provider ids (comma separated)}
-        {--max-quotes=40 : Max raw quote commands per provider and direction}
+        {--max-quotes=80 : Max raw quote commands per provider and direction}
         {--price-tolerance=1 : Allowed absolute price difference}';
 
     protected $description = 'Read-only check of Videcom availability/pricing vs our cache and APIs (one-way, round trip, combined round trip).';
@@ -186,65 +186,75 @@ class VidecomMonitorCommand extends Command
     {
         $client = $this->clientFor($airline);
         $result = ['flights' => [], 'quotes' => [], 'error' => null];
-        $token = strtoupper(Carbon::parse($dates[0])->format('dM'));
-        $command = "A{$token}{$origin}{$dest}~X";
+        $errors = [];
+        $seen = [];
 
-        try {
-            $response = $client->runCommand($command);
-        } catch (Throwable $e) {
-            if ($this->guard->violated) {
-                throw $e;
+        // One ~X call per requested date: the ~X window does not reliably cover
+        // every later date for every airline.
+        foreach (array_values(array_unique($dates)) as $wanted) {
+            $token = strtoupper(Carbon::parse($wanted)->format('dM'));
+            $command = "A{$token}{$origin}{$dest}~X";
+
+            try {
+                $response = $client->runCommand($command);
+            } catch (Throwable $e) {
+                if ($this->guard->violated) {
+                    throw $e;
+                }
+                $errors[] = "{$wanted}: ".substr($e->getMessage(), 0, 160);
+
+                continue;
             }
-            $result['error'] = substr($e->getMessage(), 0, 200);
 
-            return $result;
-        }
+            $this->rawSamples["{$tenantId}-{$provider->id}-{$provider->airline_code}-{$origin}{$dest}-{$wanted}"] = $response;
+            $xml = $this->xml($response);
 
-        $this->rawSamples["{$tenantId}-{$provider->id}-{$provider->airline_code}-{$origin}{$dest}"] = $response;
-        $xml = $this->xml($response);
+            if (! $xml instanceof SimpleXMLElement || ! isset($xml->Journeys)) {
+                $errors[] = "{$wanted}: non-xml availability: ".$this->snippet($response);
 
-        if (! $xml instanceof SimpleXMLElement || ! isset($xml->Journeys)) {
-            $result['error'] = 'non-xml availability: '.$this->snippet($response);
+                continue;
+            }
 
-            return $result;
-        }
-
-        foreach ($xml->Journeys->Journey ?? [] as $journey) {
-            foreach ($journey->Legs->BookFlightSegmentType ?? [] as $segment) {
-                $flt = (string) ($segment->FlightNumber ?? '');
-                if (preg_match('/^([A-Z]\d|\d[A-Z]|[A-Z]{2})(\d+)$/i', $flt, $m)) {
-                    $flt = $m[2];
-                }
-                $dep = str_replace('T', ' ', (string) ($segment->XSDDepartureDateTime ?? $segment['DepartureDateTime'] ?? ''));
-                $day = substr($dep, 0, 10);
-
-                if (! in_array($day, $dates, true)) {
-                    continue;
-                }
-
-                $classes = [];
-                foreach ($segment->Availability->Class ?? [] as $class) {
-                    $attrs = [];
-                    foreach ($class->attributes() as $k => $v) {
-                        $attrs[(string) $k] = (string) $v;
+            foreach ($xml->Journeys->Journey ?? [] as $journey) {
+                foreach ($journey->Legs->BookFlightSegmentType ?? [] as $segment) {
+                    $flt = (string) ($segment->FlightNumber ?? '');
+                    if (preg_match('/^([A-Z]\d|\d[A-Z]|[A-Z]{2})(\d+)$/i', $flt, $m)) {
+                        $flt = $m[2];
                     }
-                    $classes[] = [
-                        'class' => strtoupper((string) ($class['id'] ?? '')),
-                        'av' => array_key_exists('av', $attrs) ? (int) $attrs['av'] : null,
-                        'attrs' => $attrs,
+                    $dep = str_replace('T', ' ', (string) ($segment->XSDDepartureDateTime ?? $segment['DepartureDateTime'] ?? ''));
+                    $day = substr($dep, 0, 10);
+
+                    if (! in_array($day, $dates, true) || isset($seen["{$flt}|{$day}"])) {
+                        continue;
+                    }
+                    $seen["{$flt}|{$day}"] = true;
+
+                    $classes = [];
+                    foreach ($segment->Availability->Class ?? [] as $class) {
+                        $attrs = [];
+                        foreach ($class->attributes() as $k => $v) {
+                            $attrs[(string) $k] = (string) $v;
+                        }
+                        $classes[] = [
+                            'class' => strtoupper((string) ($class['id'] ?? '')),
+                            'av' => array_key_exists('av', $attrs) ? (int) $attrs['av'] : null,
+                            'attrs' => $attrs,
+                        ];
+                    }
+
+                    $result['flights'][] = [
+                        'flight' => $flt,
+                        'date' => $day,
+                        'departure_time' => $dep,
+                        'origin' => (string) ($segment->DepartureAirport['LocationCode'] ?? $origin),
+                        'dest' => (string) ($segment->ArrivalAirport['LocationCode'] ?? $dest),
+                        'classes' => $classes,
                     ];
                 }
-
-                $result['flights'][] = [
-                    'flight' => $flt,
-                    'date' => $day,
-                    'departure_time' => $dep,
-                    'origin' => (string) ($segment->DepartureAirport['LocationCode'] ?? $origin),
-                    'dest' => (string) ($segment->ArrivalAirport['LocationCode'] ?? $dest),
-                    'classes' => $classes,
-                ];
             }
         }
+
+        $result['error'] = $errors === [] ? null : implode(' ; ', $errors);
 
         // Quote every class (NN1 and QQ1) up to the configured budget.
         $budget = (int) $this->option('max-quotes');
