@@ -166,3 +166,42 @@ test('#3 a same-token round trip Videcom refuses is never sold at the one-way su
         ->and($offers->contains(fn (array $o): bool => data_get($o, 'itineraries.1.segments.0.class') === 'Y'))->toBeFalse()
         ->and((float) data_get($offers->first(), 'pricing.total'))->toBe(1285.0);
 });
+
+test('combined round-trip pairs carry the real seat count of a 1-seat BM 0400 R outbound', function () {
+    TenantProvider::query()->create([
+        'provider_type' => 'videcom',
+        'airline_code' => 'BM',
+        'airline_name' => 'Medsky',
+        'account_name' => 'Default Account',
+        'credentials' => ['base_url' => 'https://example.com', 'currency' => 'LYD'],
+        'is_active' => true,
+        'commission_own' => 5,
+    ]);
+
+    $bmOut = vrmFlight('0400', 'R', 'MJI', 'TUN', '2026-10-26 08:40:00', 490);
+    $bmOut['airline_code'] = 'BM';
+    $bmOut['available_seats'] = 1;
+
+    $bm = \Mockery::mock(AirlineProviderInterface::class);
+    $bm->shouldReceive('searchAvailability')->andReturn([$bmOut]);
+    $bm->shouldReceive('searchReturnLeg')->andReturn([]);
+    $bm->shouldReceive('priceRoundTrip')->andThrow(new NoFareAvailableException('no return'));
+
+    $uz = vrmUzProvider();
+
+    \Mockery::mock('alias:App\\Services\\Airline\\ProviderFactory')
+        ->shouldReceive('make')
+        ->andReturnUsing(fn (TenantProvider $provider) => $provider->airline_code === 'BM' ? $bm : $uz);
+
+    $combined = collect(vrmRunMatrix())->filter(
+        fn (array $o): bool => data_get($o, 'legs.0.airline_code') === 'BM' && data_get($o, 'legs.1.airline_code') === 'UZ'
+    );
+
+    expect($combined)->not->toBeEmpty();
+
+    foreach ($combined as $offer) {
+        expect((int) data_get($offer, 'itineraries.0.available_seats'))->toBe(1)
+            ->and(data_get($offer, 'itineraries.0.flight_number'))->toBe('0400')
+            ->and((int) data_get($offer, 'itineraries.1.available_seats'))->toBe(9);
+    }
+});
