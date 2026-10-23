@@ -657,12 +657,14 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
             $origin,
             $destination,
             $class,
-            function () use ($segment, $origin, $destination, $class): bool {
+            function () use ($segment, $origin, $destination, $class): ?bool {
                 try {
                     $date = $this->normalizeDateToken($segment['date'] ?? $segment['departure_time'] ?? now());
                     $fltNo = $this->normalizeFlightNumber((string) ($segment['flt_no'] ?? $segment['flight_number'] ?? ''));
                     $paxEntry = '-1TEST/PAXMR';
-                    $flightEntry = "0{$this->getIataCode()}{$fltNo}{$class}{$date}{$origin}{$destination}NN1";
+                    // QQ is the open-segment status: NN quotes classes that Videcom then
+                    // refuses as open ("CLASS Y CANNOT BE BOOKED AS OPEN ON THIS ROUTE").
+                    $flightEntry = "0{$this->getIataCode()}{$fltNo}{$class}{$date}{$origin}{$destination}QQ1";
                     $command = "i^{$paxEntry}^{$flightEntry}^FG^*r~x";
                     $response = $this->client->runCommand($command);
                     $xml = $this->parseXml($response);
@@ -695,7 +697,8 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
                 } catch (\Throwable $exception) {
                     report($exception);
 
-                    return false;
+                    // Unknown (timeout, transport error): deny now, but do not cache.
+                    return null;
                 }
             }
         );
