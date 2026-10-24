@@ -158,7 +158,7 @@ test('BM W returns 0401/0407 (800) and C 0401 (1,000) on 29 Oct show', function 
     ]);
 });
 
-test('UZ Y returns 0214/0218 show at 530 while UZ L stays hidden', function () {
+test('UZ Y returns 0214/0218 and L 0214 show with their live QQ quotes', function () {
     $xml = soldOutXml('UZ', 'TUN', 'MJI', [
         ['0214', '2026-10-29', 'Y', 0], ['0218', '2026-10-29', 'Y', 0], ['0214', '2026-10-29', 'L', 0],
     ]);
@@ -168,7 +168,74 @@ test('UZ Y returns 0214/0218 show at 530 while UZ L stays hidden', function () {
     expect(soldOutSearch($airline, 'TUN', 'MJI', '2026-10-29', return: true))->toBe([
         ['flight' => '0214', 'class' => 'Y', 'seats' => 0, 'total' => 530.0],
         ['flight' => '0218', 'class' => 'Y', 'seats' => 0, 'total' => 530.0],
-    ])->and(collect($client->quotes)->contains(fn ($c) => str_contains($c, '0214L')))->toBeFalse();
+        ['flight' => '0214', 'class' => 'L', 'seats' => 0, 'total' => 680.0],
+    ]);
+});
+
+test('UZ L 0213/0217 MJI-TUN (one-way) and 0218 TUN-MJI (return leg) show at 680 with 23K baggage when NN says sold out', function () {
+    // A stale cached L price must not leak in: only the live QQ quote counts.
+    soldOutSeedCache('UZ', 'MJI', 'TUN', 'L', 111);
+    soldOutSeedCache('UZ', 'TUN', 'MJI', 'L', 111);
+
+    $airline = fn (string $o, string $d, string $date, array $flights) => soldOutBind(
+        new BuraqAirline(['base_url' => 'https://booking.buraq.test']),
+        soldOutClient(soldOutXml('UZ', $o, $d, array_map(fn ($f) => [$f, $date, 'L', 0], $flights)), ['0213L' => 680, '0217L' => 680, '0218L' => 680]),
+    );
+
+    $out27 = soldOutSearch($airline('MJI', 'TUN', '2026-10-27', ['0213']), 'MJI', 'TUN', '2026-10-27');
+    $out31 = soldOutSearch($airline('MJI', 'TUN', '2026-10-31', ['0217']), 'MJI', 'TUN', '2026-10-31');
+    $oneWayBack = soldOutSearch($airline('TUN', 'MJI', '2026-10-30', ['0218']), 'TUN', 'MJI', '2026-10-30');
+    $returnLeg = soldOutSearch($airline('TUN', 'MJI', '2026-10-30', ['0218']), 'TUN', 'MJI', '2026-10-30', return: true);
+
+    expect($out27)->toBe([['flight' => '0213', 'class' => 'L', 'seats' => 0, 'total' => 680.0]])
+        ->and($out31)->toBe([['flight' => '0217', 'class' => 'L', 'seats' => 0, 'total' => 680.0]])
+        ->and($oneWayBack)->toBe([['flight' => '0218', 'class' => 'L', 'seats' => 0, 'total' => 680.0]])
+        ->and($returnLeg)->toBe([['flight' => '0218', 'class' => 'L', 'seats' => 0, 'total' => 680.0]]);
+
+    // Cache is neither read nor overwritten for 0-seat classes.
+    expect(PricingCacheService::get('UZ', 'MJI', 'TUN', 'L', 'AD'))->toBe(['fare' => 71.0, 'tax' => 40]);
+});
+
+test('UZ L baggage comes from the live QQ quote (23K hold)', function () {
+    $xml = soldOutXml('UZ', 'MJI', 'TUN', [['0213', '2026-10-27', 'L', 0]]);
+    $client = new class($xml) extends VidecomClient
+    {
+        public function __construct(public string $xml) {}
+
+        public function runCommand(string $command): string
+        {
+            (new ReadOnlyCommandGuard)->check($command);
+
+            if (str_starts_with($command, 'A')) {
+                return $this->xml;
+            }
+
+            if (str_contains($command, 'NN')) {
+                return 'ERROR: NO AV, L CLASS SOLD OUT ON THIS SERVICE';
+            }
+
+            return '<PNR><FareQuote><FareStore Pax="1" Cur="LYD" Total="680"><SegmentFS Seg="1" Fare="640" Tax1="40" HoldWt="23K" HandWt="0K" HoldPcs="1" /></FareStore></FareQuote></PNR>';
+        }
+    };
+    $airline = soldOutBind(new BuraqAirline(['base_url' => 'https://booking.buraq.test']), $client);
+
+    $results = $airline->searchAvailability(['date' => '2026-10-27', 'origin' => 'MJI', 'destination' => 'TUN', 'adults' => 1, 'children' => 0, 'infants' => 0, 'qty' => 1]);
+
+    expect($results)->toHaveCount(1)
+        ->and((float) $results[0]->pricing['total'])->toBe(680.0)
+        ->and($results[0]->pricing['hold_weight'])->toBe('23K');
+});
+
+test('UZ L stays hidden when every quote fails, even with a cached price', function () {
+    soldOutSeedCache('UZ', 'MJI', 'TUN', 'L', 680);
+
+    $airline = soldOutBind(
+        new BuraqAirline(['base_url' => 'https://booking.buraq.test']),
+        soldOutClient(soldOutXml('UZ', 'MJI', 'TUN', [['0213', '2026-10-27', 'L', 0], ['0217', '2026-10-27', 'L', 0]]), []),
+    );
+
+    expect(soldOutSearch($airline, 'MJI', 'TUN', '2026-10-27'))->toBeEmpty()
+        ->and(soldOutSearch($airline, 'MJI', 'TUN', '2026-10-27', return: true))->toBeEmpty();
 });
 
 test('BM 0400/0402 R on 26 Oct and YL 0810/0820 S on 30 Oct stay hidden when every quote fails, even with a cached price', function () {

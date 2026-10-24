@@ -151,8 +151,9 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
 
         \Illuminate\Support\Facades\Log::debug("[{$this->getIataCode()}] searchAvailability {$origin}→{$destination}: ".count($options)." options after date filter (requested={$requestedDate})");
 
-        // Classes the business keeps off sale for this airline (e.g. UZ L), even
-        // when Videcom would still quote them.
+        // Classes the business keeps off sale for an airline (optional
+        // `hidden_classes` config; none are configured today), even when Videcom
+        // would still quote them.
         $hiddenClasses = $this->hiddenClasses();
         if ($hiddenClasses !== []) {
             $options = array_values(array_filter($options, function ($option) use ($hiddenClasses) {
@@ -164,7 +165,7 @@ abstract class BaseVidecomAirline implements AirlineProviderInterface
 
         // Seated classes price as before (route/class cache allowed). A 0-seat class
         // never uses the cache: it needs a fresh live quote this search (NN, then QQ)
-        // and is hidden when every quote fails. UZ L is already removed via config.
+        // and is hidden when every quote fails (this includes UZ L).
         $options = array_values(array_filter($options, function ($option) use ($adults, $children, $infants): bool {
             if ((int) ($option->available_seats ?? 0) > 0) {
                 $this->applyAccuratePricing($option, $adults, $children, $infants);
