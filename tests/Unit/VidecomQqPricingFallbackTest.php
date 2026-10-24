@@ -115,14 +115,21 @@ test('#1 round-trip quote still fails when both NN and QQ are refused', function
     expect(fn () => $airline->priceRoundTrip(qqFallbackRequest()))->toThrow(NoFareAvailableException::class);
 });
 
-test('#1 UZ L stays hidden while other airlines keep it', function () {
+test('UZ no longer has a blanket hidden class (L is shown when QQ prices it)', function () {
     $hidden = new ReflectionMethod(BaseVidecomAirline::class, 'hiddenClasses');
 
-    expect($hidden->invoke(new BuraqAirline(['base_url' => 'https://booking.buraq.test'])))->toBe(['L'])
-        ->and($hidden->invoke(new GlobalAirline(['base_url' => 'https://booking.gair.test'])))->toBe([]);
+    expect($hidden->invoke(new BuraqAirline(['base_url' => 'https://booking.buraq.test'])))->toBe([])
+        ->and($hidden->invoke(new GlobalAirline(['base_url' => 'https://booking.gair.test'])))->toBe([])
+        ->and(config('videcom_airlines.UZ.hidden_classes'))->toBeNull();
 });
 
-test('#1 UZ availability drops L but keeps the other classes', function () {
+test('hidden_classes config is still honoured when an airline sets it', function () {
+    $hidden = new ReflectionMethod(BaseVidecomAirline::class, 'hiddenClasses');
+
+    expect($hidden->invoke(new BuraqAirline(['base_url' => 'https://booking.buraq.test', 'hidden_classes' => ['l', 'Q']])))->toBe(['L', 'Q']);
+});
+
+test('UZ availability keeps a seated L like the other classes', function () {
     $itin = fn (string $class, int $av): string => <<<XML
     <itin line="1" dep="MJI" arr="TUN" totalduration="75">
         <flt>
@@ -134,7 +141,7 @@ test('#1 UZ availability drops L but keeps the other classes', function () {
     </itin>
 XML;
 
-    $xml = '<xml><classbands />'.$itin('H', 5).$itin('L', 0).'</xml>';
+    $xml = '<xml><classbands />'.$itin('H', 5).$itin('L', 3).'</xml>';
 
     $client = new class($xml) extends VidecomClient
     {
@@ -159,5 +166,5 @@ XML;
 
     $classes = array_map(fn ($o) => $o->segments[0]['class'], $results);
 
-    expect($classes)->toContain('H')->not->toContain('L');
+    expect($classes)->toContain('H')->toContain('L');
 });
