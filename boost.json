@@ -6,6 +6,7 @@
         "claude_code",
         "opencode"
     ],
+    "cloud": false,
     "guidelines": true,
     "mcp": true,
     "nightwatch_mcp": false,
